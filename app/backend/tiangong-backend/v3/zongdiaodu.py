@@ -2159,6 +2159,9 @@ class Zongdiaodu:
         dictionary_context: dict | None = None,
     ) -> str:
         request_id = getattr(run_control, "request_id", "") if run_control else zhuizong_id
+        from .adversarial_review import CompletionSession, COMPLETION_SCHEMA, review_mode
+        judge_completion = review_mode() == "judge"
+        completion_session = CompletionSession(self.http_kehuduan)
         recovery_checkpoint = _simple_chain_recovery_checkpoint_from_context(dynamic_context)
         recovery = recovery_checkpoint.get("recovery") if isinstance(recovery_checkpoint.get("recovery"), dict) else {}
         blocked_recovery_call_keys = set(recovery.get("blocked_call_keys") or [])
@@ -2181,11 +2184,11 @@ class Zongdiaodu:
         # 用新快照替换气泡，恢复“字往外蹦”的流式体验。
         _on_text_chunk = None
         _interim_emitter = None
-        if run_control is not None and getattr(run_control, "interim_reply", None) is not None:
+        if not judge_completion and run_control is not None and getattr(run_control, "interim_reply", None) is not None:
             _interim_emitter = self._InterimTextEmitter(
                 lambda text: run_control.interim_reply(text)
             )
-        if on_event or _interim_emitter is not None:
+        if not judge_completion and (on_event or _interim_emitter is not None):
             def _on_text_chunk(chunk_text: str) -> None:
                 cleaned = strip_internal_reply_markers(chunk_text)
                 if not cleaned:
@@ -2290,6 +2293,8 @@ class Zongdiaodu:
             run_state["recovery_checkpoint"] = _run_state_safe_value(recovery_checkpoint, limit=5000)
         _simple_chain_emit_event(run_state, "chain_started", "run created", "system")
         run_state["mode"] = "chat" if response_only_without_tools else "work"
+        if judge_completion:
+            run_state["completion_authority"] = "adversarial_agent"
         run_state["task_contract"] = initialize_task_contract(
             xiaoxi,
             chat_mode=response_only_without_tools,
@@ -2436,7 +2441,7 @@ class Zongdiaodu:
                             stable_user_message=cache_stable_user_message,
                             provider_turn=provider_turn,
                             provider_tool_results=provider_tool_results,
-                            include_current_result=isinstance(payload, dict) and payload.get("schema") == "tiangong.adversarial-review.v1",
+                            include_current_result=isinstance(payload, dict) and payload.get("schema") in {"tiangong.adversarial-review.v1", COMPLETION_SCHEMA, "tiangong.v3.user_guidance.v1"},
                         )
                 return self.gutong.jixu(
                     _dictionary_system_prompt(), payload, shenti, xiaoxi,
@@ -2446,7 +2451,7 @@ class Zongdiaodu:
                     stable_user_message=cache_stable_user_message,
                     provider_turn=provider_turn,
                     provider_tool_results=provider_tool_results,
-                    include_current_result=isinstance(payload, dict) and payload.get("schema") == "tiangong.adversarial-review.v1",
+                    include_current_result=isinstance(payload, dict) and payload.get("schema") in {"tiangong.adversarial-review.v1", COMPLETION_SCHEMA, "tiangong.v3.user_guidance.v1"},
                 )
 
             return _run_scoped_model(_call_jixu)
@@ -2608,6 +2613,49 @@ class Zongdiaodu:
             )
             return next_body, final_reply
 
+        def _render_delivery(reply: str, *, approved: bool) -> str:
+            reply = re.sub(r'<tool_call\b[^>]*>.*?</tool_call>', '', str(reply), flags=re.DOTALL | re.IGNORECASE).strip()
+            reply = re.sub(r'<function_?calls?\b[^>]*>.*?(?:</function_?calls?>|$)', '', reply, flags=re.DOTALL | re.IGNORECASE).strip()
+            reply = re.sub(r'<invoke\b[^>]*>.*?</invoke>', '', reply, flags=re.DOTALL | re.IGNORECASE).strip()
+            reply, self.zuihou_biaoxian = _tiqu_biaoxian(reply, xiaoxi)
+            reply = strip_internal_reply_markers(reply)
+            if approved:
+                reply = _append_shengcheng_meiti(reply, generated_media)
+                reply = _append_delivery_media_tags(reply, generated_attachments, xiaoxi)
+            return reply
+
+        def _judge_candidate():
+            run_state["status"] = "reviewing"
+            run_state["stage"] = "adversarial_completion"
+            run_state["generated_attachments"] = list(generated_attachments)
+            _simple_chain_save_run_state(run_state)
+            if run_control:
+                run_control.step("adversarial_completion", "对抗智能体判断是否完成", "running", "正在核对候选结果与原任务。")
+            feedback = completion_session.judge(
+                run_state, quality_history, _render_delivery(huifu, approved=True),
+                remaining_seconds=max(0.0, effective_wall_clock_seconds - (time.monotonic() - loop_started_at)),
+                cancel_check=getattr(run_control, "should_stop", None),
+            )
+            _simple_chain_save_run_state(run_state)
+            if run_control:
+                run_control.step("adversarial_completion", "对抗智能体判断是否完成", "done",
+                                 feedback["review"]["decision"], meta=feedback)
+            return feedback
+
+        def _unapproved_reply(record):
+            reason = record.get("reason") or "未取得有效完成裁决。"
+            if record.get("decision") == "unavailable":
+                reason += " " + "; ".join(record.get("coverage_gaps") or [])
+            run_state["terminal_reason"] = "adversarial_completion_" + record["decision"]
+            run_state["final_reasons"] = [reason]
+            run_state["last_transition"] = {
+                "type": "incomplete", "reason": reason,
+                "source": "adversarial_agent" if record["decision"] == "blocked" else "system",
+                "round": int(run_state.get("round") or 0),
+                "at": datetime.now().isoformat(timespec="seconds"),
+            }
+            return "任务尚未完成，最终结果未提交。\n" + reason
+
         def _check_stop(summary: str = "") -> None:
             """停止检查前先投影预算，保证中断点上的时长/轮次精确落盘。"""
             turn_loop.project_live(run_state, loop_started_at)
@@ -2700,7 +2748,7 @@ class Zongdiaodu:
                         meta={"terminal_reason": "audio_recognition_unavailable"},
                     )
         if run_control and not initial_llm_failed:
-            run_control.step("llm_call", "model thinking", "done", _llm_reply_progress_summary(huifu))
+            run_control.step("llm_call", "model thinking", "done", ("候选响应已返回，完成状态待对抗智能体确认。" if judge_completion else _llm_reply_progress_summary(huifu)))
             _check_stop("stopped after model reply")
 
         while True:
@@ -2933,7 +2981,7 @@ class Zongdiaodu:
                 # —— 并行执行多个工具 ——
                 if run_control:
                     structured_visible = str(getattr(huifu, "visible_text", "") or "").strip()
-                    visible_interim = structured_visible or _interim_visible_reply_from_tool_message(huifu)
+                    visible_interim = "" if judge_completion else (structured_visible or _interim_visible_reply_from_tool_message(huifu))
                     if not visible_interim:
                         visible_interim = f"我会并行处理这 {len(tools)} 项操作。"
                     already_streamed = bool(
@@ -3585,7 +3633,7 @@ class Zongdiaodu:
 
             if tool_name and run_control:
                 structured_visible = str(getattr(huifu, "visible_text", "") or "").strip()
-                visible_interim = structured_visible or _interim_visible_reply_from_tool_message(huifu)
+                visible_interim = "" if judge_completion else (structured_visible or _interim_visible_reply_from_tool_message(huifu))
                 if visible_interim:
                     already_streamed = bool(
                         _interim_emitter is not None
@@ -3624,6 +3672,30 @@ class Zongdiaodu:
                     except Exception:
                         pass
             if not tool_name:
+                if judge_completion:
+                    feedback = _judge_candidate()
+                    decision = feedback["review"]["decision"]
+                    if decision == "complete":
+                        guidance = run_control.consume_guidance() if run_control else ""
+                        if guidance:
+                            run_state.setdefault("review_user_guidance", []).append(guidance)
+                            shenti, huifu = _llm_jixu_scoped({
+                                "schema": "tiangong.v3.user_guidance.v1",
+                                "current_user_guidance": guidance,
+                                "instruction": "复核期间用户追加了要求。请按最新要求继续，旧候选须重新复核。",
+                            }, on_chunk=None, on_reasoning_chunk=None)
+                            continue
+                        final_chain_status = "complete"
+                        break
+                    if decision == "continue":
+                        shenti, huifu = _llm_jixu_scoped(
+                            feedback, on_chunk=None, on_reasoning_chunk=None,
+                        )
+                        continue
+                    final_guard_exhausted = True
+                    final_chain_status = "incomplete"
+                    huifu = _unapproved_reply(feedback["review"])
+                    break
                 if quality_history and not response_only_without_tools:
                     review_feedback = review_session.review(
                         run_state, quality_history, huifu,
@@ -4033,13 +4105,15 @@ class Zongdiaodu:
                                 "simple_chain_repeat_limit",
                                 "Repeat observation budget",
                                 "done",
-                                "Read-only verification repeated after a verified write; delivery accepted.",
+                                "Read-only verification repeated; candidate ready for completion review." if judge_completion else "Read-only verification repeated after a verified write; delivery accepted.",
                                 meta={
                                     "repeat_key": tool_call_key,
                                     "repeat_count": repeat_count,
-                                    "delivery_accepted": True,
+                                    "delivery_accepted": not judge_completion,
                                 },
                             )
+                        if judge_completion:
+                            continue
                         break
                     # 单工具重复不再作为卡死判据（误伤合法重跑/校验）；
                     # 只记录诊断，卡死统一由状态级监视器判定。
@@ -4344,6 +4418,8 @@ class Zongdiaodu:
                         "Returned the authoritative Life receipt without another model or tool call.",
                         meta=_simple_chain_learning_receipt(quality_payload),
                     )
+                if judge_completion:
+                    continue
                 break
             model_quality_payload = _simple_chain_model_payload(quality_payload)
             try:
@@ -4413,9 +4489,39 @@ class Zongdiaodu:
                 run_state["stage"] = "model_deciding"
                 _simple_chain_save_run_state(run_state)
             if run_control:
-                run_control.step("llm_continue", "model integrates tool result", "done", _llm_reply_progress_summary(huifu))
+                run_control.step("llm_continue", "model integrates tool result", "done", ("候选响应已返回，完成状态待对抗智能体确认。" if judge_completion else _llm_reply_progress_summary(huifu)))
 
-        if not final_guard_exhausted:
+        if judge_completion:
+            cancelled = bool(run_control and getattr(run_control, "should_stop", lambda: False)())
+            if not final_guard_exhausted and not cancelled:
+                candidate = _render_delivery(huifu, approved=True)
+                if not completion_session.approved(run_state, quality_history, candidate):
+                    # Includes any future automatic closeout added outside the
+                    # normal no-tool branch: it must never bypass the judge.
+                    feedback = _judge_candidate()
+                    if feedback["review"]["decision"] != "complete":
+                        final_guard_exhausted = True
+                        final_chain_status = "incomplete"
+                        huifu = _unapproved_reply(feedback["review"])
+                if not final_guard_exhausted:
+                    final_chain_status = "complete"
+                    report = run_state["adversarial_completion"]["reports"][-1]
+                    run_state["terminal_reason"] = report["reason"]
+                    run_state["last_transition"] = {
+                        "type": "complete", "source": "adversarial_agent", "reason": report["reason"],
+                        "round": int(run_state.get("round") or 0),
+                        "at": datetime.now().isoformat(timespec="seconds"),
+                    }
+                    _simple_chain_emit_event(run_state, "chain_completed", report["reason"],
+                                             "adversarial_agent", extra={"status": "complete"})
+            if cancelled:
+                final_guard_exhausted = True
+                final_chain_status = "force_stopped"
+                huifu = "任务已停止，最终结果未提交。"
+            elif final_guard_exhausted and final_chain_status == "complete":
+                final_chain_status = "incomplete"
+                huifu = "任务尚未取得对抗智能体的完成确认，最终结果未提交。"
+        elif not final_guard_exhausted:
             contract_now, final_allowed, final_chain_status, final_reasons = _simple_chain_life_completion_gate(
                 xiaoxi,
                 quality_history,
@@ -4462,12 +4568,7 @@ class Zongdiaodu:
         QUANZHUIXIAN.jilu_kuadu(zhuizong_id, "LLM_diaoyong", "wancheng", f"simple_chain_tools={gongju_cishu};status={final_chain_status}")
         if run_control:
             run_control.step("finalize_reply", "finalize reply", "running", "Simple chain is cleaning the final reply.")
-        huifu = re.sub(r'<tool_call\b[^>]*>.*?</tool_call>', '', huifu, flags=re.DOTALL | re.IGNORECASE).strip()
-        huifu = re.sub(r'<function_?calls?\b[^>]*>.*?(?:</function_?calls?>|$)', '', huifu, flags=re.DOTALL | re.IGNORECASE).strip()
-        huifu = re.sub(r'<invoke\b[^>]*>.*?</invoke>', '', huifu, flags=re.DOTALL | re.IGNORECASE).strip()
-        huifu, self.zuihou_biaoxian = _tiqu_biaoxian(huifu, xiaoxi)
-        huifu = _append_shengcheng_meiti(huifu, generated_media)
-        huifu = _append_delivery_media_tags(huifu, [] if final_guard_exhausted else generated_attachments, xiaoxi)
+        huifu = _render_delivery(huifu, approved=not final_guard_exhausted)
         if isinstance(run_state, dict) and final_chain_status != "clarify":
             run_state["status"] = final_chain_status
             if final_chain_status == "failed":

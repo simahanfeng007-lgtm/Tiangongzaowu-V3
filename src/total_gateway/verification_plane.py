@@ -14,7 +14,7 @@ from __future__ import annotations
 # experience-memory, native world-observation and inquiry identity boundaries.
 # 1.34 versions mutable execution receipts and ordered composition feedback.
 # 1.36 removes prose-derived task gates; structured evidence and authority remain.
-# 1.37 adds opt-in, bounded advisory review without a new completion authority.
-VERIFICATION_PLANE_VERSION = "1.37"
+# 1.38 makes the isolated adversarial agent the default task completion authority.
+VERIFICATION_PLANE_VERSION = "1.38"
 
 __all__ = ["VERIFICATION_PLANE_VERSION"]

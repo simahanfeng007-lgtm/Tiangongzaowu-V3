@@ -62,8 +62,8 @@ def enabled(monkeypatch):
     monkeypatch.setenv("TIANGONG_ADVERSARIAL_REVIEW", "advisory")
 
 
-def test_default_off_makes_no_call_and_no_state(monkeypatch):
-    monkeypatch.delenv("TIANGONG_ADVERSARIAL_REVIEW")
+def test_explicit_off_makes_no_call_and_no_state(monkeypatch):
+    monkeypatch.setenv("TIANGONG_ADVERSARIAL_REVIEW", "off")
     client, state = Client(), run_state()
     assert session(client).review(state, observations(), "done", remaining_seconds=120) is None
     assert not client.calls and "adversarial_review" not in state
@@ -232,7 +232,8 @@ def test_tool_observation_marks_old_review_stale_without_dropping_history(monkey
 
 
 @pytest.mark.parametrize("protocol", ["openai_chat_completions", "openai_responses", "anthropic_messages"])
-def test_review_reaches_wire_with_native_history_without_fabricating_tool_result(endpoint, protocol):
+@pytest.mark.parametrize("schema", [review.SCHEMA, review.COMPLETION_SCHEMA])
+def test_feedback_reaches_wire_with_native_history_without_fabricating_tool_result(endpoint, protocol, schema):
     from dataclasses import replace
     from v3.gutong.gutong_ceng import GutongCeng
     from v3.shenti_zhuangtai import ShentiZhuangtai
@@ -254,11 +255,14 @@ def test_review_reaches_wire_with_native_history_without_fabricating_tool_result
             "__provider_history": [{"turn": turn, "results": [{"content": "original-result"}]}]}).payload
         seen.append(json.dumps(wire, ensure_ascii=False))
         return "继续核验"
-    feedback = {"schema": review.SCHEMA, "advisory_only": True,
+    feedback = {"schema": schema, "advisory_only": schema == review.SCHEMA,
                 "review": {"finding": "x" * 9_000 + "CURRENT_REVIEW_EVIDENCE"}}
     GutongCeng(callback).jixu("system", feedback, ShentiZhuangtai(), "task",
                              assistant_messages=["old-observation"], stable_user_message="original-task",
                              include_current_result=True)
     assert "CURRENT_REVIEW_EVIDENCE" in seen[0]
     assert "original-result" in seen[0] and seen[0].count('"call_original"') == 2
-    assert "advisory_only" in seen[0] and "模型复核建议说明" in seen[0]
+    assert "advisory_only" in seen[0]
+    assert ("对抗智能体完成裁决" if schema == review.COMPLETION_SCHEMA else "模型复核建议说明") in seen[0]
+    if schema == review.COMPLETION_SCHEMA:
+        assert "也不必全部采纳" not in seen[0]

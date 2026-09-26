@@ -1433,6 +1433,12 @@ class DuihuaQiaojie:
                 xie_duihua_huifu(conversation_context, str(huifu or ""), xujie)
                 run_state_meta = simple_chain_meta.get("run_state") if isinstance(simple_chain_meta.get("run_state"), dict) else {}
                 generated_attachments = list(run_state_meta.get("generated_attachments") or []) if isinstance(run_state_meta, dict) else []
+                completion_authority = run_state_meta.get("completion_authority")
+                completion_verdict = run_state_meta.get("adversarial_completion") or {}
+                if completion_authority == "adversarial_agent" and not completion_ok:
+                    # Preserve artifacts in the checkpoint; do not export an
+                    # unapproved candidate as a final attachment.
+                    generated_attachments = []
                 closeout_source = "model"
                 terminal_reason = ""
                 last_transition = {}
@@ -1459,6 +1465,8 @@ class DuihuaQiaojie:
                     "terminal_reason": terminal_reason,
                     "last_transition": last_transition if isinstance(last_transition, dict) else {},
                     "simple_chain_meta": simple_chain_meta,
+                    "completion_authority": completion_authority,
+                    "adversarial_completion": completion_verdict,
                     # FE-02: mark template-origin terminal replies (platform
                     # fallback/incomplete text) so the frontend never presents
                     # them as model-generated assistant text.

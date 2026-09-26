@@ -815,6 +815,9 @@ class FrozenBackendCompatibilityTransport(BackendExecutionTransport):
         *,
         created_at_ms: int,
     ) -> tuple[list[dict[str, Any]], tuple[str, ...]]:
+        if (backend_payload.get("completion_authority") == "adversarial_agent"
+                and backend_payload.get("simple_chain_status") != "complete"):
+            return [], ()
         nested = backend_payload.get("data") if isinstance(backend_payload.get("data"), Mapping) else {}
         run = backend_payload.get("run") if isinstance(backend_payload.get("run"), Mapping) else {}
         raw_items = backend_payload.get("attachments")
@@ -1114,7 +1117,8 @@ class FrozenBackendCompatibilityTransport(BackendExecutionTransport):
                     "task_completed": False,
                 }
             if isinstance(backend_payload, dict):
-                for _structured_key in ("simple_chain_status", "terminal_reason", "last_transition", "origin"):
+                for _structured_key in ("simple_chain_status", "terminal_reason", "last_transition", "origin",
+                                        "completion_authority", "adversarial_completion"):
                     _structured_value = backend_payload.get(_structured_key)
                     if _structured_value not in (None, ""):
                         result_payload[_structured_key] = _structured_value

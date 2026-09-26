@@ -284,6 +284,8 @@ def _simple_chain_run_state_view(run_state: dict[str, Any] | None) -> dict[str, 
         "failures": list(run_state.get("failures") or [])[-8:],
         "gaps": list(run_state.get("gaps") or [])[-8:],
         "adversarial_review": run_state.get("adversarial_review") or {},
+        "completion_authority": run_state.get("completion_authority"),
+        "adversarial_completion": run_state.get("adversarial_completion") or {},
         "completion_correction": (
             run_state.get("completion_correction")
             if isinstance(run_state.get("completion_correction"), dict)
@@ -299,6 +301,16 @@ def _simple_chain_run_state_view(run_state: dict[str, Any] | None) -> dict[str, 
 def _simple_chain_save_run_state(run_state: dict[str, Any] | None) -> None:
     if not isinstance(run_state, dict):
         return
+    if run_state.get("completion_authority") == "adversarial_agent":
+        contract = run_state.get("task_contract")
+        if isinstance(contract, dict):
+            approved = (run_state.get("status") == "complete" and
+                        (run_state.get("adversarial_completion") or {}).get("decision") == "complete")
+            contract["acceptance_status"] = "accepted" if approved else (
+                "blocked" if run_state.get("status") in {"failed", "incomplete", "force_stopped"} else "pending")
+            contract.setdefault("goal_state", {})["completion_percentage"] = 100.0 if approved else None
+            from ..execution_integrity import _refresh_task_contract_hash
+            _refresh_task_contract_hash(contract)
     run_state["updated_at"] = datetime.now().isoformat(timespec="seconds")
     # 预算单点投影：内存 `_live` 实时值在写盘前投影到 budget，磁盘不留 `_live`。
     live = run_state.get("_live") if isinstance(run_state.get("_live"), dict) else None
@@ -1353,6 +1365,9 @@ def _simple_chain_record_observation(run_state: dict[str, Any] | None, payload: 
         return
     if run_state.get("adversarial_review"):
         run_state["adversarial_review"]["coverage"] = "stale_after_tool_observation"
+    if run_state.get("adversarial_completion"):
+        run_state["adversarial_completion"]["decision"] = "pending"
+        run_state["adversarial_completion"]["coverage"] = "stale_after_tool_observation"
     run_state["round"] = int(run_state.get("round") or 0) + 1
     if run_state.get("active_composition_ref"):
         payload["composition_ref"] = dict(run_state["active_composition_ref"])
