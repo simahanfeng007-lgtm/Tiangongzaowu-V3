@@ -30,7 +30,7 @@
   {
    "kind": "dynamic_import",
    "path": "app/backend/tiangong-backend/omni_body_skill/tools/omni_body_tool.py",
-   "line": 1611,
+   "line": 1620,
    "target": "<__import__>",
    "classification": "verified",
    "verified_category": "optional_dependency"
@@ -503,7 +503,7 @@
   {
    "kind": "dynamic_import",
    "path": "src/omni_body_skill/tools/omni_body_tool.py",
-   "line": 1611,
+   "line": 1620,
    "target": "<__import__>",
    "classification": "verified",
    "verified_category": "optional_dependency"

@@ -211,7 +211,8 @@ def test_dispatcher_auto_binds_production_and_fact_commit_survives_model_failure
     ("openai_chat_completions", 768), ("openai_responses", 768),
     ("anthropic_messages", 2048), ("anthropic_messages", 768),
 ])
-def test_http_semantic_scope_pins_endpoint_and_excludes_task_tools_history_audio(monkeypatch, protocol_family, output_limit, provider, model_name):
+@pytest.mark.parametrize('review_role', ['auxiliary', 'judge', 'challenger'])
+def test_http_semantic_scope_pins_endpoint_and_excludes_task_tools_history_audio(monkeypatch, protocol_family, output_limit, provider, model_name, review_role):
     from v3.jineng import http_kehuduan as http
     from v3.model_protocol_contract import ProviderTurnEnvelope
     from v3.endpoint_security import EndpointBinding
@@ -245,7 +246,7 @@ def test_http_semantic_scope_pins_endpoint_and_excludes_task_tools_history_audio
     client = http.HttpKehuduan()
     try:
         with client.scoped_native_history(({"private_history": True},)), client.scoped_native_audio(("private.wav",)):
-            with client.scoped_semantic_inference(endpoint=pinned, max_output_tokens=output_limit):
+            with client.scoped_call_context(review_role), client.scoped_semantic_inference(endpoint=pinned, max_output_tokens=output_limit):
                 result = client.llm_diaoyong("interpret records", "records")
             assert client._native_history.get() == ({"private_history": True},)
             assert client._native_audio_paths.get() == ("private.wav",)
@@ -267,7 +268,7 @@ def test_http_semantic_scope_pins_endpoint_and_excludes_task_tools_history_audio
         assert (wire["thinking"] == {"type": "enabled", "budget_tokens": 2047}
             if output_limit == 2048 else wire["thinking"] == {"type": "disabled"})
     if provider.startswith("deepseek") and protocol_family == "openai_chat_completions":
-        if model_name == "deepseek-reasoner":
+        if model_name == "deepseek-reasoner" or review_role in {'judge', 'challenger'}:
             assert payload["thinking"] == {"type": "enabled"}
             assert payload["reasoning_effort"] == "high"
         else:

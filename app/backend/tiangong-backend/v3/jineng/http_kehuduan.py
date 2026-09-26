@@ -799,7 +799,8 @@ class HttpKehuduan:
     @contextmanager
     def scoped_semantic_inference(self, *, endpoint, max_output_tokens: int = 2048):
         """Use one resolved endpoint and an isolated, tool-free interpretation turn."""
-        token = self._semantic_inference.set((endpoint, max(128, min(4096, int(max_output_tokens)))))
+        limit = 8192 if _MODEL_CALL_ROLE.get() in {"judge", "challenger"} else 4096
+        token = self._semantic_inference.set((endpoint, max(128, min(limit, int(max_output_tokens)))))
         try:
             with self.scoped_tools(disable_tools=True), self.scoped_native_history(()), self.scoped_native_audio(()):
                 yield
@@ -1033,7 +1034,8 @@ class HttpKehuduan:
                 payload.pop("max_completion_tokens", None)
                 payload.pop("max_output_tokens", None)
                 payload["max_tokens"] = semantic_inference[1]
-                if (pid in {"deepseek", "deepseek_v4"} and endpoint.protocol_family == ProtocolFamily.OPENAI_CHAT_COMPLETIONS.value
+                if (_MODEL_CALL_ROLE.get() not in {"judge", "challenger"}
+                        and pid in {"deepseek", "deepseek_v4"} and endpoint.protocol_family == ProtocolFamily.OPENAI_CHAT_COMPLETIONS.value
                         and (model_name.lower() == "deepseek-chat"
                              or model_name.lower().startswith(("deepseek-flash", "deepseek-v4")))):
                     # This bounded, tool-free call extracts a small typed record.

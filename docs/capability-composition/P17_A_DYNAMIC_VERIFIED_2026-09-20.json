@@ -6,11 +6,6 @@
    "reason": "Loads a fixed internal runtime module; the Omni loader additionally pins the resolved source path.",
    "reviewed_line": "module = importlib.import_module(module_name)"
   },
-  "app/backend/tiangong-backend/omni_body_skill/tools/omni_body_tool.py:1611": {
-   "category": "optional_dependency",
-   "reason": "Checks a fixed list of optional parser or document runtime dependencies.",
-   "reviewed_line": "__import__(mod)"
-  },
   "app/backend/tiangong-backend/omni_body_skill/tools/omni_body_tool.py:907": {
    "category": "tool_handler_dispatch",
    "reason": "Resolves the method bound by the pinned dictionary after readiness and authorization checks.",
@@ -275,11 +270,6 @@
    "category": "lazy_module_import",
    "reason": "Loads a fixed internal runtime module; the Omni loader additionally pins the resolved source path.",
    "reviewed_line": "module = importlib.import_module(module_name)"
-  },
-  "src/omni_body_skill/tools/omni_body_tool.py:1611": {
-   "category": "optional_dependency",
-   "reason": "Checks a fixed list of optional parser or document runtime dependencies.",
-   "reviewed_line": "__import__(mod)"
   },
   "src/omni_body_skill/tools/omni_body_tool.py:907": {
    "category": "tool_handler_dispatch",
@@ -615,6 +605,16 @@
    "category": "model_field_iteration",
    "reason": "Reads a fixed set of contract fields for identity, uniqueness, or schema validation.",
    "reviewed_line": "values = tuple(getattr(primitive, field))"
+  },
+  "app/backend/tiangong-backend/omni_body_skill/tools/omni_body_tool.py:1620": {
+   "category": "optional_dependency",
+   "reason": "Checks a fixed list of optional parser or document runtime dependencies.",
+   "reviewed_line": "__import__(mod)"
+  },
+  "src/omni_body_skill/tools/omni_body_tool.py:1620": {
+   "category": "optional_dependency",
+   "reason": "Checks a fixed list of optional parser or document runtime dependencies.",
+   "reviewed_line": "__import__(mod)"
   }
  },
  "summary": {

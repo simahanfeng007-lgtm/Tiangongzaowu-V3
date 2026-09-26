@@ -3677,10 +3677,12 @@ class BodyRuntime:
 
     def _action_browser_chrome_screenshot(self, op_id: str, target: Optional[str], args: Dict[str, Any]) -> Dict[str, Any]:
         Image, ImageDraw, _ = self._pil()
-        extracted = self._action_browser_chrome_extract_text(op_id, target, args)
-        # MM-FE-05: honor the target path contract like every other action;
-        # args.output is only a fallback for callers that pass it explicitly.
-        output = self._resolve(target or args.get("output") or "browser_snapshot.png")
+        source = args.get("url") or args.get("source") or target
+        extracted = self._action_browser_chrome_extract_text(op_id, source, args)
+        # An explicit source separates the input page from the output target.
+        # Legacy callers may still put the page in target and use args.output.
+        output_target = target if (args.get("url") or args.get("source")) and target else args.get("output")
+        output = self._resolve(output_target or "browser_snapshot.png")
         snapshots = self._snapshot(op_id, [output])
         w, h = int(args.get("width", 1280)), int(args.get("height", 1600))
         im = Image.new("RGB", (w, h), color=args.get("background", "white"))

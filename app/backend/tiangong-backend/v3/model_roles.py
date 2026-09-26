@@ -10,10 +10,12 @@ def public_model(endpoint):
 
 def configured_models(executor):
     settings = _safe_settings()
-    identities = {executor.provider_identity, *peizhi.L4_PROVIDER_IDS}
-    for field in ("_provider_inputs", "_endpoint_profiles"):
+    # Shared credential aliases do not mean the user configured every bundled
+    # model/preset, possibly on a different billing endpoint.
+    identities = {executor.provider_identity}
+    for field in ("_provider_inputs", "_endpoint_profiles", "_api_keys", "_base_urls"):
         if isinstance(settings.get(field), dict):
-            identities.update(settings[field])
+            identities.update(key for key, value in settings[field].items() if value)
     models, seen = [executor], {(executor.base_url, executor.model_name, executor.protocol_family)}
     for identity in sorted(identities):
         try:
@@ -37,7 +39,7 @@ def select_roles(models):
     judge = alternatives[0] if alternatives else executor
     challenger = alternatives[1] if len(alternatives) > 1 else None
     return {"executor": executor, "judge": judge, "challenger": challenger,
-            "fallbacks": [e for e in alternatives[1:] if e is not challenger] + ([executor] if alternatives else []),
+            "fallbacks": ([executor] if alternatives else []) + [e for e in alternatives[1:] if e is not challenger],
             "mode": "multiple_models" if alternatives else "single_model_isolated_contexts"}
 
 

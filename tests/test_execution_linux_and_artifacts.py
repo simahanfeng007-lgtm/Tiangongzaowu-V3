@@ -185,3 +185,19 @@ def test_media_encoder_fits_real_sandbox_and_produces_decodable_frames(runner):
         capture_output=True, text=True, check=True)
     info = json.loads(probe.stdout)['streams'][0]
     assert (info['width'], info['height'], int(info['nb_frames'])) == (160, 80, 2)
+
+
+@pytest.mark.parametrize('explicit_source', [True, False])
+def test_portable_browser_snapshot_keeps_html_input_and_output_distinct(tmp_path, explicit_source):
+    from PIL import Image
+    source = '<html><title>Fixture</title><body>Actual content 42</body></html>'
+    (tmp_path / 'page.html').write_text(source)
+    runtime = BodyRuntime(BodyRuntimeConfig(workspace=str(tmp_path)))
+    target = 'snapshot.png' if explicit_source else 'page.html'
+    args = {'source': 'page.html'} if explicit_source else {'output': 'snapshot.png'}
+    result = runtime.run('browser.chrome.screenshot', target, args)
+    assert result['success'], result
+    assert (tmp_path / 'page.html').read_text() == source
+    with Image.open(tmp_path / 'snapshot.png') as image:
+        assert image.size == (1280, 1600)
+        assert image.convert('L').getextrema()[0] < 255

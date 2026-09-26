@@ -276,6 +276,13 @@ Ranges use Unicode character offsets (start >= 0, 1 <= length <= 12000). Request
 evidence by observation ref, the full evidence index by evidence_index_ref, or the candidate
 by candidate_ref. These are host reads of retained data, not new tool executions or permissions.
 Ask for omitted/truncated evidence before proposing a new check that could duplicate it.
+supplied_coverage gives exact ranges already present in this packet (including evidence_pages).
+An original excerpt can remain marked truncated after its missing pages were supplied. Consult
+missing_ranges before requesting pages; do not request an already supplied range or empty index.
+If a required file is missing and no observation exists, return an actionable continue verdict;
+re-reading the candidate or empty index cannot manufacture the missing file. workspace_root is
+the host's current workspace, when available. current_artifact_versions are fresh observations:
+an earlier content read with a different file hash does not prove the current file's content.
 Use decision continue while requesting pages. For long candidates request all missing chunks;
 complete requires the entire exact candidate to have been supplied in this review conversation.
 decision: complete | continue | blocked. reason: a concise explanation in the user's language.
@@ -296,12 +303,14 @@ COMPLETION_INSTRUCTION = (
 
 def completion_packet(run_state, observations, candidate_reply):
     from .review_evidence import artifact_versions
+    from .simple_chain.kernel import _delivery_workspace_root
     packet = evidence_packet(run_state, observations, candidate_reply)
     candidate = str(candidate_reply or "")
     packet.update(schema=COMPLETION_SCHEMA, candidate_reply=candidate[:12_000],
                   candidate_reply_truncated=len(candidate) > 12_000,
                   candidate_ref="candidate_" + _sha(candidate), candidate_chars=len(candidate),
                   current_artifact_versions=artifact_versions(run_state),
+                  workspace_root=_delivery_workspace_root(),
                   previous_review=(run_state.get("adversarial_completion") or {}).get("reports", [])[-1:])
     # A changed answer, goal, guidance, attachment list or observation needs a
     # fresh verdict. This binds the actual rendered delivery, not just wording.
@@ -311,8 +320,44 @@ def completion_packet(run_state, observations, candidate_reply):
         "request_id": run_state.get("request_id"), "generation": run_state.get("generation"),
         "attachments": run_state.get("generated_attachments") or [],
         "current_artifact_versions": packet["current_artifact_versions"],
+        "workspace_root": packet["workspace_root"],
     })
     return packet
+
+
+def _supplied_coverage(packet, index, candidate_ranges):
+    """Describe delivered bytes, without interpreting the task or artifact."""
+    totals = {entry['ref']: entry['chars'] for entry in index}
+    totals[packet['candidate_ref']] = packet['candidate_chars']
+    totals[packet['evidence_index_ref']] = len(_json(index))
+    supplied = {packet['candidate_ref']: list(candidate_ranges)}
+    # The initial index may be a suffix. Only call it fully supplied when it is
+    # complete; explicit index pages fill any remaining gap.
+    if len(packet.get('evidence_index', [])) == len(index):
+        supplied[packet['evidence_index_ref']] = [(0, totals[packet['evidence_index_ref']])]
+    for entry in packet['observations'] + packet.get('evidence_pages', []):
+        start = entry.get('start', 0)
+        end = start + len(entry['data_excerpt'])
+        totals.setdefault(entry['ref'], entry.get('total_chars', end))
+        supplied.setdefault(entry['ref'], []).append((start, end))
+    result = []
+    for ref, total in totals.items():
+        merged = []
+        for start, end in sorted(supplied.get(ref, [])):
+            if merged and start <= merged[-1][1]:
+                merged[-1][1] = max(merged[-1][1], end)
+            else:
+                merged.append([start, end])
+        missing, cursor = [], 0
+        for start, end in merged:
+            if start > cursor:
+                missing.append([cursor, start])
+            cursor = max(cursor, end)
+        if cursor < total:
+            missing.append([cursor, total])
+        result.append({'ref': ref, 'total_chars': total, 'supplied_ranges': merged,
+                       'missing_ranges': missing, 'fully_supplied': not missing})
+    return result
 
 
 def parse_completion(output, packet):
@@ -395,7 +440,7 @@ class CompletionSession(ReviewSession):
         from .context_compactor import estimate_tokens
         from .model_roles import input_budget
         text = _json(packet)
-        if estimate_tokens(system + text) > input_budget(endpoint, output_reserve=4096):
+        if estimate_tokens(system + text) > input_budget(endpoint, output_reserve=8192):
             raise ValueError("judge_input_budget")
         if not self._busy.acquire(blocking=False):
             raise ValueError("judge_still_running")
@@ -404,7 +449,7 @@ class CompletionSession(ReviewSession):
                 from contextlib import nullcontext
                 role = "judge" if system == COMPLETION_SYSTEM else "challenger"
                 call_scope = (self.client.scoped_call_context(role) if callable(getattr(self.client, "scoped_call_context", None)) else nullcontext())
-                with call_scope, self.client.scoped_semantic_inference(endpoint=endpoint, max_output_tokens=3072):
+                with call_scope, self.client.scoped_semantic_inference(endpoint=endpoint, max_output_tokens=8192):
                     lifecycle.check()
                     return self.client.llm_diaoyong(system, text, provider_id=endpoint.provider_identity)
             finally:
@@ -461,8 +506,11 @@ class CompletionSession(ReviewSession):
                     record["model_calls"].append({"role": "challenger", "model": public_model(challenger), "status": "unavailable"})
             endpoint = roles["judge"]
             fallback_used = False
+            protocol_retry_used = False
+            retrieval_reminder_used = False
             packet["evidence_pages"] = []
             for retrieval_round in range(16):
+                packet['supplied_coverage'] = _supplied_coverage(packet, index, ranges)
                 available = remaining_seconds - (time.monotonic() - started)
                 if available < 15:
                     raise ValueError("judge_deadline_budget")
@@ -472,6 +520,7 @@ class CompletionSession(ReviewSession):
                 call = {"role": "judge", "model": public_model(endpoint), "status": "started"}
                 record["model_calls"].append(call)
                 call_started = time.monotonic()
+                output = None
                 try:
                     output = self._infer(endpoint, COMPLETION_SYSTEM, packet,
                         seconds=min(30.0, available - 5), cancel_check=cancel_check)
@@ -480,8 +529,36 @@ class CompletionSession(ReviewSession):
                     call["status"] = "completed"
                     call["usage"] = dict(getattr(output, "usage", None) or {})
                     call["elapsed_ms"] = round((time.monotonic() - call_started) * 1000)
-                except Exception:
+                except Exception as exc:
                     call["status"] = "unavailable"
+                    call["elapsed_ms"] = round((time.monotonic() - call_started) * 1000)
+                    call["usage"] = dict(getattr(output, "usage", None) or {})
+                    # An invalid JSON verdict (for example complete plus a
+                    # request for more evidence) has no authority. Let the same
+                    # pinned judge correct its protocol once, without changing
+                    # the task, relaxing parsing, or rerunning executor tools.
+                    protocol_error = (
+                        isinstance(output, str) and not model_turn_failure(output)
+                        and isinstance(exc, ValueError)
+                        and (isinstance(exc, json.JSONDecodeError) or str(exc) in {
+                            "completion_output", "completion_fields", "completion_decision",
+                            "completion_reason", "completion_bounds", "completion_gap",
+                            "completion_evidence_requests", "completion_evidence_range",
+                            "completion_inconsistent", "completion_missing_next_step",
+                            "finding_fields", "finding_text", "requirement_not_in_user_input",
+                            "unknown_evidence_reference", "duplicate_key", "nonfinite"}))
+                    if protocol_error:
+                        call["protocol_error"] = "invalid_json" if isinstance(exc, json.JSONDecodeError) else str(exc)
+                        call["response_sha256"] = _sha(str(output))
+                        if not protocol_retry_used and not (cancel_check and cancel_check()):
+                            protocol_retry_used = True
+                            packet["protocol_feedback"] = {
+                                "error": call["protocol_error"],
+                                "instruction": "Your previous response was invalid and was not applied. Return the required JSON schema. Use continue when requesting evidence or reporting material gaps; only complete with empty findings, coverage_gaps and evidence_requests. Reassess the same unchanged task and evidence."}
+                            continue
+                        # Do not shop for another judge to accept a rejected
+                        # verdict. Transport failures retain bounded fallback.
+                        raise
                     if not fallback_used and roles["fallbacks"] and not self._busy.locked() and not (cancel_check and cancel_check()):
                         endpoint = roles["fallbacks"][0]
                         fallback_used = True
@@ -507,11 +584,15 @@ class CompletionSession(ReviewSession):
                     if value["decision"] == "complete":
                         self._approved_basis = packet["basis_sha256"]
                     break
+                repeated_refs = []
                 for request in requests:
                     ref, start, length = request["ref"], request["start"], request["length"]
                     key = (ref, start, length)
                     if key in seen_requests:
-                        raise ValueError("judge_repeated_evidence_request")
+                        if retrieval_reminder_used:
+                            raise ValueError("judge_repeated_evidence_request")
+                        repeated_refs.append(ref)
+                        continue
                     seen_requests.add(key)
                     if ref == packet["candidate_ref"] or ref == packet["evidence_index_ref"]:
                         raw = candidate if ref == packet["candidate_ref"] else _json(index)
@@ -533,6 +614,11 @@ class CompletionSession(ReviewSession):
                         entry = {"ref": ref, "start": start, "total_chars": len(raw), "data_excerpt": raw[start:start + length]}
                     packet["evidence_pages"].append(entry)
                 packet["retrieval_instruction"] = "Requested original data follows in evidence_pages. Continue reviewing this same candidate; no tools were rerun."
+                if repeated_refs:
+                    retrieval_reminder_used = True
+                    packet['retrieval_feedback'] = {
+                        'already_supplied_refs': sorted(set(repeated_refs)),
+                        'instruction': 'These exact ranges were already supplied in evidence_pages and were not read again. Review their content now. If the required result is missing or wrong, return continue with an actionable finding instead of requesting the same evidence again. Another duplicate request ends this bounded review without approval.'}
             else:
                 raise ValueError("judge_retrieval_budget")
         except ModelCallStopped as exc:
