@@ -286,6 +286,8 @@ def _simple_chain_run_state_view(run_state: dict[str, Any] | None) -> dict[str, 
         "adversarial_review": run_state.get("adversarial_review") or {},
         "completion_authority": run_state.get("completion_authority"),
         "adversarial_completion": run_state.get("adversarial_completion") or {},
+        "review_phase": run_state.get("review_phase") or "executing",
+        "review_evidence_count": len(run_state.get("review_evidence_index") or []),
         "completion_correction": (
             run_state.get("completion_correction")
             if isinstance(run_state.get("completion_correction"), dict)
@@ -1371,6 +1373,13 @@ def _simple_chain_record_observation(run_state: dict[str, Any] | None, payload: 
     run_state["round"] = int(run_state.get("round") or 0) + 1
     if run_state.get("active_composition_ref"):
         payload["composition_ref"] = dict(run_state["active_composition_ref"])
+    from ..review_evidence import record_observation
+    try:
+        record_observation(run_state, payload)
+    except Exception:
+        # A bounded UI checkpoint is never a replacement for lost evidence.
+        # Keep execution facts intact and make the missing projection visible.
+        run_state["review_evidence_error"] = "observation_persistence_failed"
     action = str(payload.get("tool_action") or "")
     if action == "skill.route":
         run_state["status"] = "skill_routing"

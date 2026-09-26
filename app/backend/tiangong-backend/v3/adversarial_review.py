@@ -93,17 +93,35 @@ def evidence_packet(run_state, observations, candidate_reply):
                      "truncated": len(raw) > len(excerpt)})
         chars += len(excerpt)
     rows.reverse()
+    index = run_state.get("review_evidence_index") or []
+    evidence_error = run_state.get("review_evidence_error")
+    if index:
+        from .review_evidence import page
+        rows, chars = [], 0
+        for entry in reversed(index[-12:]):
+            try:
+                row = page(run_state, entry["ref"], 0, min(6000, 30000 - chars))
+                rows.append(row)
+                chars += len(row["data_excerpt"])
+            except Exception:
+                evidence_error = "stored_observation_unavailable"
+            if chars >= 30000:
+                break
+        rows.reverse()
     task = str(run_state.get("original_user_goal") or "")
     guidance = list(run_state.get("review_user_guidance") or [])
     # All observed payload identities, including omitted older rows, bind the
     # candidate. Replies may change wording without causing a new model call.
     basis = _sha({"task": task, "guidance": guidance,
-                  "observations": [{key: p[key] for key in OBSERVATION_KEYS if key in p}
-                                   for p in observed]})
+                  "observations": index or [{key: p[key] for key in OBSERVATION_KEYS if key in p}
+                                   for p in observed], "evidence_error": evidence_error})
     candidate = str(candidate_reply or "")
     return {"schema": SCHEMA, "task": task, "user_guidance": guidance,
             "basis_sha256": basis, "observations": rows,
-            "omitted_observations": len(observed) - len(rows),
+            "omitted_observations": len(index or observed) - len(rows),
+            "evidence_index": index[-64:], "evidence_count": len(index or observed),
+            "evidence_index_ref": "index_" + _sha(index),
+            "evidence_error": evidence_error,
             "candidate_reply": candidate[:6_000], "candidate_reply_truncated": len(candidate) > 6_000,
             "previous_review": (run_state.get("adversarial_review") or {}).get("reports", [])[-1:]}
 
@@ -234,7 +252,7 @@ class ReviewSession:
                 "instruction": FEEDBACK_INSTRUCTION}
 
 
-COMPLETION_SCHEMA = "tiangong.adversarial-completion.v1"
+COMPLETION_SCHEMA = "tiangong.adversarial-completion.v2"
 MAX_COMPLETION_ATTEMPTS = 6
 COMPLETION_SYSTEM = """You are the adversarial agent responsible for deciding whether the user's
 entire task is complete. The executor's answer is only a candidate. Challenge its completion claim
@@ -252,7 +270,14 @@ repairs. If necessary capabilities, input or authorization are unavailable, deci
 what is needed. Do not loop on irrelevant objections. If the executor rebuts a finding, assess the
 rebuttal on its merits. Only you decide semantic completion; your verdict does not grant permissions
 or turn model claims into execution facts. Checks and repairs go through the existing execution tools.
-Return ONLY JSON with exactly decision, reason, findings, coverage_gaps.
+Return ONLY JSON with exactly decision, reason, findings, coverage_gaps, evidence_requests.
+evidence_requests: up to 3 objects {ref: string, start: integer, length: integer}, or [].
+Ranges use Unicode character offsets (start >= 0, 1 <= length <= 12000). Request original
+evidence by observation ref, the full evidence index by evidence_index_ref, or the candidate
+by candidate_ref. These are host reads of retained data, not new tool executions or permissions.
+Ask for omitted/truncated evidence before proposing a new check that could duplicate it.
+Use decision continue while requesting pages. For long candidates request all missing chunks;
+complete requires the entire exact candidate to have been supplied in this review conversation.
 decision: complete | continue | blocked. reason: a concise explanation in the user's language.
 findings: at most 3 objects with exactly requirement_quote, claim, evidence_refs, proposed_check,
 failure_condition. Each requirement_quote must be an exact substring of task or user_guidance.
@@ -270,17 +295,22 @@ COMPLETION_INSTRUCTION = (
 
 
 def completion_packet(run_state, observations, candidate_reply):
+    from .review_evidence import artifact_versions
     packet = evidence_packet(run_state, observations, candidate_reply)
     candidate = str(candidate_reply or "")
     packet.update(schema=COMPLETION_SCHEMA, candidate_reply=candidate[:12_000],
                   candidate_reply_truncated=len(candidate) > 12_000,
+                  candidate_ref="candidate_" + _sha(candidate), candidate_chars=len(candidate),
+                  current_artifact_versions=artifact_versions(run_state),
                   previous_review=(run_state.get("adversarial_completion") or {}).get("reports", [])[-1:])
     # A changed answer, goal, guidance, attachment list or observation needs a
     # fresh verdict. This binds the actual rendered delivery, not just wording.
     packet["basis_sha256"] = _sha({
         "evidence": packet["basis_sha256"], "candidate": candidate,
         "run_id": run_state.get("run_id"),
+        "request_id": run_state.get("request_id"), "generation": run_state.get("generation"),
         "attachments": run_state.get("generated_attachments") or [],
+        "current_artifact_versions": packet["current_artifact_versions"],
     })
     return packet
 
@@ -290,7 +320,7 @@ def parse_completion(output, packet):
         raise ValueError("completion_output")
     value = json.loads(output, object_pairs_hook=_pairs,
                        parse_constant=lambda _: (_ for _ in ()).throw(ValueError("nonfinite")))
-    if type(value) is not dict or set(value) != {"decision", "reason", "findings", "coverage_gaps"}:
+    if type(value) is not dict or set(value) != {"decision", "reason", "findings", "coverage_gaps", "evidence_requests"}:
         raise ValueError("completion_fields")
     if value["decision"] not in {"complete", "continue", "blocked"}:
         raise ValueError("completion_decision")
@@ -301,11 +331,21 @@ def parse_completion(output, packet):
         raise ValueError("completion_bounds")
     if any(type(g) is not str or not g.strip() or len(g) > 600 for g in gaps):
         raise ValueError("completion_gap")
-    if value["decision"] == "complete" and (findings or gaps):
+    requests = value["evidence_requests"]
+    if type(requests) is not list or len(requests) > 3:
+        raise ValueError("completion_evidence_requests")
+    refs = {row["ref"] for row in packet["observations"] + packet.get("evidence_index", [])}
+    refs.update((packet.get("evidence_index_ref"), packet.get("candidate_ref")))
+    for request in requests:
+        if (type(request) is not dict or set(request) != {"ref", "start", "length"}
+                or type(request["ref"]) is not str or request["ref"] not in refs
+                or type(request["start"]) is not int or request["start"] < 0
+                or type(request["length"]) is not int or not 1 <= request["length"] <= 12000):
+            raise ValueError("completion_evidence_range")
+    if value["decision"] == "complete" and (findings or gaps or requests):
         raise ValueError("completion_inconsistent")
-    if value["decision"] == "continue" and not (findings or gaps):
+    if value["decision"] == "continue" and not (findings or gaps or requests):
         raise ValueError("completion_missing_next_step")
-    refs = {row["ref"] for row in packet["observations"]}
     sources = [packet["task"], *packet["user_guidance"]]
     for item in findings:
         if type(item) is not dict or set(item) != {
@@ -324,73 +364,192 @@ def parse_completion(output, packet):
 
 
 class CompletionSession(ReviewSession):
-    """Only a fresh response from this isolated model call can approve delivery.
+    """One pinned judge owns completion; retrieval never executes tools.
 
-    No persisted approval is trusted after restart. Runtime checks provenance,
-    protocol, budgets and cancellation; it does not rejudge the task's meaning.
+    Saved model verdicts are history only. Approval is bound to this process,
+    run identity, current evidence and exact delivery, and is invalidated by
+    cancellation or new input. Each model receives an isolated context.
     """
-    def __init__(self, client, *, endpoint_resolver=None):
+    def __init__(self, client, *, endpoint_resolver=None, roles_resolver=None):
         super().__init__(client, endpoint_resolver=endpoint_resolver)
+        from .model_roles import configured_models, select_roles
         self._approved_basis = None
+        self._cancel_check = None
+        self._roles = None
+        # Pin at run construction, before the executor starts work. Injection
+        # permits deterministic protocol tests without probing real profiles.
+        try:
+            executor = self.endpoint_resolver()
+            models = ([executor] if endpoint_resolver is not None else configured_models(executor))
+            self._roles = roles_resolver() if roles_resolver else select_roles(models)
+        except Exception:
+            pass
 
     def approved(self, run_state, observations, candidate_reply):
+        if self._cancel_check and self._cancel_check():
+            self._approved_basis = None
         return bool(self._approved_basis and self._approved_basis ==
                     completion_packet(run_state, observations, candidate_reply)["basis_sha256"])
 
+    def _infer(self, endpoint, system, packet, *, seconds, cancel_check):
+        from .context_compactor import estimate_tokens
+        from .model_roles import input_budget
+        text = _json(packet)
+        if estimate_tokens(system + text) > input_budget(endpoint, output_reserve=4096):
+            raise ValueError("judge_input_budget")
+        if not self._busy.acquire(blocking=False):
+            raise ValueError("judge_still_running")
+        def infer(lifecycle):
+            try:
+                from contextlib import nullcontext
+                role = "judge" if system == COMPLETION_SYSTEM else "challenger"
+                call_scope = (self.client.scoped_call_context(role) if callable(getattr(self.client, "scoped_call_context", None)) else nullcontext())
+                with call_scope, self.client.scoped_semantic_inference(endpoint=endpoint, max_output_tokens=3072):
+                    lifecycle.check()
+                    return self.client.llm_diaoyong(system, text, provider_id=endpoint.provider_identity)
+            finally:
+                self._busy.release()
+        return run_model_call(infer, seconds=seconds, child=True, cancel_check=cancel_check)
+
     def judge(self, run_state, observations, candidate_reply, *, remaining_seconds, cancel_check=None):
-        self._approved_basis = None
+        from .model_roles import public_model
+        from .review_evidence import page
+        self._approved_basis, self._cancel_check = None, cancel_check
         packet = completion_packet(run_state, observations, candidate_reply)
         state = run_state.setdefault("adversarial_completion", {
             "schema": COMPLETION_SCHEMA, "authority": "adversarial_agent", "attempts": 0, "reports": []})
-        state.update(decision="unavailable", current_basis_sha256=packet["basis_sha256"])
+        state.update(schema=COMPLETION_SCHEMA, decision="unavailable", current_basis_sha256=packet["basis_sha256"])
         record = {"basis_sha256": packet["basis_sha256"], "decision": "unavailable",
                   "origin": "adversarial_agent", "reason": "未取得有效完成裁决。",
-                  "findings": [], "coverage_gaps": [], "input_sha256": _sha(packet),
+                  "findings": [], "coverage_gaps": [], "evidence_requests": [], "input_sha256": _sha(packet),
                   "candidate_sha256": _sha(str(candidate_reply or "")),
                   "evidence_refs": [r["ref"] for r in packet["observations"]],
-                  "omitted_observations": packet["omitted_observations"]}
+                  "omitted_observations": packet["omitted_observations"], "model_calls": []}
         started = time.monotonic()
+        candidate = str(candidate_reply or "")
+        ranges = [(0, min(12000, len(candidate)))]
+        seen_requests = set()
+        index = run_state.get("review_evidence_index") or []
+        full_refs = {r["ref"] for r in index}
         try:
             if state["attempts"] >= MAX_COMPLETION_ATTEMPTS:
                 raise ValueError("judge_budget_exhausted")
             state["attempts"] += 1
-            text = _json(packet)
-            if len(text) > 64_000 or packet["candidate_reply_truncated"]:
-                raise ValueError("judge_input_budget")
+            if run_state.get("run_id"):
+                from .review_evidence import record_candidate
+                record["candidate_object"] = record_candidate(run_state, candidate)
+            if packet.get("evidence_error"):
+                raise ValueError("judge_evidence_unavailable")
             if remaining_seconds < 40:
                 raise ValueError("judge_deadline_budget")
-            if self.client is None or not callable(getattr(self.client, "scoped_semantic_inference", None)):
+            if self.client is None or not callable(getattr(self.client, "scoped_semantic_inference", None)) or not self._roles:
                 raise ValueError("judge_client_unavailable")
-            endpoint = self.endpoint_resolver()
-            record["model"] = {"provider": endpoint.provider_identity, "name": endpoint.model_name,
-                               "protocol": endpoint.protocol_family, "config_fingerprint": endpoint.config_fingerprint}
-            if not self._busy.acquire(blocking=False):
-                raise ValueError("judge_still_running")
-
-            def infer(lifecycle):
+            roles = self._roles
+            record["roles"] = {key: public_model(roles[key]) for key in ("executor", "judge", "challenger") if roles[key]}
+            record["role_mode"] = roles["mode"]
+            # A third model supplies counterexamples only. It cannot cast a
+            # completion vote, create facts or override the single final judge.
+            challenger = roles["challenger"]
+            if challenger and remaining_seconds >= 80:
                 try:
-                    with self.client.scoped_semantic_inference(endpoint=endpoint, max_output_tokens=3072):
-                        lifecycle.check()
-                        return self.client.llm_diaoyong(COMPLETION_SYSTEM, text, provider_id=endpoint.provider_identity)
-                finally:
-                    self._busy.release()
-
-            output = run_model_call(infer, seconds=min(30.0, remaining_seconds - 10),
-                                    child=True, cancel_check=cancel_check)
-            if cancel_check and cancel_check():
-                raise ValueError("judge_cancelled")
-            record.update(parse_completion(output, packet))
-            record.update(response_sha256=_sha(str(output)), call_status="completed")
-            if record["decision"] == "complete":
-                self._approved_basis = packet["basis_sha256"]
+                    output = self._infer(challenger, SYSTEM, packet, seconds=20, cancel_check=cancel_check)
+                    packet["challenger_report"] = parse_review(output, packet)
+                    record["model_calls"].append({"role": "challenger", "model": public_model(challenger), "status": "completed"})
+                except Exception:
+                    record["model_calls"].append({"role": "challenger", "model": public_model(challenger), "status": "unavailable"})
+            endpoint = roles["judge"]
+            fallback_used = False
+            packet["evidence_pages"] = []
+            for retrieval_round in range(16):
+                available = remaining_seconds - (time.monotonic() - started)
+                if available < 15:
+                    raise ValueError("judge_deadline_budget")
+                state["model_call_count"] = int(state.get("model_call_count") or 0) + 1
+                if state["model_call_count"] > 32:
+                    raise ValueError("judge_budget_exhausted")
+                call = {"role": "judge", "model": public_model(endpoint), "status": "started"}
+                record["model_calls"].append(call)
+                call_started = time.monotonic()
+                try:
+                    output = self._infer(endpoint, COMPLETION_SYSTEM, packet,
+                        seconds=min(30.0, available - 5), cancel_check=cancel_check)
+                    parse_packet = {**packet, "evidence_index": index or packet.get("evidence_index", [])}
+                    value = parse_completion(output, parse_packet)
+                    call["status"] = "completed"
+                    call["usage"] = dict(getattr(output, "usage", None) or {})
+                    call["elapsed_ms"] = round((time.monotonic() - call_started) * 1000)
+                except Exception:
+                    call["status"] = "unavailable"
+                    if not fallback_used and roles["fallbacks"] and not self._busy.locked() and not (cancel_check and cancel_check()):
+                        endpoint = roles["fallbacks"][0]
+                        fallback_used = True
+                        record["degraded_to_fallback"] = True
+                        # No native continuation or private reasoning crosses
+                        # models: the fallback sees only the public data packet.
+                        continue
+                    raise
+                if cancel_check and cancel_check():
+                    raise ValueError("judge_cancelled")
+                record["model"] = public_model(endpoint)
+                requests = value["evidence_requests"]
+                if not requests:
+                    if value["decision"] == "complete":
+                        covered = 0
+                        for start, end in sorted(ranges):
+                            if start > covered:
+                                break
+                            covered = max(covered, end)
+                        if covered < len(candidate):
+                            raise ValueError("judge_candidate_not_fully_seen")
+                    record.update(value, response_sha256=_sha(str(output)), call_status="completed")
+                    if value["decision"] == "complete":
+                        self._approved_basis = packet["basis_sha256"]
+                    break
+                for request in requests:
+                    ref, start, length = request["ref"], request["start"], request["length"]
+                    key = (ref, start, length)
+                    if key in seen_requests:
+                        raise ValueError("judge_repeated_evidence_request")
+                    seen_requests.add(key)
+                    if ref == packet["candidate_ref"] or ref == packet["evidence_index_ref"]:
+                        raw = candidate if ref == packet["candidate_ref"] else _json(index)
+                        if start >= len(raw):
+                            raise ValueError("judge_evidence_range")
+                        excerpt = raw[start:start + length]
+                        entry = {"ref": ref, "start": start, "total_chars": len(raw), "data_excerpt": excerpt}
+                        if ref == packet["candidate_ref"]:
+                            ranges.append((start, start + len(excerpt)))
+                    elif ref in full_refs:
+                        entry = page(run_state, ref, start, length)
+                    else:
+                        # Legacy in-memory callers also permit safe retrieval,
+                        # but production observations always have durable refs.
+                        payloads = [{k: p[k] for k in OBSERVATION_KEYS if k in p} for p in observations if isinstance(p, dict)]
+                        raw = next((_json(p) for p in payloads if "obs_" + _sha(p) == ref), None)
+                        if raw is None or start >= len(raw):
+                            raise ValueError("judge_evidence_range")
+                        entry = {"ref": ref, "start": start, "total_chars": len(raw), "data_excerpt": raw[start:start + length]}
+                    packet["evidence_pages"].append(entry)
+                packet["retrieval_instruction"] = "Requested original data follows in evidence_pages. Continue reviewing this same candidate; no tools were rerun."
+            else:
+                raise ValueError("judge_retrieval_budget")
         except ModelCallStopped as exc:
             record.update(call_status="unavailable", coverage_gaps=["judge_" + exc.reason])
         except Exception as exc:
-            reason = str(exc) if type(exc) is ValueError and str(exc) in {
-                "judge_budget_exhausted", "judge_input_budget", "judge_deadline_budget",
-                "judge_client_unavailable", "judge_still_running", "judge_cancelled"} else "judge_unavailable_or_invalid"
+            allowed = {"judge_budget_exhausted", "judge_input_budget", "judge_deadline_budget",
+                "judge_client_unavailable", "judge_still_running", "judge_cancelled", "judge_evidence_unavailable",
+                "judge_candidate_not_fully_seen", "judge_repeated_evidence_request", "judge_evidence_range", "judge_retrieval_budget"}
+            reason = str(exc) if type(exc) is ValueError and str(exc) in allowed else "judge_unavailable_or_invalid"
             record.update(call_status="unavailable", coverage_gaps=[reason])
+        record["candidate_ranges_supplied"] = ranges
+        record["evidence_ranges_supplied"] = [list(item) for item in sorted(seen_requests)]
         record["elapsed_ms"] = round((time.monotonic() - started) * 1000)
+        instruction = COMPLETION_INSTRUCTION
+        signature = _sha({"findings": record["findings"], "gaps": record["coverage_gaps"], "evidence": index or packet["observations"]})
+        if record["decision"] == "continue" and state.get("last_objection_sha256") == signature:
+            instruction += "同一疑点重复出现且没有新证据：先引用已有证据解释或澄清争议，不要机械重复工具操作。"
+            record["repeated_objection"] = True
+        state["last_objection_sha256"] = signature
         state["reports"].append(record)
         state["decision"] = record["decision"]
-        return {"schema": COMPLETION_SCHEMA, "review": record, "instruction": COMPLETION_INSTRUCTION}
+        return {"schema": COMPLETION_SCHEMA, "review": record, "instruction": instruction}

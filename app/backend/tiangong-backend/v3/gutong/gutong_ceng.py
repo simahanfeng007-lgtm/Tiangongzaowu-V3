@@ -204,7 +204,7 @@ class GutongCeng:
             # the current user message, without inventing a provider tool call.
             is_completion_verdict = (
                 isinstance(gongju_jieguo, dict)
-                and gongju_jieguo.get("schema") == "tiangong.adversarial-completion.v1"
+                and gongju_jieguo.get("schema") in {"tiangong.adversarial-completion.v1", "tiangong.adversarial-completion.v2"}
             )
             feedback_notice = (
                 "\n\n[对抗智能体完成裁决] 尚未获准提交最终结果。依据原要求继续检查或修复，"

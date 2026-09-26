@@ -123,3 +123,33 @@ def test_history_eviction_is_bounded_batched_and_never_splits_a_pair():
     tiny = deepcopy(before[-1:])
     _simple_chain_bound_native_history(tiny, window_tokens=100, fixed_tokens=100)
     assert tiny == before[-1:]
+
+
+def test_150_world_updates_reconstruct_exactly_and_refresh_after_eight_deltas():
+    from v3.jineng.model_context_cache import encode_world_view, _WORLD_MARKER
+    previous = None
+    reconstructed = None
+    depth = 0
+    full_count = 0
+    for step in range(150):
+        blocks = [_WORLD_MARKER, 'stable facts ' * 500, f'current grant: {step}; revoked: {step - 1}']
+        if step % 3: blocks += ['variable entry ' + str(step)]
+        expected = '\n\n'.join(blocks)
+        # Model/authority changes require a fresh full context.
+        if step in (37, 89): previous = None
+        encoded, current = encode_world_view([{'role': 'user', 'content': expected}], previous)
+        text = encoded[0]['content']
+        if '[WORLD_VIEW_DELTA]' in text:
+            change = json.loads(text.split('\n', 1)[1])
+            assert change['base_sha256'] == previous['sha256']
+            reconstructed = [change['replace'].get(str(i), reconstructed[i] if i < len(reconstructed) else '') for i in range(change['block_count'])]
+            depth += 1
+            assert depth <= 8
+        else:
+            import re
+            reconstructed = re.split(r'\n\n\[块 \d+\]\n', text.split('[块 0]\n', 1)[1])
+            full_count += 1; depth = 0
+        assert '\n\n'.join(reconstructed) == expected
+        assert current['delta_depth'] == depth
+        previous = current
+    assert full_count >= 17

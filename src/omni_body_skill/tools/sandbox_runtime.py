@@ -15,6 +15,7 @@ from __future__ import annotations
 import base64
 from dataclasses import dataclass
 import hashlib
+import json
 import os
 from pathlib import Path
 import re
@@ -301,7 +302,11 @@ def _atomic_copy(source: Path, destination: Path) -> None:
     temp = Path(temp_name)
     try:
         shutil.copy2(source, temp)
+        with temp.open("rb") as stream:
+            os.fsync(stream.fileno())
         os.replace(temp, destination)
+        from .workspace_commit import sync_directory
+        sync_directory(destination.parent)
     finally:
         temp.unlink(missing_ok=True)
 
@@ -314,6 +319,9 @@ def _merge_changes(
     max_changed_bytes: int,
     trash_root: Path,
     allow_deletions: bool = True,
+    transaction_root: Path | None = None,
+    operation: str = "", input_digest: str = "", receipt: dict | None = None,
+    cancel_check=None,
 ) -> dict[str, Any]:
     _tree_size(sandbox_workspace, max_changed_bytes + sum(v[0] for v in before.values()))
     after = _snapshot(sandbox_workspace)
@@ -337,21 +345,13 @@ def _merge_changes(
                     if destination.is_file() else None)
         if observed != before.get(rel) or (destination.exists() and not destination.is_file()):
             raise SandboxError(f"sandbox_destination_changed:{rel}")
-    for rel in changed:
-        source = sandbox_workspace / Path(rel)
-        destination = real_workspace / Path(rel)
-        if _is_link_or_reparse(source):
-            raise SandboxError(f"sandbox_output_link_forbidden:{rel}")
-        _atomic_copy(source, destination)
-    timestamp = str(int(time.time() * 1000))
-    for rel in deleted:
-        destination = real_workspace / Path(rel)
-        if not destination.exists() or _is_link_or_reparse(destination):
-            continue
-        trash = trash_root / timestamp / Path(rel)
-        trash.parent.mkdir(parents=True, exist_ok=True)
-        os.replace(destination, trash)
-    return {"changed_files": changed, "deleted_files": deleted, "changed_bytes": changed_bytes}
+    from .workspace_commit import commit
+    return commit(source=sandbox_workspace, workspace=real_workspace,
+                  before=dict(before), after=after, changed=changed, deleted=deleted,
+                  root=transaction_root or (trash_root / "transactions"),
+                  operation=operation or uuid.uuid4().hex, input_digest=input_digest,
+                  receipt={**(receipt or {}), "changed_files": changed, "deleted_files": deleted,
+                           "changed_bytes": changed_bytes}, cancel_check=cancel_check)
 
 
 def _rewrite_workspace_paths(command: Sequence[str] | str, real: Path, sandbox: Path) -> list[str] | str:
@@ -575,7 +575,12 @@ class SandboxRunner:
         self.limits = limits or SandboxLimits()
         self.state_root.mkdir(parents=True, exist_ok=True)
 
-    def run(
+    def run(self, command, **kwargs):
+        from .omni_body_tool import _workspace_lock_for, _workspace_mutation_guard
+        with _workspace_mutation_guard(self.workspace, _workspace_lock_for(self.workspace)):
+            return self._run_locked(command, **kwargs)
+
+    def _run_locked(
         self,
         command: Sequence[str] | str,
         *,
@@ -612,6 +617,17 @@ class SandboxRunner:
         # audit correlation without consuming roughly 100 path characters.
         run_id = "r_" + hashlib.sha256(raw_run_id.encode("utf-8", errors="surrogatepass")).hexdigest()[:16]
         run_root = self.state_root / (run_id or f"run_{time.time_ns()}")
+        from .workspace_commit import recover, replay
+        transactions = self.state_root / "commits"
+        recover(transactions, self.workspace)
+        input_digest = hashlib.sha256(json.dumps({"command": command,
+            "cwd": str(cwd or self.workspace), "allow_deletions": allow_deletions,
+            "require_os_containment": require_os_containment,
+            "expected_workspace_files": dict(expected_workspace_files or {})},
+            ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+        recovered = replay(transactions, self.workspace, raw_run_id, input_digest)
+        if recovered is not None:
+            return recovered
         sandbox_workspace = run_root / "workspace"
         temp_dir = run_root / "temp"
         moniker = "TG3.Run." + uuid.uuid4().hex[:20]
@@ -716,18 +732,13 @@ class SandboxRunner:
                 raise SandboxError("sandbox_process_output_limit")
             if cancel_check is not None and cancel_check():
                 raise SandboxError("sandbox_cancelled")
-            merge = _merge_changes(
-                sandbox_workspace, self.workspace, before,
-                max_changed_bytes=limits.max_changed_bytes, trash_root=self.trash_root,
-                allow_deletions=allow_deletions,
-            ) if code == 0 else {"changed_files": [], "deleted_files": [], "changed_bytes": 0}
             decoded_stdout = decode_portable_bytes(
                 stdout, source="sandbox stdout", allow_legacy_windows=True
             )
             decoded_stderr = decode_portable_bytes(
                 stderr, source="sandbox stderr", allow_legacy_windows=True
             )
-            return {
+            receipt = {
                 "returncode": int(code),
                 "stdout": decoded_stdout.text,
                 "stderr": decoded_stderr.text,
@@ -746,8 +757,15 @@ class SandboxRunner:
                 "network": "denied" if containment in {"windows-appcontainer", "linux-bubblewrap"} else "not_os_enforced",
                 "sandbox_root": str(run_root),
                 "elapsed_seconds": round(time.monotonic() - started, 3),
-                **merge,
             }
+            if code == 0:
+                return _merge_changes(
+                    sandbox_workspace, self.workspace, before,
+                    max_changed_bytes=limits.max_changed_bytes, trash_root=self.trash_root,
+                    allow_deletions=allow_deletions, transaction_root=transactions,
+                    operation=raw_run_id, input_digest=input_digest, receipt=receipt,
+                    cancel_check=cancel_check)
+            return {**receipt, "changed_files": [], "deleted_files": [], "changed_bytes": 0}
         finally:
             if os.environ.get("TIANGONG_KEEP_SANDBOX", "0").strip().lower() not in {"1", "true", "yes", "on"}:
                 shutil.rmtree(_windows_long_path(run_root), ignore_errors=True)

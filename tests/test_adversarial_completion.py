@@ -13,7 +13,7 @@ from test_adversarial_review import Client, observations, run_state
 
 def verdict(decision="complete", **updates):
     value = {"decision": decision, "reason": "逐项核对原要求与结果。", "findings": [],
-             "coverage_gaps": ["需要回读结果"] if decision == "continue" else []}
+             "coverage_gaps": ["需要回读结果"] if decision == "continue" else [], "evidence_requests": []}
     value.update(updates)
     return json.dumps(value, ensure_ascii=False)
 
@@ -104,6 +104,8 @@ def run_orchestrator(monkeypatch, tmp_path, decisions, replies=("未修复候选
     """Exercise the real orchestration loop with deterministic model transport."""
     from v3 import zongdiaodu as zd
     from v3.simple_chain import kernel
+    from v3 import model_roles
+    monkeypatch.setattr(model_roles, "configured_models", lambda endpoint: [endpoint])
     monkeypatch.setenv("TIANGONG_ADVERSARIAL_REVIEW", "judge")
     monkeypatch.setenv("TIANGONG_RUN_STATE_DIR", str(tmp_path))
     monkeypatch.setenv("TIANGONG_V3_STATE_DIR", str(tmp_path))

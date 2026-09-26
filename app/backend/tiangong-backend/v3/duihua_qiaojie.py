@@ -1467,6 +1467,7 @@ class DuihuaQiaojie:
                     "simple_chain_meta": simple_chain_meta,
                     "completion_authority": completion_authority,
                     "adversarial_completion": completion_verdict,
+                    "review_phase": run_state_meta.get("review_phase") or ("execution_failed" if simple_chain_status == "failed" else "executing"),
                     # FE-02: mark template-origin terminal replies (platform
                     # fallback/incomplete text) so the frontend never presents
                     # them as model-generated assistant text.

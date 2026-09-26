@@ -767,6 +767,9 @@ def _error_turn(
     )
 
 
+_MODEL_CALL_ROLE = contextvars.ContextVar("tiangong_model_call_role", default="auxiliary")
+
+
 class HttpKehuduan:
     """唯一生产 HTTP 客户端；协议差异只经 Transport Registry。"""
 
@@ -781,6 +784,17 @@ class HttpKehuduan:
         self._native_history = contextvars.ContextVar("tiangong_native_history", default=())
         self._native_observations = contextvars.ContextVar("tiangong_native_observations", default=())
         self._semantic_inference = contextvars.ContextVar("tiangong_semantic_inference", default=None)
+        self._execution_endpoint = contextvars.ContextVar("tiangong_execution_endpoint", default=None)
+
+    @contextmanager
+    def scoped_call_context(self, role, *, endpoint=None):
+        token = _MODEL_CALL_ROLE.set(role)
+        endpoint_token = self._execution_endpoint.set(endpoint)
+        try:
+            yield
+        finally:
+            self._execution_endpoint.reset(endpoint_token)
+            _MODEL_CALL_ROLE.reset(token)
 
     @contextmanager
     def scoped_semantic_inference(self, *, endpoint, max_output_tokens: int = 2048):
@@ -845,7 +859,8 @@ class HttpKehuduan:
         )
         try:
             semantic_inference = self._semantic_inference.get()
-            endpoint = semantic_inference[0] if semantic_inference is not None else duqu_model_endpoint_config(requested_identity)
+            endpoint = (semantic_inference[0] if semantic_inference is not None else
+                        self._execution_endpoint.get() or duqu_model_endpoint_config(requested_identity))
         except Exception as exc:
             return ModelTurnReply(
                 _llm_error_text(str(exc), provider=requested_identity),
@@ -1446,10 +1461,11 @@ def _jilu_l4_youhua_zhuizong(
 ) -> None:
     if not trace:
         return
-    if (not trace.get("l4_profile_consumed") and not trace.get("dictionary_wire")
-            and os.environ.get("TIANGONG_TRACE_UNSUPPORTED_PROVIDER", "").strip() != "1"):
-        return
     row = dict(trace)
+    from ..run_context import current_run_context
+    context = current_run_context()
+    row.update(model_call_role=_MODEL_CALL_ROLE.get(), request_id=context.request_id,
+               run_id=context.run_id, generation=context.generation)
     row.update({
         "api_status": api_status,
         "http_status": http_status,

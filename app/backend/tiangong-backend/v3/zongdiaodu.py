@@ -2283,7 +2283,10 @@ class Zongdiaodu:
 
         # ── 系统提示词压缩 ──
         sys_tok = estimate_tokens(system_tishi)
-        sys_budget = int(DEFAULT_WINDOW_TOKENS * SYSTEM_BUDGET_PCT)
+        from .model_roles import input_budget
+        endpoint_budget = (input_budget(completion_session._roles["executor"]) if completion_session._roles
+                           else int(DEFAULT_WINDOW_TOKENS * 0.75))
+        sys_budget = int(endpoint_budget * SYSTEM_BUDGET_PCT)
         if sys_tok > sys_budget * 0.80:
             _log_warn = __import__("logging").getLogger("tiangong.zongdiaodu")
             _log_warn.warning("system_tishi 超预算 (est %d / %d tokens)，压缩中", sys_tok, sys_budget)
@@ -2347,7 +2350,7 @@ class Zongdiaodu:
         _simple_chain_save_run_state(run_state)
 
         from .jineng.model_context_cache import AppendOnlyContext
-        append_context = AppendOnlyContext(token_budget=int(DEFAULT_WINDOW_TOKENS * 0.75))
+        append_context = AppendOnlyContext(token_budget=endpoint_budget)
         native_history: list[dict[str, Any]] = []
         composition_cursor = None
         from .adversarial_review import ReviewSession
@@ -2363,7 +2366,7 @@ class Zongdiaodu:
             from .run_context import current_run_context
             return refresh_world_context_in_prompt(system_tishi, run_context=current_run_context(), user_text=xiaoxi)
 
-        def _run_scoped_model(call):
+        def _run_scoped_model(call, *, review_closeout=False):
             from .jineng.http_kehuduan import _effective_llm_deadline_seconds
             from .jineng.model_call_lifecycle import ModelCallStopped, run_model_call
             from .model_protocol_contract import ProviderTurnEnvelope
@@ -2371,12 +2374,16 @@ class Zongdiaodu:
             try:
                 def invoke(lifecycle):
                     if self.http_kehuduan is not None:
-                        with self.http_kehuduan.scoped_native_history(
+                        from contextlib import nullcontext
+                        call_scope = (self.http_kehuduan.scoped_call_context("executor", endpoint=completion_session._roles["executor"])
+                                      if completion_session._roles and callable(getattr(self.http_kehuduan, "scoped_call_context", None)) else nullcontext())
+                        with call_scope, self.http_kehuduan.scoped_native_history(
                             native_history, observations=quality_history, append_context=append_context):
                             return call(lifecycle)
                     return call(lifecycle)
                 result = run_model_call(
-                    invoke, seconds=_effective_llm_deadline_seconds(),
+                    invoke, seconds=min(_effective_llm_deadline_seconds(),
+                        20.0 if review_closeout else max(0.1, _execution_seconds_left())),
                     cancel_check=getattr(run_control, "should_stop", None),
                 )
             except ModelCallStopped as exc:
@@ -2447,7 +2454,7 @@ class Zongdiaodu:
                 # Compact whole call/result groups only. Durable fact receipts
                 # and loaded Skill bodies remain in Gateway/run context.
                 removed = _simple_chain_bound_native_history(
-                    native_history, window_tokens=DEFAULT_WINDOW_TOKENS,
+                    native_history, window_tokens=endpoint_budget,
                     fixed_tokens=estimate_tokens(system_tishi) + estimate_tokens(cache_stable_user_message),
                 )
                 if removed:
@@ -2525,7 +2532,7 @@ class Zongdiaodu:
                     on_reasoning_chunk=lifecycle.guard(on_reasoning_chunk),
                 )
 
-            return _run_scoped_model(_call_closeout)
+            return _run_scoped_model(_call_closeout, review_closeout=judge_completion)
 
         turn_loop = TurnLoopState()
         _simple_chain_regenerative_restore_turn_loop(run_state, turn_loop)
@@ -2578,6 +2585,12 @@ class Zongdiaodu:
                     )
         except Exception:
             pass
+
+        review_reserve_seconds = min(90.0, effective_wall_clock_seconds * 0.2) if judge_completion else 0.0
+        run_state.setdefault("budget", {})["review_reserved_seconds"] = review_reserve_seconds
+
+        def _execution_seconds_left():
+            return max(0.0, effective_wall_clock_seconds - review_reserve_seconds - (time.monotonic() - loop_started_at))
 
         def _natural_closeout(
             status: str,
@@ -2668,6 +2681,7 @@ class Zongdiaodu:
         def _judge_candidate():
             run_state["status"] = "reviewing"
             run_state["stage"] = "adversarial_completion"
+            run_state["review_phase"] = "candidate_awaiting_review"
             run_state["generated_attachments"] = list(generated_attachments)
             _simple_chain_save_run_state(run_state)
             if run_control:
@@ -2687,6 +2701,7 @@ class Zongdiaodu:
             reason = record.get("reason") or "未取得有效完成裁决。"
             if record.get("decision") == "unavailable":
                 reason += " " + "; ".join(record.get("coverage_gaps") or [])
+            run_state["review_phase"] = "review_blocked"
             run_state["terminal_reason"] = "adversarial_completion_" + record["decision"]
             run_state["final_reasons"] = [reason]
             run_state["last_transition"] = {
@@ -2742,10 +2757,10 @@ class Zongdiaodu:
             )
             if semantic_visibility == "visible":
                 native_payload = _simple_chain_native_audio_payload(native_audio_evidence, huifu)
+                _simple_chain_record_observation(run_state, native_payload)
                 quality_history.append(native_payload)
                 _simple_chain_bound_history(quality_history, limit=24)
                 last_quality_payload = native_payload
-                _simple_chain_record_observation(run_state, native_payload)
                 if run_control:
                     run_control.step(
                         "native_audio_understanding",
@@ -2869,6 +2884,15 @@ class Zongdiaodu:
                             },
                         )
                     break
+
+            if judge_completion and _execution_seconds_left() <= 0:
+                run_state["review_phase"] = "candidate_awaiting_review"
+                shenti, huifu = _llm_closeout_scoped({
+                    "schema": "tiangong.review-reserve.v1",
+                    "instruction": "执行预算结束。仅依据已有事实给出候选最终结果，明确未完成项，不再调用工具。候选须经对抗智能体裁决后提交。",
+                    "observations": quality_history,
+                })
+                break
 
             # Wall clock remains an absolute platform/Authority deadline. Epoch
             # rollover must never extend or bypass it.
@@ -3399,6 +3423,7 @@ class Zongdiaodu:
                         item_deadline_seconds = min(
                             _simple_chain_remaining_deadline_seconds(),
                             _SIMPLE_CHAIN_MAX_TOOL_EXECUTION_SECONDS,
+                            _execution_seconds_left(),
                         )
                         try:
                             parallel_results.append(
@@ -3429,6 +3454,7 @@ class Zongdiaodu:
                     batch_deadline_seconds = min(
                         _simple_chain_remaining_deadline_seconds(),
                         _SIMPLE_CHAIN_MAX_TOOL_EXECUTION_SECONDS,
+                        _execution_seconds_left(),
                     )
                     executor = ThreadPoolExecutor(max_workers=min(len(tools), 8))
                     pending: list[tuple[Any, str, dict, int, str]] = [
@@ -3579,6 +3605,7 @@ class Zongdiaodu:
                         qp["observation_gaps"] = merged_gaps
                         qp["final_requirements_satisfied_by_this_step"] = bool(qp.get("ok")) and not merged_gaps
                     last_quality_payload = qp
+                    _simple_chain_record_observation(run_state, qp)
                     quality_history.append(qp)
                     _simple_chain_bound_history(quality_history, limit=24)
                     _simple_chain_protect_paths(protected_path_keys, tn, ta, qp, raw)
@@ -3590,7 +3617,6 @@ class Zongdiaodu:
                     generated_attachments.extend(_shengcheng_fujian_from_result(raw))
                     if isinstance(run_state, dict) and isinstance(run_state.get("_live"), dict):
                         run_state["_live"]["tool_rounds"] = gongju_cishu
-                    _simple_chain_record_observation(run_state, qp)
                     qp["run_state"] = _simple_chain_run_state_view(run_state)
                     tool_results_block.append({
                         "call_id": call_id,
@@ -4266,6 +4292,7 @@ class Zongdiaodu:
             _tool_timeout_seconds = min(
                 _simple_chain_remaining_deadline_seconds(),
                 _SIMPLE_CHAIN_MAX_TOOL_EXECUTION_SECONDS,
+                _execution_seconds_left(),
             )
             try:
                 gongju_jieguo = _simple_chain_execute_tool_with_timeout(
@@ -4407,6 +4434,7 @@ class Zongdiaodu:
                 quality_payload["observation_gaps"] = merged_gaps
                 quality_payload["final_requirements_satisfied_by_this_step"] = bool(quality_payload.get("ok")) and not merged_gaps
             last_quality_payload = quality_payload
+            _simple_chain_record_observation(run_state, quality_payload)
             quality_history.append(quality_payload)
             _simple_chain_bound_history(quality_history, limit=24)
             _simple_chain_protect_paths(protected_path_keys, tool_name, tool_args, quality_payload, gongju_jieguo)
@@ -4419,7 +4447,6 @@ class Zongdiaodu:
             generated_attachments.extend(_shengcheng_fujian_from_result(gongju_jieguo))
             if isinstance(run_state, dict) and isinstance(run_state.get("_live"), dict):
                 run_state["_live"]["tool_rounds"] = gongju_cishu
-            _simple_chain_record_observation(run_state, quality_payload)
             quality_payload["run_state"] = _simple_chain_run_state_view(run_state)
             if run_control:
                 run_control.step(
@@ -4547,6 +4574,7 @@ class Zongdiaodu:
                 if not final_guard_exhausted:
                     final_chain_status = "complete"
                     report = run_state["adversarial_completion"]["reports"][-1]
+                    run_state["review_phase"] = "approved_delivery"
                     run_state["terminal_reason"] = report["reason"]
                     run_state["last_transition"] = {
                         "type": "complete", "source": "adversarial_agent", "reason": report["reason"],
@@ -4558,6 +4586,7 @@ class Zongdiaodu:
             if cancelled:
                 final_guard_exhausted = True
                 final_chain_status = "force_stopped"
+                run_state["review_phase"] = "cancelled"
                 huifu = "任务已停止，最终结果未提交。"
             elif final_guard_exhausted and final_chain_status == "complete":
                 final_chain_status = "incomplete"

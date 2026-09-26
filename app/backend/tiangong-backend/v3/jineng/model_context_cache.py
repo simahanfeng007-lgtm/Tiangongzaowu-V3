@@ -30,12 +30,12 @@ def encode_world_view(tail, previous=None):
             continue
         blocks = text.split("\n\n")
         digest = hashlib.sha256(text.encode()).hexdigest()
-        current = {"blocks": blocks, "sha256": digest}
+        current = {"blocks": blocks, "sha256": digest, "delta_depth": 0}
         full = (_WORLD_MARKER + " 世界视图分块全文；块号仅用于无损上下文更新，不是权限或事实标识。\n"
                 + f"[WORLD_VIEW_FULL sha256={digest}]\n"
                 + "\n\n".join(f"[块 {i}]\n{block}" for i, block in enumerate(blocks)))
         encoded = full
-        if previous:
+        if previous and previous.get("delta_depth", 0) < 8:
             old = previous["blocks"]
             replacements = {str(i): block for i, block in enumerate(blocks) if i >= len(old) or old[i] != block}
             rebuilt = [replacements[str(i)] if str(i) in replacements else old[i] for i in range(len(blocks))]
@@ -49,6 +49,7 @@ def encode_world_view(tail, previous=None):
                      }, ensure_ascii=False, separators=(",", ":")))
             if estimate_tokens(delta) < estimate_tokens(full) * 0.85:
                 encoded = delta
+                current["delta_depth"] = previous.get("delta_depth", 0) + 1
         output.append({**message, "content": encoded})
     return output, current
 
@@ -72,6 +73,8 @@ class ContextTransaction:
         self.metrics = {}
 
     def render(self, endpoint, payload, field, prefix, groups, tail):
+        from ..model_roles import input_budget
+        budget = min(self.owner.token_budget, input_budget(endpoint))
         # Fingerprints include explicit endpoint fields too: a stale externally
         # supplied fingerprint must not leak private continuation to a new model.
         identity = stable_hash({
@@ -100,7 +103,7 @@ class ContextTransaction:
             messages = [*old["messages"], *old["reply"],
                         *(m for g in groups[len(old["groups"]):] for m in g), *fresh_tail]
             encoded = json.dumps({**payload, field: messages}, ensure_ascii=False)
-            if estimate_tokens(encoded) > self.owner.token_budget:
+            if estimate_tokens(encoded) > budget:
                 compatible, reason = False, "budget_reset"
         if not compatible:
             # Canonical history was already bounded by Runtime in complete
@@ -118,7 +121,8 @@ class ContextTransaction:
                        "messages": deepcopy(messages), "field": field,
                        "observations": observations, "reply": [], "world": world}
         self.metrics = {"mode": reason, "reused_messages": len(old["messages"]) if compatible else 0,
-                        "message_count": len(messages)}
+                        "message_count": len(messages), "input_budget": budget,
+                        "world_delta_depth": world.get("delta_depth", 0) if world else 0}
         payload[field] = messages
 
     def observe_wire(self, payload):

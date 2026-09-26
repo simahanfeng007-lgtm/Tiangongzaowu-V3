@@ -627,24 +627,30 @@ class FactExecutionKernel:
             stream.flush()
             os.fsync(stream.fileno())
 
-    def _replay(self, idempotency_key: str) -> dict[str, Any] | None:
+    def _replay(self, idempotency_key: str, input_sha256: str) -> dict[str, Any] | None:
         if not idempotency_key:
             return None
         path = self._idempotency_path(idempotency_key)
+        if not path.exists():
+            return None
         try:
             record = json.loads(path.read_text(encoding="utf-8"))
             result = record.get("result")
             transaction = record.get("fact_transaction")
             if not isinstance(result, dict) or not isinstance(transaction, dict):
-                return None
+                raise ValueError("fact_replay_record_invalid")
+            if (transaction.get("input_sha256") != input_sha256
+                    or transaction.get("request_id") != self.request_id
+                    or transaction.get("run_id") != self.run_id):
+                raise ValueError("fact_idempotency_binding_changed")
             replayed = _jsonable(result)
             replay_tx = dict(transaction)
             replay_tx["idempotent_replay"] = True
             replay_tx["replayed_at_ms"] = int(time.time() * 1000)
             replayed["fact_transaction"] = replay_tx
             return replayed
-        except Exception:
-            return None
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ValueError("fact_replay_record_unreadable") from exc
 
     def execute(
         self,
@@ -668,7 +674,8 @@ class FactExecutionKernel:
         normalized_key = str(idempotency_key or "").strip()
 
         with self._lock:
-            replay = self._replay(normalized_key)
+            input_sha256 = _sha256({"action": action_name, "target": normalized_target, "args": normalized_args})
+            replay = self._replay(normalized_key, input_sha256)
             if replay is not None:
                 return replay
 
@@ -681,7 +688,10 @@ class FactExecutionKernel:
                 "target": normalized_target,
                 "args": normalized_args,
                 "idempotency_key": normalized_key,
-                "nonce": uuid.uuid4().hex,
+                # The sandbox's durable commit may precede this Fact record.
+                # A retry of the same bound operation must recover its receipt,
+                # never execute the already committed program a second time.
+                "nonce": "" if normalized_key else uuid.uuid4().hex,
             }
             operation_id = "op_" + _sha256(operation_seed)[:32]
             token = _ACTIVE_DEPTH.set(_ACTIVE_DEPTH.get() + 1)
