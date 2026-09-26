@@ -1,0 +1,72 @@
+{
+  "scope": "LibreOffice headless opening and PDF rendering; not native Microsoft Office automation or model semantic scoring. Original files unchanged.",
+  "results": [
+    {
+      "arm": "canonical",
+      "task": "docx",
+      "input_sha256": "392f36b966d3230e6fe8df1540e4e3228547bb2570b9eea6aac2dd0935d06ffe",
+      "pdf_sha256": "fd83e491fc8fb36eb6294ba4a541f66bca6bd48893134820275253fd51441522",
+      "exit": 0,
+      "pages": 1,
+      "original_unchanged": true,
+      "nonempty_pages": true,
+      "pass": true
+    },
+    {
+      "arm": "canonical",
+      "task": "pptx",
+      "input_sha256": "2a6b40f00bb220cb3a993d7c0133d6458068a9144220219131cd745aeb289d68",
+      "pdf_sha256": "1a51607cd71194b90553a24d33c48d5008a1b31dd16f9098b8676aa43e10b469",
+      "exit": 0,
+      "pages": 4,
+      "original_unchanged": true,
+      "nonempty_pages": true,
+      "pass": true
+    },
+    {
+      "arm": "canonical",
+      "task": "xlsx",
+      "input_sha256": "9ef60b2df10bda1aef31182c0e03ac350facb67d57a8f4131f901c31d44574a8",
+      "pdf_sha256": "901617a3aa0f1e3c0737da2f53eb6c3d2bff4f01df84401186c9210093b3eda0",
+      "exit": 0,
+      "pages": 1,
+      "original_unchanged": true,
+      "nonempty_pages": true,
+      "pass": true
+    },
+    {
+      "arm": "reuse",
+      "task": "docx",
+      "input_sha256": "716496c73f6d154299b9bf581a6ddad51294f2dc6fbf23e9a61c931d0ff2d22b",
+      "pdf_sha256": "f649dcbf17d847dd5470fbef75e273a0e2e8977e871d3571f671b19757bb0afa",
+      "exit": 0,
+      "pages": 1,
+      "original_unchanged": true,
+      "nonempty_pages": true,
+      "pass": true
+    },
+    {
+      "arm": "reuse",
+      "task": "pptx",
+      "input_sha256": "c6aef2d7b284b8f1577b8a9ce0fb1d5b10c34cc29530aec0ad5c708db3d57921",
+      "pdf_sha256": "da350d3e92529b9bc055635826ec2de6cb28f6f584ced20d0182f6313c4933ec",
+      "exit": 0,
+      "pages": 4,
+      "original_unchanged": true,
+      "nonempty_pages": true,
+      "pass": true
+    },
+    {
+      "arm": "reuse",
+      "task": "xlsx",
+      "input_sha256": "0d61c460676d950ecf39d633bee42f915a313f81ed0bf2f441dd75557872394b",
+      "pdf_sha256": "dbab80adb3117661c7017a5c7eeaf46a523dc6cbe26c2ebc5d9ba1d65b04059d",
+      "exit": 0,
+      "pages": 1,
+      "original_unchanged": true,
+      "nonempty_pages": true,
+      "pass": true
+    }
+  ],
+  "passing": 6
+}
