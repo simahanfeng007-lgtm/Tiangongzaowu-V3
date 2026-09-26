@@ -31,6 +31,8 @@ from pathlib import Path
 assert os.getenv('TIANGONG_EXECUTION_TEST_SECRET') is None
 assert not Path({str(outside)!r}).exists()
 assert not Path('/proc/{os.getpid()}').exists()
+assert not Path('/etc/passwd').exists()
+assert not Path('/etc/resolv.conf').exists()
 try:
     socket.create_connection(('127.0.0.1', {listener.getsockname()[1]}), timeout=1)
 except OSError:
@@ -99,6 +101,26 @@ def test_linux_backend_failure_cannot_launch_uncontained(runner, monkeypatch):
     with pytest.raises(sandbox.SandboxError, match='sandbox_linux_start_failed'):
         runner.run(['/usr/bin/python3', '-c', 'from pathlib import Path;Path("escaped").touch()'], require_os_containment=True)
     assert not (runner.workspace / 'escaped').exists()
+
+
+def test_loader_selectors_exclude_nonlibrary_host_files(runner, tmp_path):
+    from omni_body_skill.tools.linux_sandbox import _library_alternative_links
+    root = tmp_path / 'runtime' / 'lib'
+    multiarch = root / 'multiarch'; multiarch.mkdir(parents=True)
+    alternatives = tmp_path / 'etc' / 'alternatives'; alternatives.mkdir(parents=True)
+    real = multiarch / 'blas' / 'libblas.so.3'
+    real.parent.mkdir(); real.write_bytes(b'system library'); real.chmod(0o644)
+    selector = alternatives / 'libblas.so.3-fixture'
+    selector.symlink_to(real)
+    (multiarch / 'libblas.so.3').symlink_to(selector)
+    outside = tmp_path / 'private-file'; outside.write_text('must not enter')
+    writable = multiarch / 'writable.so.1'; writable.write_bytes(b'untrusted'); writable.chmod(0o666)
+    for name, destination in [('private', outside), ('writable', writable),
+                              ('missing', root / 'missing.so'), ('loop', alternatives / 'libloop.so')]:
+        alias = alternatives / ('lib' + name + '.so')
+        alias.symlink_to(destination)
+        (multiarch / ('lib' + name + '.so')).symlink_to(alias)
+    assert _library_alternative_links([root], alternatives) == [(str(selector), str(real))]
 
 
 @pytest.mark.parametrize('size,args,expected', [
@@ -175,7 +197,7 @@ def test_media_encoder_fits_real_sandbox_and_produces_decodable_frames(runner):
         sandbox_enabled=True, sandbox_require_os_containment=True))
     result = runtime.run('video.slideshow', 'movie.mp4',
         {'images':['first.png','second.png'], 'frame_rate': 5, 'size':'160x80'})
-    assert result['success'], result
+    assert result['success'], json.dumps(result, ensure_ascii=False, indent=2)
     assert result['ffmpeg']['containment'] == 'linux-bubblewrap'
     decoded = subprocess.run([shutil.which('ffmpeg'), '-v', 'error', '-threads', '1',
         '-i', str(runner.workspace/'movie.mp4'), '-f', 'null', '-'], capture_output=True)

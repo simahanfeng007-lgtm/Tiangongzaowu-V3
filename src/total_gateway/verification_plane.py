@@ -24,6 +24,7 @@ from __future__ import annotations
 # 1.48 supplies bounded page requests and explicit range feedback to the judge.
 # 1.49 flushes workspace commit bytes through writable Windows handles.
 # 1.50 isolates Fact runtime state from tool snapshots and media-only dependencies.
-VERIFICATION_PLANE_VERSION = "1.50"
+# 1.51 restores scoped system-library selectors inside Linux containment.
+VERIFICATION_PLANE_VERSION = "1.51"
 
 __all__ = ["VERIFICATION_PLANE_VERSION"]

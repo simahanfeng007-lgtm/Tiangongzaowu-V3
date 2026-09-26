@@ -12,6 +12,41 @@ import sys
 import tempfile
 
 
+def _library_alternative_links(library_roots=None, alternatives_root=None):
+    """Recreate only library selectors whose bytes already belong to runtime mounts.
+
+    Debian/Ubuntu BLAS libraries can point through /etc/alternatives. Mounting
+    all of /etc to satisfy the loader would also expose unrelated host state.
+    Resolve selectors on the host and admit only immutable system-library files.
+    Optional roots exist solely for filesystem regression fixtures.
+    """
+    roots = library_roots or (Path('/usr/lib'), Path('/usr/lib64'), Path('/lib'), Path('/lib64'))
+    alternatives = alternatives_root or Path('/etc/alternatives')
+    resolved_roots = {root.resolve() for root in roots if root.is_dir()}
+    links = {}
+    for root in sorted(resolved_roots):
+        owner = root.stat().st_uid
+        for pattern in ('lib*.so*', '*/lib*.so*'):
+            for library in root.glob(pattern):
+                if not library.is_symlink():
+                    continue
+                selector = library.readlink()
+                if not selector.is_absolute():
+                    selector = Path(os.path.normpath(str(library.parent / selector)))
+                if selector.parent != alternatives:
+                    continue
+                try:
+                    target = library.resolve(strict=True)
+                    info = target.stat()
+                    if (not target.is_file() or info.st_uid != owner or info.st_mode & 0o022
+                            or not any(target.is_relative_to(base) for base in resolved_roots)):
+                        continue
+                except (OSError, RuntimeError):
+                    continue
+                links[str(selector)] = str(target)
+    return sorted(links.items())
+
+
 def bubblewrap_executable() -> str:
     from .sandbox_runtime import SandboxError
     path = Path('/usr/bin/bwrap')
@@ -49,6 +84,11 @@ def run_linux_sandbox(command, cwd, env, limits, workspace, *, workspace_aliases
             args += ['--symlink', os.readlink(path), str(path)]
         elif path.is_dir():
             args += ['--ro-bind', str(path), str(path)]
+    library_links = _library_alternative_links()
+    if library_links:
+        args += ['--dir', '/etc', '--dir', '/etc/alternatives']
+        for selector, target in library_links:
+            args += ['--symlink', target, selector]
     args += ['--proc', '/proc', '--remount-ro', '/proc', '--dev', '/dev',
              '--size', str(limits.max_changed_bytes), '--tmpfs', '/tmp',
              '--bind', str(workspace), '/workspace', '--chdir', str(Path('/workspace') / relative_cwd),
