@@ -1379,9 +1379,9 @@ class BodyRuntime:
         profile_id = row["budget"]["profile"]
         profile = DICTIONARY.execution_profiles[profile_id]
         timeout = min(timeout, profile["timeout_seconds"])
-        if (isinstance(cmd, list) and len(cmd) > 1 and self.ffmpeg
-                and str(cmd[0]) == str(self.ffmpeg)
-                and str(action or "").startswith(("audio.", "video.", "jianying.", "ffmpeg."))):
+        if (isinstance(cmd, list) and len(cmd) > 1
+                and str(action or "").startswith(("audio.", "video.", "jianying.", "ffmpeg."))
+                and self.ffmpeg and str(cmd[0]) == str(self.ffmpeg)):
             # FFmpeg otherwise sizes codec/filter thread pools from host CPU
             # count. Those pools can exhaust the sandbox process/address-space
             # budget before the first frame. Bound generated media commands;

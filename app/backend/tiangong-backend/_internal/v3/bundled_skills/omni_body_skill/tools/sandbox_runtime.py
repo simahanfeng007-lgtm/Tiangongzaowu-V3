@@ -75,6 +75,8 @@ _SKIP_NAMES = {
     ".omni_backups",
     ".omni_trash",
     ".omni_workspace.lock",
+    # Default Fact ledger/locks are runtime authority, not tool input/output.
+    ".tiangong",
     ".tiangong_sandboxes",
     ".tiangong_emergency_audit",
 }

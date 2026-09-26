@@ -1,5 +1,5 @@
 {
- "verification_plane_version": "1.49",
+ "verification_plane_version": "1.50",
  "baseline_sha": "9a3344de9fe468fa845d2ff501166484439b8ec4",
  "store_schema_version": 33,
  "contract_schema_versions": {
@@ -51,7 +51,7 @@
   "src/total_gateway/desktop_composition.py": "944ec4af1f88a1331b2d5c408d770bfd71a34040a8822edb969b706e39e448e2",
   "src/total_gateway/desktop_api.py": "1d0dc184568be419732f9c6f884e453ea6d1f2e9ba5db671884a832d85785ada",
   "src/total_gateway/installed_composition_sources.py": "60b2798bf83a9fa6ee71195a528732616b399f1033ce96fa7a536cff2f9f6497",
-  "src/omni_body_skill/tools/omni_body_tool.py": "6917d11fb699d6691e408924eabc41aa014b5d6e5b6b15e826664e529cec563d",
+  "src/omni_body_skill/tools/omni_body_tool.py": "9534c54e1d9f0c0842ad02666f0720a941800fdad9c42c30f1cbfb76eb9629fa",
   "src/omni_body_skill/tools/windows_appcontainer.py": "70ab16e9d7c1266a5037761b5cb57eb2cb7a94f591708fe9b6421bd2b7f76f04",
   "src/omni_body_skill/tools/windows_python_compat.py": "f86fa7ddb4dd708b3fa8c6aef2dda4614a670b735b4bca899af202f6824b14c5",
   "src/omni_body_skill/tools/path_identity.py": "761a921a44237e8668597435c37775f094467a25f4f7cc01258cedd45cc98747",
@@ -158,7 +158,7 @@
   "src/total_gateway/verification_repair_coordinator.py": "089efa6a4c888d4e06d4bdd5044a0adc283d69648463a859f42e2c063f0187f6",
   "src/total_gateway/verification_repair_policy.py": "bb2ac036d01a516729d43cc068b37bb3e92f71983004275937fcfab82b2e9eaf",
   "src/total_gateway/verification_plan_executor.py": "63a27353f037dca87e64e8ef80ceee187260949650d404e6ea9fd83d84174452",
-  "src/total_gateway/verification_plane.py": "2d80373c752d8a5eb1ed951354fff4c3d0ed820e3b82f4da22c8fd00cc0ee349",
+  "src/total_gateway/verification_plane.py": "4c7c01ec0c9bbbb6fe8c85730c914e907c47a39c09782c88220fe65943beb084",
   "src/total_gateway/verification_readiness.py": "3c1e7f89fb958ba82cb2aed7de85a237a007717839727a5146a3d29d532a8a39",
   "src/total_gateway/verification_failure_evidence.py": "955b1d3c2e77b2ec229ebdd8da612f8ce26794d6fdfc849967ffaaef6fd73dea",
   "src/total_gateway/verification_registry.py": "afab7caae8079c241953c42d85945fbeb5b106114e16963219c1f8c5524b310a",
@@ -183,7 +183,7 @@
   "src/total_gateway/tool_source_world.py": "a68629be9f24dfad6a5e227e6cd351d45c48bcfe3cc3f2353dbaddac64e8e4d8",
   "src/total_gateway/tool_manifest_evolution.py": "3c07cc4f24be95942eccf3bd65022103e3b5cdadc157fe208b4af67705221030",
   "src/source_authority/validator.py": "a4a4aec4710c80546f9e3ce056b6816e4fb0e2ffc1af99fa2f198c8de3a51f07",
-  "src/omni_body_skill/tools/sandbox_runtime.py": "fcfd475cad837988c8969141816cf0cdb3cdc2f7c10fab92d1ddff14a1b62629",
+  "src/omni_body_skill/tools/sandbox_runtime.py": "d80e15b21c5aa423ef15bd77027e0d85ec4d763120efdfd349707cf60dee7d79",
   "src/omni_body_skill/tools/workspace_commit.py": "2624d3174fc558c01f351fbd90b80c422c0552cf4a024a584c46d863953abc18",
   "src/omni_body_skill/tools/linux_sandbox.py": "ea2780b1b936622e360f095bc419cfb27d92e6d97f99585f5a767df27ba7dc42",
   "scripts/_tool_source_build_worker.py": "e42b8985ca4178e9b35115a032f34df6535f2dc575f94873c5c1682add01240f",

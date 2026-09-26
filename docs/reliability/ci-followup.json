@@ -1,0 +1,31 @@
+{
+  "schema": "v3.reliability-ci-followup.v1",
+  "initial_published_head": "19dc0e9cd55bf8dfa0adb1ab7b195abb32f177b3",
+  "tested_durable_copy_head": "b9cd57b8ba5e9a8809d126e7bd4f66434e40aa0c",
+  "target_verification_plane": "1.50",
+  "local_tests": {
+    "runtime_authority_isolation": {
+      "passed": 80,
+      "skipped": 3
+    },
+    "freeze_and_version": {
+      "passed": 18
+    },
+    "dynamic_surface": {
+      "passed": 8
+    }
+  },
+  "live_recheck": {
+    "planned": 16,
+    "passed": 16,
+    "document": "post-ci-live-check.json",
+    "sha256": "a142c38b7eebd08523f0d4d85b657dcbb0c0276b19af28cdaefddd2a2ba8b834"
+  },
+  "regressions": {
+    "readonly_fsync": "Replayed old implementation: failed. Writable descriptor copy: passed locally and Windows native runtime capability shard.",
+    "non_media_dependency": "Replayed old implementation: failed. Media branch isolation: passed locally.",
+    "private_fact_ledger": "Old sandbox policy exposed the reserved directory; new copy/snapshot/merge counterexamples passed. Windows video original failed reading a locked Fact execute.lock.",
+    "retired_prose_attestation": "Seven native signed steps completed; stale Windows-only terminal assertion expected semantic approval from the retired prose floor. Corrected to false with explicit zero-obligation, no-inferred-output and Fact/plan identity checks; retained native execution assertions."
+  },
+  "remote_final_status": "Pending checks on the containing PR final head; this document is not a CI success assertion."
+}

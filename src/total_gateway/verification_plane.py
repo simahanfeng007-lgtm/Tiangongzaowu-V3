@@ -22,6 +22,8 @@ from __future__ import annotations
 # 1.46 scales bounded judge reasoning for large evidence and preserves failed-call usage.
 # 1.47 repairs unexecuted malformed turns at most twice using the current tool schema.
 # 1.48 supplies bounded page requests and explicit range feedback to the judge.
-VERIFICATION_PLANE_VERSION = "1.49"
+# 1.49 flushes workspace commit bytes through writable Windows handles.
+# 1.50 isolates Fact runtime state from tool snapshots and media-only dependencies.
+VERIFICATION_PLANE_VERSION = "1.50"
 
 __all__ = ["VERIFICATION_PLANE_VERSION"]
