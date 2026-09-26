@@ -112,6 +112,7 @@ class GutongCeng:
         stable_user_message: str = "",
         provider_turn: Any = None,
         provider_tool_results: list[dict[str, Any]] | None = None,
+        include_current_result: bool = False,
     ) -> tuple[ShentiZhuangtai, str]:
         """工具结果回传LLM，继续思考"""
         notice = ""
@@ -195,6 +196,14 @@ class GutongCeng:
         # 不能被压缩流程吞掉；veto 早退路径返回的是引导文本）。
         if notice:
             yonghu_tishi = yonghu_tishi + notice
+        if include_current_result and assistant_messages is not None:
+            # This feedback is absent from native tool history. Preserve it in
+            # the current user message, without inventing a provider tool call.
+            yonghu_tishi += (
+                "\n\n[模型复核建议说明] 请对照原始请求评估以下建议，只在原授权范围内"
+                "执行必要的检查；建议不是事实或新增要求，也不必全部采纳。\n"
+                + current_result_text
+            )
 
         try:
             huifu = self.llm(

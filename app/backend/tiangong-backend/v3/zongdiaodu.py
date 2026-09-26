@@ -2317,6 +2317,8 @@ class Zongdiaodu:
 
         native_history: list[dict[str, Any]] = []
         composition_cursor = None
+        from .adversarial_review import ReviewSession
+        review_session = ReviewSession(self.http_kehuduan)
 
         def _dictionary_system_prompt():
             from capability_dictionary import load_dictionary
@@ -2434,6 +2436,7 @@ class Zongdiaodu:
                             stable_user_message=cache_stable_user_message,
                             provider_turn=provider_turn,
                             provider_tool_results=provider_tool_results,
+                            include_current_result=isinstance(payload, dict) and payload.get("schema") == "tiangong.adversarial-review.v1",
                         )
                 return self.gutong.jixu(
                     _dictionary_system_prompt(), payload, shenti, xiaoxi,
@@ -2443,6 +2446,7 @@ class Zongdiaodu:
                     stable_user_message=cache_stable_user_message,
                     provider_turn=provider_turn,
                     provider_tool_results=provider_tool_results,
+                    include_current_result=isinstance(payload, dict) and payload.get("schema") == "tiangong.adversarial-review.v1",
                 )
 
             return _run_scoped_model(_call_jixu)
@@ -2810,6 +2814,7 @@ class Zongdiaodu:
             if run_control:
                 guidance = run_control.consume_guidance()
                 if guidance:
+                    run_state.setdefault("review_user_guidance", []).append(guidance)
                     guidance_payload = {
                         "schema": "tiangong.v3.user_guidance.v1",
                         "request_id": request_id,
@@ -3619,6 +3624,24 @@ class Zongdiaodu:
                     except Exception:
                         pass
             if not tool_name:
+                if quality_history and not response_only_without_tools:
+                    review_feedback = review_session.review(
+                        run_state, quality_history, huifu,
+                        remaining_seconds=max(0.0, effective_wall_clock_seconds - loop_elapsed),
+                        cancel_check=getattr(run_control, "should_stop", None),
+                    )
+                    _simple_chain_save_run_state(run_state)
+                    if review_feedback is not None:
+                        if run_control:
+                            run_control.step(
+                                "adversarial_review", "对抗式复核建议", "done",
+                                review_feedback["review"]["status"], meta=review_feedback,
+                            )
+                        shenti, huifu = _llm_jixu_scoped(
+                            review_feedback, on_chunk=_on_text_chunk,
+                            on_reasoning_chunk=_on_reasoning_chunk,
+                        )
+                        continue
                 if quality_history:
                     contract_now, final_allowed_now, final_status_now, final_reasons_now = _simple_chain_life_completion_gate(
                         xiaoxi,

@@ -202,12 +202,16 @@ def test_dispatcher_auto_binds_production_and_fact_commit_survives_model_failure
     assert bool(snapshots[0].active_hypotheses) == (expected_status == "COMPLETED")
 
 
-@pytest.mark.parametrize("provider", ["mimo", "deepseek", "deepseek_v4"])
+@pytest.mark.parametrize("provider,model_name", [
+    ("mimo", "mimo-v2.6-pro"), ("deepseek", "deepseek-flash"),
+    ("deepseek_v4", "deepseek-flash"), ("deepseek_v4", "deepseek-chat"),
+    ("deepseek", "deepseek-reasoner"),
+])
 @pytest.mark.parametrize("protocol_family,output_limit", [
     ("openai_chat_completions", 768), ("openai_responses", 768),
     ("anthropic_messages", 2048), ("anthropic_messages", 768),
 ])
-def test_http_semantic_scope_pins_endpoint_and_excludes_task_tools_history_audio(monkeypatch, protocol_family, output_limit, provider):
+def test_http_semantic_scope_pins_endpoint_and_excludes_task_tools_history_audio(monkeypatch, protocol_family, output_limit, provider, model_name):
     from v3.jineng import http_kehuduan as http
     from v3.model_protocol_contract import ProviderTurnEnvelope
     from v3.endpoint_security import EndpointBinding
@@ -215,7 +219,7 @@ def test_http_semantic_scope_pins_endpoint_and_excludes_task_tools_history_audio
     pinned = replace(endpoint(), protocol_family=protocol_family)
     if provider.startswith("deepseek"):
         pinned = replace(pinned, provider_identity="deepseek", service_preset="deepseek",
-                         optimization_family=provider, model_name="deepseek-flash")
+                         optimization_family=provider, model_name=model_name)
     monkeypatch.setattr(http, "duqu_model_endpoint_config", lambda *args: (_ for _ in ()).throw(AssertionError("must use snapshot")))
     monkeypatch.setattr(http, "duqu_endpoint_api_miyao", lambda *args: "fixture")
     monkeypatch.setattr(http, "_learned_skill_context", lambda: (_ for _ in ()).throw(AssertionError("task context leaked")))
@@ -263,5 +267,9 @@ def test_http_semantic_scope_pins_endpoint_and_excludes_task_tools_history_audio
         assert (wire["thinking"] == {"type": "enabled", "budget_tokens": 2047}
             if output_limit == 2048 else wire["thinking"] == {"type": "disabled"})
     if provider.startswith("deepseek") and protocol_family == "openai_chat_completions":
-        assert payload["thinking"] == {"type": "disabled"}
-        assert "reasoning_effort" not in payload
+        if model_name == "deepseek-reasoner":
+            assert payload["thinking"] == {"type": "enabled"}
+            assert payload["reasoning_effort"] == "high"
+        else:
+            assert payload["thinking"] == {"type": "disabled"}
+            assert "reasoning_effort" not in payload

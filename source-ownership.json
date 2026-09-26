@@ -215,6 +215,7 @@
           "world_context_integration.py",
           "world_dictionary_binding.py",
           "world_semantic_binding.py",
+          "adversarial_review.py",
           "world_understanding_production.py",
           "zhili",
           "zhuangtai_tongbu.py",

@@ -283,6 +283,7 @@ def _simple_chain_run_state_view(run_state: dict[str, Any] | None) -> dict[str, 
         ),
         "failures": list(run_state.get("failures") or [])[-8:],
         "gaps": list(run_state.get("gaps") or [])[-8:],
+        "adversarial_review": run_state.get("adversarial_review") or {},
         "completion_correction": (
             run_state.get("completion_correction")
             if isinstance(run_state.get("completion_correction"), dict)
@@ -1350,6 +1351,8 @@ def _simple_chain_prepare_tool_budget(
 def _simple_chain_record_observation(run_state: dict[str, Any] | None, payload: dict[str, Any]) -> None:
     if not isinstance(run_state, dict) or not isinstance(payload, dict):
         return
+    if run_state.get("adversarial_review"):
+        run_state["adversarial_review"]["coverage"] = "stale_after_tool_observation"
     run_state["round"] = int(run_state.get("round") or 0) + 1
     if run_state.get("active_composition_ref"):
         payload["composition_ref"] = dict(run_state["active_composition_ref"])
