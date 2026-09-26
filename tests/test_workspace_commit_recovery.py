@@ -1,6 +1,7 @@
 """Inject failures in real disk commits; reopen journals in a fresh process."""
 import json
 import os
+import stat
 from pathlib import Path
 import subprocess
 import sys
@@ -9,6 +10,46 @@ import pytest
 
 from omni_body_skill.tools import sandbox_runtime as s
 from omni_body_skill.tools import workspace_commit as tx
+
+
+def test_atomic_copy_flushes_writable_handle_even_for_readonly_source(tmp_path, monkeypatch):
+    source, target = tmp_path / "source", tmp_path / "target"
+    source.write_bytes(b"durable bytes")
+    source.chmod(stat.S_IRUSR)
+    original = os.fsync
+    flushed = []
+    def flush(fd):
+        if stat.S_ISREG(os.fstat(fd).st_mode):
+            # Emulate Windows' writable-handle requirement on every platform.
+            os.write(fd, b"")
+            flushed.append(os.fstat(fd).st_size)
+        return original(fd)
+    monkeypatch.setattr(os, "fsync", flush)
+    try:
+        s._atomic_copy(source, target)
+        assert target.read_bytes() == b"durable bytes"
+        assert flushed == [len(b"durable bytes")]
+        assert not target.stat().st_mode & stat.S_IWUSR
+    finally:
+        source.chmod(stat.S_IRUSR | stat.S_IWUSR)
+        if target.exists():
+            target.chmod(stat.S_IRUSR | stat.S_IWUSR)
+
+
+def test_atomic_copy_does_not_replace_old_file_when_flush_fails(tmp_path, monkeypatch):
+    source, target = tmp_path / "source", tmp_path / "target"
+    source.write_bytes(b"new")
+    target.write_bytes(b"old")
+    original = os.fsync
+    def fail(fd):
+        if stat.S_ISREG(os.fstat(fd).st_mode):
+            raise OSError("injected flush error")
+        return original(fd)
+    monkeypatch.setattr(os, "fsync", fail)
+    with pytest.raises(OSError, match="injected flush error"):
+        s._atomic_copy(source, target)
+    assert target.read_bytes() == b"old"
+    assert not list(tmp_path.glob("*.sandbox"))
 
 
 @pytest.fixture

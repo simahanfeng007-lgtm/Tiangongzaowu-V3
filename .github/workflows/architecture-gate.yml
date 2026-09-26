@@ -168,11 +168,8 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install Linux containment and media runtimes
-        run: sudo apt-get update && sudo apt-get install -y bubblewrap ffmpeg
-
-      - name: Verify Linux user namespace containment is available
-        run: bwrap --unshare-user --unshare-net --ro-bind / / /bin/true
+      - name: Prepare and verify Linux containment and media runtimes
+        run: bash scripts/setup-linux-ci-sandbox.sh
 
       - name: Install full source-runtime dependencies
         run: python -m pip install -r requirements-source.lock

@@ -2,7 +2,7 @@
 
 这是候选发布前的本地证据快照。最终远端 CI 与合并状态以承载本提交的 PR 检查和 merge commit 为准；本地测试不替代远端结果。
 
-基线：main `a372dbc7fb7d5218c07d96c33d21d29da4f48694` + 本地 `44c0cbb`，集成 PR #112 `4456f71e` 的有效回执及别名修复。自然语言义务、关键词完成门和主观行业评分保持删除；工具权限、结构契约和真实执行事实保留。当前验证平面 1.48，Store v33。
+基线：main `a372dbc7fb7d5218c07d96c33d21d29da4f48694` + 本地 `44c0cbb`，集成 PR #112 `4456f71e` 的有效回执及别名修复。自然语言义务、关键词完成门和主观行业评分保持删除；工具权限、结构契约和真实执行事实保留。当前验证平面 1.49，Store v33。
 
 ## 实施结果
 
@@ -54,3 +54,10 @@
 命中率提高伴随更多输入和较高的中位耗时，未达到 99%，也未证明账单下降。reuse 的第二轮 XLSX 存在一次截断输出和两次传输只返回一份 usage；原失败和 8,192 个已回报输出 token 均保留，未知用量没有补成零。该任务后续完成且独立文件检查通过。结果只作本批描述统计，不把重复任务当作现实任务的独立随机样本。
 
 [机器可读证据清单](reliability/evidence-manifest.json)关联[全字典覆盖](reliability/tool-coverage.json)、[24 项裁判测试](reliability/adversarial-judge.json)、[完整缓存对照](reliability/cache-comparison.json)、[原始尝试目录](reliability/attempt-history.json)及[本地回归](reliability/local-regression.json)。[复现说明与脚本](reliability/reproduction/README.md)提供固定输入和校验逻辑，不包含密钥或旧运行状态。测试启动缺辅助模块的失败批次保留为基础设施失败（均未发模型请求），未混入最终 48 次任务。
+
+
+## PR #113 原生 CI 后续修复
+
+首轮远端候选 `19dc0e9`（测试合并树 `651d1e3`）在 Ubuntu 沙箱预检出现 `loopback: Failed RTM_NEWADDR: Operation not permitted`，Windows 则发现对只读文件句柄执行 `fsync` 的真实兼容性缺陷。提交逻辑改为保留可写临时句柄、复制并刷新后再替换；只读源文件和刷新失败保留旧文件均有回归。本地 64 项专项及 18 项冻结/契约测试通过，验证平面显式升至 1.49。新回归在旧实现重放失败，原始 CI 失败保留。
+
+两个 Ubuntu 全库工作使用同一 CI 专用准备脚本：只在 GitHub 托管 Linux 运行，必要时按 Ubuntu 官方方案给 `/usr/bin/bwrap` 加用户命名空间配置；不修改全局限制，继续实际验证独立网络/用户命名空间及只读宿主挂载。Windows 视频失败的完整错误输出同时补入断言，等待下一轮原生验证。本节改变了产品源码，以上 48 次缓存对照及 24 项裁判结果仍是 1.48 固定候选的证据；不重绑成 1.49 实测，也不将当前专项通过宣称为全库或 Windows 通过。

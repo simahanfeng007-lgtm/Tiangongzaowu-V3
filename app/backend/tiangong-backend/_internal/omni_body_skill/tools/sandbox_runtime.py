@@ -299,12 +299,16 @@ def _atomic_copy(source: Path, destination: Path) -> None:
     from .workspace_commit import make_directory
     make_directory(destination.parent)
     fd, temp_name = tempfile.mkstemp(prefix=f".{destination.name}.", suffix=".sandbox", dir=str(destination.parent))
-    os.close(fd)
     temp = Path(temp_name)
     try:
-        shutil.copy2(source, temp)
-        with temp.open("rb") as stream:
+        # Windows FlushFileBuffers requires a writable handle. Keep mkstemp's
+        # writer open until the bytes are durable, including read-only sources.
+        with os.fdopen(fd, "wb") as stream:
+            with source.open("rb") as origin:
+                shutil.copyfileobj(origin, stream)
+            stream.flush()
             os.fsync(stream.fileno())
+        shutil.copystat(source, temp)
         os.replace(temp, destination)
         from .workspace_commit import sync_directory
         sync_directory(destination.parent)

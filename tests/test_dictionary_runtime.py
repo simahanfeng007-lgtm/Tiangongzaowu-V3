@@ -348,7 +348,7 @@ def test_slideshow_fps_contract_matches_real_encoded_video(tmp_path):
     schema = runtime.run("system.action_schema", "video.slideshow", {})
     assert "frame_rate" in schema["argument_contract"]["args"]
     result = runtime.run("video.slideshow", "animation.mp4", {"images": frames, "fps": 24})
-    assert result["success"], result
+    assert result["success"], json.dumps(result, ensure_ascii=False, indent=2)
     stream = imageio_ffmpeg.read_frames(str(tmp_path / "animation.mp4"))
     try:
         metadata = next(stream)
