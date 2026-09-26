@@ -175,7 +175,7 @@ def test_media_encoder_fits_real_sandbox_and_produces_decodable_frames(runner):
         sandbox_enabled=True, sandbox_require_os_containment=True))
     result = runtime.run('video.slideshow', 'movie.mp4',
         {'images':['first.png','second.png'], 'frame_rate': 5, 'size':'160x80'})
-    assert result['success'], result
+    assert result['success'], json.dumps(result, ensure_ascii=False, indent=2)
     assert result['ffmpeg']['containment'] == 'linux-bubblewrap'
     decoded = subprocess.run([shutil.which('ffmpeg'), '-v', 'error', '-threads', '1',
         '-i', str(runner.workspace/'movie.mp4'), '-f', 'null', '-'], capture_output=True)
