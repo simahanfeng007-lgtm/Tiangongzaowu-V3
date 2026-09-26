@@ -109,11 +109,11 @@ def test_quoted_filename_does_not_spawn_execution_obligation() -> None:
         obligations = build_action_obligations(message)
         kinds = [ob["kind"] for ob in obligations]
         assert "execution" not in kinds, f"引号内文件名不应派生 execution 义务: {kinds}"
-        assert "effect" in kinds
+        assert "effect" not in kinds
 
     # 真正的执行/观察请求语义保留
-    assert "execution" in [ob["kind"] for ob in build_action_obligations("帮我把项目跑一遍测试")]
-    assert "observation" in [ob["kind"] for ob in build_action_obligations("读取一下工作区的README.md")]
+    assert "execution" not in [ob["kind"] for ob in build_action_obligations("帮我把项目跑一遍测试")]
+    assert "observation" not in [ob["kind"] for ob in build_action_obligations("读取一下工作区的README.md")]
 
     # 闭环：effect 义务被 codex 修复后的写入证据满足
     contract = normalize_tool_result("omni_body", REAL_CODEX_WRITE_RESULT)

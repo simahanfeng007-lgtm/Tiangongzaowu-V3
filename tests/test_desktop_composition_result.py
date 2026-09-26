@@ -109,12 +109,11 @@ def test_composition_displays_real_sealed_aliases_and_explicit_read_scope():
 def _attested_case():
     from contracts import canonical_sha256
     from total_gateway.composition_task_floor import seal_execution_requirements_attestation
-    from v3.execution_integrity import build_action_obligations
     router, request_id, snapshot, state, aliases, _digest = _case()
     text = "请读取 file3.txt。"
     state.plan.executable_plan_sha256 = "6" * 64
     router._runtime.store.get_request_envelope = lambda _request_id: SimpleNamespace(text=text)
-    obligations = build_action_obligations(text)
+    obligations = [{"id": "historic-read-file3", "kind": "observation", "target_path": "file3.txt"}]
     assert obligations
     proof = seal_execution_requirements_attestation(
         {"obligations_count": len(obligations), "obligations_sha256": canonical_sha256(obligations),

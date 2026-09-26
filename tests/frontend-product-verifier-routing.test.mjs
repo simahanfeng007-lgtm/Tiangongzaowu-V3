@@ -26,8 +26,8 @@ assert.equal(
     "构建一个前端项目并启动测试，交付 index.html",
     projectRoot,
   ),
-  true,
-  "an explicitly requested frontend product must use deterministic web QA",
+  false,
+  "an explicitly requested frontend product does not infer an automatic QA gate",
 );
 
 assert.equal(
@@ -35,8 +35,8 @@ assert.equal(
     "创建网站并完成验收",
     projectRoot,
   ),
-  true,
-  "an explicitly requested website must use deterministic web QA",
+  false,
+  "an explicitly requested website does not infer an automatic QA gate",
 );
 
 console.log("frontend product verifier routing tests passed");

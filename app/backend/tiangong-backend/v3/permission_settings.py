@@ -93,43 +93,6 @@ A5_COMMAND_PATTERNS = (
     r"\brm\s+-rf\s+/(?:\s|$)",
 )
 
-RUNTIME_CONTEXT_KEYWORDS = (
-    "\u684c\u9762",
-    "\u4e0b\u8f7d",
-    "\u6587\u6863",
-    "\u56fe\u7247",
-    "\u89c6\u9891",
-    "\u97f3\u4e50",
-    "\u76d8",
-    "\u8def\u5f84",
-    "\u6587\u4ef6",
-    "\u6587\u4ef6\u5939",
-    "\u76ee\u5f55",
-    "\u6839\u76ee\u5f55",
-    "\u5220\u9664",
-    "\u5b89\u88c5",
-    "\u6743\u9650",
-    "\u6743\u9650\u6a21\u5f0f",
-    "\u8bbf\u95ee\u6743\u9650",
-    "\u9ad8\u5371",
-    "a5",
-    "\u547d\u4ee4",
-    "\u7ec8\u7aef",
-    "desktop",
-    "downloads",
-    "documents",
-    "drive",
-    "path",
-    "file",
-    "folder",
-    "directory",
-    "permission",
-    "permission_mode",
-    "policy",
-    "root",
-    "terminal",
-    "install",
-)
 
 
 def _load_raw() -> dict[str, Any]:
@@ -235,8 +198,8 @@ def permission_status(*, refresh: bool = False) -> dict[str, Any]:
 
 
 def runtime_context_needed(message: str) -> bool:
-    lowered = str(message or "").lower()
-    return any(item.lower() in lowered for item in RUNTIME_CONTEXT_KEYWORDS)
+    """Runtime facts are available independently of prose keywords."""
+    return True
 
 
 def build_runtime_context_prompt(message: str = "", *, force: bool = False) -> str:
@@ -251,7 +214,6 @@ def build_runtime_context_prompt(message: str = "", *, force: bool = False) -> s
     ]
     if not force and not runtime_context_needed(message):
         return "\n".join(policy_lines)
-    lowered_message = str(message or "").lower()
     runtime = status.get("runtime") if isinstance(status.get("runtime"), dict) else {}
     user = runtime.get("user") if isinstance(runtime.get("user"), dict) else {}
     drives = ", ".join(status.get("drive_roots") or [])
@@ -272,10 +234,6 @@ def build_runtime_context_prompt(message: str = "", *, force: bool = False) -> s
         "- \u6743\u9650\u8fb9\u754c: full_access/\u5b8c\u5168\u8bbf\u95ee\u6743\u9650\u53ea\u8868\u793a\u666e\u901a\u8bfb\u5199\u548c\u5de5\u5177\u8c03\u7528\u53ef\u81ea\u52a8\u653e\u884c\uff1bA5\u3001\u9ad8\u5371\u3001\u7cfb\u7edf\u6839\u76ee\u5f55\u6216\u76d8\u7b26\u6839\u76ee\u5f55\u7684\u7834\u574f\u6027\u64cd\u4f5c\u4ecd\u5fc5\u987b\u963b\u65ad\uff0c\u4e0d\u56e0 full_access \u653e\u884c\u3002",
         *policy_lines[1:],
     ]
-    if "\u684c\u9762" in lowered_message or "desktop" in lowered_message:
-        lines.append(
-            f"- \u684c\u9762\u76ee\u6807\u89c4\u5219: \u5f53\u7528\u6237\u8bf4\u201c\u684c\u9762\u201d\u3001\u201c\u64cd\u4f5c\u684c\u9762\u201d\u6216\u201c\u684c\u9762\u6839\u8def\u5f84\u201d\u65f6\uff0c\u76ee\u6807\u6839\u8def\u5f84\u5fc5\u987b\u662f {status.get('desktop') or ''}\uff0c\u4e0d\u8981\u9000\u56de\u7528\u6237\u76ee\u5f55\u3002"
-        )
     return "\n".join(lines)
 
 

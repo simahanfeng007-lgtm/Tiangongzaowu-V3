@@ -276,19 +276,10 @@ class MiniMaxM3Adapter:
         if tier == "balanced":
             return "agentic"
 
-        text = f"{system_tishi}\n{yonghu_tishi}".lower()
         prompt_chars = _payload_text_chars(payload)
         long_threshold = _env_int("MINIMAX_M3_LONG_CONTEXT_CHARS") or 32000
         if prompt_chars >= long_threshold:
             return "long"
-        long_markers = (
-            "long context", "deep research", "architecture", "codebase", "repository",
-            "debug", "trace", "log", "package", "build", "test", "refactor",
-            "implement", "fix", "patch", "review", "analyze", "workspace",
-            ".py", ".js", ".ts", "powershell", "terminal", "git ", "npm ",
-        )
-        if any(marker in text for marker in long_markers):
-            return "agentic"
         default_mode = _env_text("MINIMAX_M3_DEFAULT_MODE").lower()
         if default_mode in VALID_MODES:
             return default_mode

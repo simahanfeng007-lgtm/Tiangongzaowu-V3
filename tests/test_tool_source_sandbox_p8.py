@@ -23,6 +23,8 @@ def fake_windows(monkeypatch, *, launch=None, storage=None):
 def test_required_os_containment_rejects_portable_before_workspace_copy(tmp_path, monkeypatch):
     runner = sandbox.SandboxRunner(tmp_path, tmp_path / "state", tmp_path / "trash")
     monkeypatch.setattr(sandbox, "os", SimpleNamespace(name="posix", environ={}))
+    from omni_body_skill.tools import linux_sandbox
+    monkeypatch.setattr(linux_sandbox, "bubblewrap_executable", Mock(side_effect=sandbox.SandboxError("sandbox_os_containment_unavailable")))
     prepare = Mock(side_effect=AssertionError("preparation must not start"))
     monkeypatch.setattr(sandbox, "_copy_workspace", prepare)
     with pytest.raises(sandbox.SandboxError, match="os_containment_unavailable"):

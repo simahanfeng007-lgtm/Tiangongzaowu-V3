@@ -1681,7 +1681,7 @@ export function runEventToProgressStep(event = {}, run = {}) {
     return { ...base, id: "completion_gate", title: "完成验收", status: "repairing", summary: String(detail.reason || "尚未达到真实交付标准，继续修复") };
   }
   if (type === "RUN_COMPLETED") {
-    return { ...base, id: "backend_complete", title: "后端执行结束", status: "done", summary: "运行已通过完成门" };
+    return { ...base, id: "backend_complete", title: "后端执行结束", status: "done", summary: "后端已确认任务完成" };
   }
   if (type === "RUN_FAILED_SAFE") {
     return { ...base, id: "backend_complete", title: "后端安全失败", status: "failed", summary: String(detail.error || "运行未完成") };
@@ -1693,6 +1693,15 @@ export function runEventToProgressStep(event = {}, run = {}) {
 }
 
 export function runSnapshotStageText(run = {}) {
+  const reviewLabels = {
+    candidate_awaiting_review: "候选结果已生成，正在等待对抗复核",
+    review_approved: "对抗复核通过，正在提交结果",
+    review_blocked: "复核受阻，已有成果保留，尚未提交最终结果",
+    execution_failed: "执行失败",
+    approved_delivery: "对抗复核通过，已提交最终结果",
+    cancelled: "任务已取消，已有成果保留"
+  };
+  if (reviewLabels[run.review_phase]) return reviewLabels[run.review_phase];
   return String(
     run.last_interim_reply_text
     || run.lastInterimReplyText

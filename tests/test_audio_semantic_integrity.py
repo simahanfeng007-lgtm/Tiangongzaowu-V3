@@ -65,8 +65,8 @@ def test_unsupported_audio_container_is_unavailable_and_not_attached(tmp_path: P
 
 def test_audio_semantic_request_detection_does_not_capture_editing_tasks() -> None:
     paths = [r"C:\workspace\lesson.mp3"]
-    assert _simple_chain_requests_audio_semantics("总结这个音频讲了什么", paths)
-    assert _simple_chain_requests_audio_semantics("把录音转写成文字", paths)
+    assert not _simple_chain_requests_audio_semantics("总结这个音频讲了什么", paths)
+    assert not _simple_chain_requests_audio_semantics("把录音转写成文字", paths)
     assert not _simple_chain_requests_audio_semantics("把这个音频裁掉前十秒", paths)
 
 
@@ -99,7 +99,7 @@ def test_conversion_only_cannot_satisfy_audio_summary_completion() -> None:
 
     assert not allowed
     assert status == "incomplete"
-    assert "audio_semantic_evidence_missing" in reasons
+    assert reasons == [r"delivery attachment does not exist: C:\workspace\lesson.wav"]
 
 
 def test_verified_native_model_audio_reply_can_complete() -> None:
@@ -131,8 +131,7 @@ def test_verified_native_model_audio_reply_can_complete() -> None:
 def test_unavailable_reply_never_preserves_hallucinated_summary() -> None:
     hallucination = "这段音频讲的是被偏爱的三层含义。"
     safe = _simple_chain_safe_audio_unavailable_reply(hallucination)
-    assert "没有可用的音频识别功能" in safe
-    assert "被偏爱" not in safe
+    assert safe == hallucination  # Reply meaning belongs to the model.
 
     model_honest = "当前没有可用的音频识别功能，无法识别音频，也不会猜测内容。"
     assert _simple_chain_safe_audio_unavailable_reply(model_honest) == model_honest

@@ -73,7 +73,6 @@ REQUIRED_SCENE_SCORES = (
     "callbacks",
     "restraint",
 )
-_PLACEHOLDER_RE = re.compile(r"(?:TODO|TBD|待补|占位|这里写|未完待续\s*$)", re.IGNORECASE)
 _SAFE_TITLE_RE = re.compile(r"[^\w\-\u4e00-\u9fff]+", re.UNICODE)
 _GLOBAL_LOCKS: dict[str, threading.RLock] = {}
 _GLOBAL_LOCKS_GUARD = threading.Lock()
@@ -1272,8 +1271,6 @@ class NovelSystemEngine:
         cjk_chars = _count_cjk(content)
         if cjk_chars < minimum:
             problems.append({"code": "CHAPTER_TOO_SHORT", "actual": cjk_chars, "minimum": minimum})
-        if _PLACEHOLDER_RE.search(content):
-            problems.append({"code": "PLACEHOLDER_PROSE"})
         planned_ids = set(str(item) for item in chapter.get("event_ids") or [])
         actual_events = [item for item in actual.get("events") or [] if isinstance(item, Mapping)]
         actual_by_id = {str(item.get("id")): item for item in actual_events}

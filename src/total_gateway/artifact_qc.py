@@ -40,7 +40,7 @@ class ArtifactIntegrityQcOutcome:
 
 
 class ArtifactIntegrityQcService:
-    """Attest immutable object/readback and gate structure evidence for non-DOCX artifacts."""
+    """Attest immutable object/readback and gate structure evidence for all artifacts."""
 
     def __init__(self, object_store: ContentAddressedObjectStore, fact_ledger: FactLedger) -> None:
         self._object_store = object_store
@@ -58,7 +58,6 @@ class ArtifactIntegrityQcService:
         if (
             manifest.qc_state != "PENDING"
             or manifest.qc_evidence
-            or manifest.format_id == "docx"
             or not manifest.has_valid_manifest_sha256()
             or not evidence.has_valid_sha256()
             or evidence.object_id != manifest.content_object_id

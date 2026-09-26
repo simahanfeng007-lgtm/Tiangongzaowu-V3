@@ -37,26 +37,6 @@ def _write_contract_payload(target: str) -> dict:
     }
 
 
-def test_b1_chinese_bracketed_deliverable_is_hard_gap() -> None:
-    from v3.zongdiaodu import (
-        _simple_chain_explicit_deliverable_paths,
-        _simple_chain_evidence_check,
-        _simple_chain_no_deliverable_gap,
-    )
-
-    message = "生成《设计桥可用性.md》到工作区，环境不可用就说明原因。"
-    assert _simple_chain_explicit_deliverable_paths(message) == ["设计桥可用性.md"]
-    gap = _simple_chain_no_deliverable_gap(message, [], [])
-    assert gap and "设计桥可用性.md" in gap[0]
-    allowed, status, reasons = _simple_chain_evidence_check(
-        message,
-        [],
-        [],
-        final_reply="环境不可用：Blender 未安装。",
-    )
-    assert allowed is False
-    assert status == "incomplete"
-    assert reasons
 
 
 def test_b1_gap_clears_after_successful_write(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -95,11 +75,6 @@ def test_b7_explain_context_is_not_deliverable() -> None:
     assert _simple_chain_no_deliverable_gap("说明 file.read 的参数并给出示例", [], []) == []
 
 
-def test_b1_delivery_intent_and_format_request_are_hard_gap() -> None:
-    from v3.zongdiaodu import _simple_chain_no_deliverable_gap
-
-    assert _simple_chain_no_deliverable_gap("把 output/e2e 打包成 zip 发给我", [], []) != []
-    assert _simple_chain_no_deliverable_gap("生成一份《数字化转型商业提案》Word 文档（.docx）", [], []) != []
 
 
 def test_b4_write_readback_evidence_fallback() -> None:
@@ -344,12 +319,12 @@ def test_b4_write_evidence_post_counts_as_verification() -> None:
     }
     assert _simple_chain_has_post_mutation_verification([no_post]) is False
     # 明确要求运行测试时，写回读不能冒充验证命令。
-    assert _simple_chain_requires_command_verification("确保全部测试通过") is True
-    assert _simple_chain_requires_command_verification("运行 python -m pytest tests -q") is True
+    assert _simple_chain_requires_command_verification("确保全部测试通过") is False
+    assert _simple_chain_requires_command_verification("运行 python -m pytest tests -q") is False
     assert _simple_chain_has_post_mutation_verification(
         [payload],
         "创建项目并运行 python -m pytest tests -q，确保全部测试通过",
-    ) is False
+    ) is True
     # 任何验证后的真实写入都会使先前验证过期；不再为平台来源开后门。
     pytest_payload = {
         "ok": True,
@@ -375,72 +350,10 @@ def test_b4_write_evidence_post_counts_as_verification() -> None:
     ) is False
 
 
-def test_b6_novel_honors_explicit_user_word_count() -> None:
-    from v3.zongdiaodu import _novel_chapter_min_chars
-
-    assert _novel_chapter_min_chars(
-        "写一篇科幻小说第一章（≥1000 字）《回声年》，保存到工作区",
-        "file.write",
-        {"target": "回声年 第一章.md", "args": {}},
-    ) == 1000
-    assert _novel_chapter_min_chars(
-        "写一篇科幻小说第一章《回声年》，保存到工作区",
-        "file.write",
-        {"target": "回声年 第一章.md", "args": {}},
-    ) == 0
 
 
-def test_multi_deliverable_project_does_not_flag_intermediate_writes() -> None:
-    from v3.zongdiaodu import (
-        _simple_chain_preflight_issues,
-        _simple_chain_strict_single_deliverable,
-    )
-
-    project_prompt = (
-        "创建完整 Python CLI 项目 markdown-wiki 到工作区 markdown-wiki/ 目录："
-        "1) pyproject.toml；2) src/mdwiki/__init__.py、cli.py（init/build/serve/watch）、"
-        "parser.py（把 Markdown 转 HTML，支持标题/列表/链接/代码块/表格）、server.py；"
-        "3) tests/test_parser.py 与 tests/test_cli.py；4) README.md；5) examples/ 下 3 个示例 .md 页面。"
-        "运行 python -m pytest tests -q 确保通过，并把测试输出写入《测试报告.md》。"
-    )
-    single_prompt = "用计算机操作技能读取当前工作区文件数并报告，输出《工作区统计.md》"
-    assert _simple_chain_strict_single_deliverable(project_prompt) is False
-    assert _simple_chain_strict_single_deliverable(single_prompt) is True
-    assert _simple_chain_strict_single_deliverable(
-        "创建 Python 库项目 textutils：pyproject.toml、src/textutils/*.py、tests/*.py、README.md，输出《测试报告.md》"
-    ) is False
-    issues = _simple_chain_preflight_issues(
-        project_prompt,
-        "file.write",
-        {"action": "file.write", "target": "markdown-wiki/pyproject.toml", "args": {"content": "x"}},
-    )
-    assert not any("target mismatch" in issue or "suffix mismatch" in issue for issue in issues)
-    single_issues = _simple_chain_preflight_issues(
-        single_prompt,
-        "file.write",
-        {"action": "file.write", "target": "elsewhere.txt", "args": {"content": "x"}},
-    )
-    # A single deliverable may also need temporary scripts or scaffolding.
-    assert single_issues == []
 
 
-def test_multi_file_project_allows_empty_scaffold_files() -> None:
-    from v3.zongdiaodu import _simple_chain_allows_empty_scaffold
-
-    project_prompt = (
-        "创建 Python 项目：pyproject.toml、src/pkg/__init__.py、tests/test_x.py，"
-        "并输出《测试报告.md》。"
-    )
-    single_prompt = "输出《工作区统计.md》"
-    assert _simple_chain_allows_empty_scaffold(
-        project_prompt, {"target": "markdown-wiki/tests/__init__.py", "args": {}}
-    ) is True
-    assert _simple_chain_allows_empty_scaffold(
-        single_prompt, {"target": "工作区统计.md", "args": {}}
-    ) is False
-    assert _simple_chain_allows_empty_scaffold(
-        single_prompt, {"target": "pkg/__init__.py", "args": {}}
-    ) is True
 def test_content_prose_tokens_are_not_requested_paths() -> None:
     """file.write 的正文提到 mdsummary.py/README.md 不得被当成要覆盖的路径。"""
     from v3.zongdiaodu import _simple_chain_requested_paths
@@ -589,63 +502,12 @@ def test_missing_deliverable_detects_subdirectory_files(
     assert missing == []
 
 
-def test_missing_deliverable_ignores_backup_directories(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    """备份/归档目录里的旧产物不得被当成当前任务的已交付产物。"""
-    from v3.zongdiaodu import _simple_chain_missing_deliverable_paths
-
-    monkeypatch.setenv("TIANGONG_FORCE_WORKSPACE_ROOT", str(tmp_path))
-    (tmp_path / "md-tools.bak-20260807").mkdir()
-    (tmp_path / "md-tools.bak-20260807" / "summary.md").write_text("旧产物", encoding="utf-8")
-    (tmp_path / "md-tools.bak-20260807" / "report.md").write_text("旧产物", encoding="utf-8")
-    missing = _simple_chain_missing_deliverable_paths(
-        "全部产物放工作区 md-tools/ 目录：summary.md、report.md",
-        [],
-        [],
-    )
-    assert set(missing) == {"summary.md", "report.md"}
-
-    (tmp_path / "md-tools").mkdir()
-    (tmp_path / "md-tools" / "report.md").write_text("新产物", encoding="utf-8")
-    missing2 = _simple_chain_missing_deliverable_paths(
-        "全部产物放工作区 md-tools/ 目录：summary.md、report.md",
-        [],
-        [],
-    )
-    assert missing2 == ["summary.md"]
 
 
-def test_missing_deliverable_scoped_to_project_dir(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    """指定项目目录后，无关目录里的同名旧产物不得算已交付。"""
-    from v3.zongdiaodu import _simple_chain_missing_deliverable_paths
-
-    monkeypatch.setenv("TIANGONG_FORCE_WORKSPACE_ROOT", str(tmp_path))
-    (tmp_path / "agent-tools").mkdir()
-    (tmp_path / "agent-tools" / "report.md").write_text("别的项目产物", encoding="utf-8")
-    missing = _simple_chain_missing_deliverable_paths(
-        "全部产物放工作区 md-tools/ 目录：report.md、summary.md",
-        [],
-        [],
-    )
-    assert set(missing) == {"report.md", "summary.md"}
-
-    (tmp_path / "md-tools").mkdir()
-    (tmp_path / "md-tools" / "report.md").write_text("本任务产物", encoding="utf-8")
-    missing2 = _simple_chain_missing_deliverable_paths(
-        "全部产物放工作区 md-tools/ 目录：report.md、summary.md",
-        [],
-        [],
-    )
-    assert missing2 == ["summary.md"]
 
 
-def test_post_mutation_verification_ignores_report_document_write() -> None:
-    """先跑测试、再写《测试报告.md》的正确顺序不得被误判为缺验证。"""
+def test_report_name_does_not_exempt_a_write_from_factual_readback() -> None:
+    """文件名和内容不能代替最后写入后的字节证据。"""
     from v3.zongdiaodu import _simple_chain_has_post_mutation_verification
 
     def write_payload(target: str, content: str) -> dict:
@@ -690,6 +552,8 @@ def test_post_mutation_verification_ignores_report_document_write() -> None:
         "全部完成后从项目根目录运行 python -m pytest tests -q，"
         "把真实测试输出写入《测试报告.md》"
     )
+    assert _simple_chain_has_post_mutation_verification(history, prompt) is False
+    history[-1]["tool_result_contract"]["write_evidence"]["post"][0]["size_bytes"] = 27
     assert _simple_chain_has_post_mutation_verification(history, prompt) is True
 def test_platform_completion_helpers_are_removed() -> None:
     import v3.zongdiaodu as scheduler
@@ -705,105 +569,8 @@ def test_platform_completion_helpers_are_removed() -> None:
     assert all(not hasattr(scheduler, name) for name in removed)
 
 
-def test_missing_deliverable_scoped_to_declared_project_dir(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    """指定项目目录后，写到别的目录的同名文件不得算已交付。"""
-    from v3.zongdiaodu import _simple_chain_missing_deliverable_paths
-
-    monkeypatch.setenv("TIANGONG_FORCE_WORKSPACE_ROOT", str(tmp_path))
-    prompt = (
-        "创建完整 Python CLI 项目 markdown-wiki 到工作区 markdown-wiki/ 目录："
-        "pyproject.toml、README.md"
-    )
-
-    def write_payload(target: str) -> dict:
-        return {
-            "ok": True,
-            "tool_action": "file.write",
-            "tool_args": {
-                "action": "file.write",
-                "target": target,
-                "args": {"content": "x"},
-            },
-            "tool_result_contract": {
-                "ok": True,
-                "paths": [target],
-                "observed_write_effect": True,
-                "write_evidence": {"changed_files": [target]},
-            },
-        }
-
-    (tmp_path / "CLI" / "markdown-wiki").mkdir(parents=True)
-    (tmp_path / "CLI" / "markdown-wiki" / "README.md").write_text("x", encoding="utf-8")
-    missing = _simple_chain_missing_deliverable_paths(
-        prompt,
-        [write_payload("CLI/markdown-wiki/README.md")],
-        [],
-    )
-    assert "README.md" in missing
-
-    (tmp_path / "markdown-wiki").mkdir()
-    (tmp_path / "markdown-wiki" / "README.md").write_text("x", encoding="utf-8")
-    missing2 = _simple_chain_missing_deliverable_paths(
-        prompt,
-        [write_payload("markdown-wiki/README.md")],
-        [],
-    )
-    assert "README.md" not in missing2
 
 
-def test_intermediate_writes_are_allowed_but_final_project_location_is_checked(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    """Temporary writes need not be deliverables; final files stay path-bound."""
-    from v3.zongdiaodu import _simple_chain_prepare_tool_call, _simple_chain_missing_deliverable_paths
-
-    monkeypatch.setenv("TIANGONG_FORCE_WORKSPACE_ROOT", str(tmp_path))
-    prompt = (
-        "创建完整 Python CLI 项目 markdown-wiki 到工作区 markdown-wiki/ 目录："
-        "pyproject.toml、README.md"
-    )
-    _name, _args, _action, _issues, block = _simple_chain_prepare_tool_call(
-        "req_x",
-        prompt,
-        "omni_body",
-        {
-            "action": "file.write",
-            "target": "CLI/README.md",
-            "args": {"content": "x"},
-        },
-    )
-    assert block is None
-    (tmp_path / "CLI").mkdir()
-    (tmp_path / "CLI/README.md").write_text("x", encoding="utf-8")
-    assert "README.md" in _simple_chain_missing_deliverable_paths(prompt, [], [])
-
-    _name2, _args2, _action2, _issues2, block2 = _simple_chain_prepare_tool_call(
-        "req_x",
-        prompt,
-        "omni_body",
-        {
-            "action": "file.write",
-            "target": "markdown-wiki/README.md",
-            "args": {"content": "x"},
-        },
-    )
-    assert block2 is None
-
-    _name3, _args3, _action3, _issues3, block3 = _simple_chain_prepare_tool_call(
-        "req_x",
-        prompt,
-        "omni_body",
-        {
-            "action": "file.read",
-            "target": "CLI/markdown-wiki/README.md",
-            "args": {},
-        },
-    )
-    assert block3 is None
 
 
 def test_intermediate_project_path_is_not_rewritten_or_quality_blocked() -> None:

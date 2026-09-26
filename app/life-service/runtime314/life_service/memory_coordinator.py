@@ -334,6 +334,7 @@ class MemoryCoordinator:
         semantic_domain: str | None = None,
         policy_version: str = L4_POLICY_VERSION,
         expires_at_ms: int | None = None,
+        expiry_kind: str | None = None,
     ) -> tuple[MemoryAssertionV3, MemoryDerivationV1, object, bool]:
         """Create L4 EXPLICIT bound to a real user_message event.
 
@@ -342,7 +343,7 @@ class MemoryCoordinator:
         (I14: persistence authority, never external truth).
         """
 
-        detection = detect_explicit_intent(user_text)
+        detection = detect_explicit_intent(user_text, explicit=True, expiry_kind=expiry_kind)
         if not detection.triggered:
             raise MemoryCoordinatorError(
                 "user span carries no explicit persistence intent"
@@ -439,6 +440,9 @@ class MemoryCoordinator:
         created_at_ms: int,
         principal_ref: str,
         policy_version: str = L4_POLICY_VERSION,
+        explicit: bool = False,
+        expiry_kind: str | None = None,
+        expires_at_ms: int | None = None,
     ) -> MemoryDerivationV1 | None:
         """Attach an L4 EXPLICIT derivation to an already-committed assertion.
 
@@ -449,7 +453,7 @@ class MemoryCoordinator:
         Idempotent: re-attaching the same span is a no-op.
         """
 
-        detection = detect_explicit_intent(user_text)
+        detection = detect_explicit_intent(user_text, explicit=explicit, expiry_kind=expiry_kind)
         if not detection.triggered:
             return None
         assertion = self._store.get_latest_memory_assertion(memory_id)
@@ -488,7 +492,8 @@ class MemoryCoordinator:
         if existing is not None:
             return existing
         source_events = assertion.source_event_ids or (source_event_id,)
-        deadline = expiry_deadline_ms(detection.expiry_kind, created_at_ms)
+        deadline = expires_at_ms if expires_at_ms is not None else expiry_deadline_ms(detection.expiry_kind, created_at_ms)
+        created_at_ms = max(created_at_ms, l1.created_at_ms + 1)
         domain = _semantic_domain_for_assertion_kind(assertion.assertion_kind)
         derivation = MemoryDerivationV1(
             derivation_id=derivation_id,

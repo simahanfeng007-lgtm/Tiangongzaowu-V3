@@ -752,6 +752,8 @@ def _error_turn(
     optimization_family: str,
     model_name: str,
     error_code: str = "error",
+    usage: dict[str, Any] | None = None,
+    stream_metadata: dict[str, Any] | None = None,
 ) -> ProviderTurnEnvelope:
     return ProviderTurnEnvelope(
         value,
@@ -764,7 +766,12 @@ def _error_turn(
         provider_id=optimization_family,
         finish_reason="error",
         stop_semantics=error_code,
+        usage=dict(usage or {}),
+        stream_metadata=dict(stream_metadata or {}),
     )
+
+
+_MODEL_CALL_ROLE = contextvars.ContextVar("tiangong_model_call_role", default="auxiliary")
 
 
 class HttpKehuduan:
@@ -777,14 +784,28 @@ class HttpKehuduan:
         self._allowed_tool_names = contextvars.ContextVar("tiangong_allowed_tool_names", default=None)
         self._disable_tools = contextvars.ContextVar("tiangong_disable_tools", default=False)
         self._native_audio_paths = contextvars.ContextVar("tiangong_native_audio_paths", default=())
+        self._append_context = contextvars.ContextVar("tiangong_append_context", default=None)
         self._native_history = contextvars.ContextVar("tiangong_native_history", default=())
         self._native_observations = contextvars.ContextVar("tiangong_native_observations", default=())
         self._semantic_inference = contextvars.ContextVar("tiangong_semantic_inference", default=None)
+        self._execution_endpoint = contextvars.ContextVar("tiangong_execution_endpoint", default=None)
+
+    @contextmanager
+    def scoped_call_context(self, role, *, endpoint=None):
+        token = _MODEL_CALL_ROLE.set(role)
+        endpoint_token = self._execution_endpoint.set(endpoint)
+        try:
+            yield
+        finally:
+            self._execution_endpoint.reset(endpoint_token)
+            _MODEL_CALL_ROLE.reset(token)
 
     @contextmanager
     def scoped_semantic_inference(self, *, endpoint, max_output_tokens: int = 2048):
         """Use one resolved endpoint and an isolated, tool-free interpretation turn."""
-        token = self._semantic_inference.set((endpoint, max(128, min(4096, int(max_output_tokens)))))
+        role = _MODEL_CALL_ROLE.get()
+        limit = 16384 if role == "judge" else 8192 if role == "challenger" else 4096
+        token = self._semantic_inference.set((endpoint, max(128, min(limit, int(max_output_tokens)))))
         try:
             with self.scoped_tools(disable_tools=True), self.scoped_native_history(()), self.scoped_native_audio(()):
                 yield
@@ -792,14 +813,16 @@ class HttpKehuduan:
             self._semantic_inference.reset(token)
 
     @contextmanager
-    def scoped_native_history(self, history, observations=()):
+    def scoped_native_history(self, history, observations=(), append_context=None):
         token = self._native_history.set(history)
         observation_token = self._native_observations.set(observations)
+        append_token = self._append_context.set(append_context)
         try:
             yield
         finally:
             self._native_history.reset(token)
             self._native_observations.reset(observation_token)
+            self._append_context.reset(append_token)
 
     @contextmanager
     def scoped_tools(self, allowed_tool_names: list[str] | set[str] | tuple[str, ...] | None = None, disable_tools: bool = False):
@@ -842,7 +865,8 @@ class HttpKehuduan:
         )
         try:
             semantic_inference = self._semantic_inference.get()
-            endpoint = semantic_inference[0] if semantic_inference is not None else duqu_model_endpoint_config(requested_identity)
+            endpoint = (semantic_inference[0] if semantic_inference is not None else
+                        self._execution_endpoint.get() or duqu_model_endpoint_config(requested_identity))
         except Exception as exc:
             return ModelTurnReply(
                 _llm_error_text(str(exc), provider=requested_identity),
@@ -955,6 +979,9 @@ class HttpKehuduan:
                         "当前端点未证明原生 function calling 能力；不得伪装 native tool。"
                     )
 
+            # WU is refreshed for every call, but its packet IDs/timestamps
+            # must not invalidate the stable instruction/seed/history prefix.
+            effective_system_tishi, runtime_context = _split_runtime_context(effective_system_tishi)
             from .model_transport_contract import compact_native_observations, extract_native_roundtrip_history
             history = self._native_history.get(())
             native_observations_compacted = False
@@ -981,6 +1008,9 @@ class HttpKehuduan:
                 ]
             if history:
                 payload["__provider_history"] = list(history)
+                payload["__cache_ordered_history"] = True
+            if runtime_context:
+                payload["__runtime_context"] = runtime_context
             if native_observations_compacted:
                 payload["__native_observations_compacted"] = True
             audio_paths = self._native_audio_paths.get(())
@@ -1009,11 +1039,14 @@ class HttpKehuduan:
                 payload.pop("max_completion_tokens", None)
                 payload.pop("max_output_tokens", None)
                 payload["max_tokens"] = semantic_inference[1]
-                if (pid in {"deepseek", "deepseek_v4"} and endpoint.protocol_family == ProtocolFamily.OPENAI_CHAT_COMPLETIONS.value
-                        and model_name.lower().startswith(("deepseek-flash", "deepseek-v4"))):
+                if (_MODEL_CALL_ROLE.get() not in {"judge", "challenger"}
+                        and pid in {"deepseek", "deepseek_v4"} and endpoint.protocol_family == ProtocolFamily.OPENAI_CHAT_COMPLETIONS.value
+                        and (model_name.lower() == "deepseek-chat"
+                             or model_name.lower().startswith(("deepseek-flash", "deepseek-v4")))):
                     # This bounded, tool-free call extracts a small typed record.
                     # V4 thinking shares max_tokens and can consume the entire
-                    # semantic budget before producing JSON. Main task reasoning
+                    # semantic budget before producing JSON. The legacy chat
+                    # alias supports non-thinking too. Main task reasoning
                     # is untouched; do not apply this to thinking-only R1 models.
                     payload["thinking"] = {"type": "disabled"}
                     payload.pop("reasoning_effort", None)
@@ -1073,6 +1106,7 @@ class HttpKehuduan:
             from ..run_context import current_run_context
             import hashlib
             release = load_dictionary()
+            optimization_trace.update(_cache_prefix_observation(dict(payload)))
             serialized = json.dumps(payload, ensure_ascii=False, sort_keys=True)
             calls, results = 0, 0
             pending = list(payload.get("messages") or payload.get("input") or [])
@@ -1107,6 +1141,12 @@ class HttpKehuduan:
             if liushi_on_chunk is not None:
                 liushi_on_chunk(chunk)
 
+        context = self._append_context.get()
+        transaction = context.begin() if context is not None else None
+        if transaction is not None:
+            payload["__append_context"] = transaction
+            payload["__cache_ordered_history"] = True
+
         try:
             executed = execute_streaming_turn(
                 client=self._kehuduan,
@@ -1124,6 +1164,8 @@ class HttpKehuduan:
                 max_wall_clock_seconds=effective_llm_max_seconds,
             )
         except TransportExecutionError as exc:
+            attempts = exc.response_metrics.get("attempts") or []
+            failed_usage = dict(attempts[-1].get("usage") or {}) if attempts else {}
             api_status = "wall_clock_deadline" if exc.deadline_exceeded else (
                 "http_error" if exc.error_code == "http_error" else exc.error_code
             )
@@ -1135,6 +1177,7 @@ class HttpKehuduan:
                 retry_count=exc.retry_count,
                 error_preview=exc.response_preview or exc.reason,
                 response_metrics=exc.response_metrics,
+                usage=failed_usage,
             )
             hint = (
                 # bug-fix: Kimi#14 墙钟超时/网络失败 hint 由英文改中文，用户不再看到英文提示（2026-08-26，凌霜）
@@ -1142,7 +1185,7 @@ class HttpKehuduan:
                 if exc.deadline_exceeded
                 else _http_status_hint(exc.http_status)
                 if exc.error_code == "http_error"
-                else "模型输出不完整，已尝试一次拆分修复，本轮未执行不完整的工具调用。"
+                else "模型输出不完整，本轮未执行不完整的工具调用。"
                 if exc.error_code in {"output_truncated", "invalid_tool_arguments"}
                 else "模型响应未正常完成；请结合错误码检查模型服务和连接。"
             )
@@ -1164,6 +1207,8 @@ class HttpKehuduan:
                 optimization_family=pid,
                 model_name=model_name,
                 error_code=exc.error_code,
+                usage=failed_usage,
+                stream_metadata=exc.response_metrics,
             )
             return _with_native_audio(
                 error,
@@ -1176,13 +1221,17 @@ class HttpKehuduan:
         if liushi_flush:
             liushi_flush()
         turn = _canonicalize_provider_turn(executed.turn)
+        if transaction is not None:
+            transaction.commit(turn)
+            optimization_trace["append_context"] = dict(transaction.metrics)
 
         optimization_trace["output_repaired"] = bool(executed.output_repaired)
 
         usage = dict(turn.usage or {})
         usage_details = usage.get("prompt_tokens_details") if isinstance(usage.get("prompt_tokens_details"), dict) else {}
         cached_tokens = int(
-            usage.get("cached_input_tokens")
+            usage.get("prompt_cache_hit_tokens")
+            or usage.get("cached_input_tokens")
             or usage.get("cache_read_input_tokens")
             or usage_details.get("cached_tokens")
             or usage_details.get("cache_read_tokens")
@@ -1424,10 +1473,11 @@ def _jilu_l4_youhua_zhuizong(
 ) -> None:
     if not trace:
         return
-    if (not trace.get("l4_profile_consumed") and not trace.get("dictionary_wire")
-            and os.environ.get("TIANGONG_TRACE_UNSUPPORTED_PROVIDER", "").strip() != "1"):
-        return
     row = dict(trace)
+    from ..run_context import current_run_context
+    context = current_run_context()
+    row.update(model_call_role=_MODEL_CALL_ROLE.get(), request_id=context.request_id,
+               run_id=context.run_id, generation=context.generation)
     row.update({
         "api_status": api_status,
         "http_status": http_status,
@@ -1438,7 +1488,8 @@ def _jilu_l4_youhua_zhuizong(
         prompt_details = usage.get("prompt_tokens_details") if isinstance(usage.get("prompt_tokens_details"), dict) else {}
         completion_details = usage.get("completion_tokens_details") if isinstance(usage.get("completion_tokens_details"), dict) else {}
         cached_input_tokens = (
-            usage.get("cached_input_tokens")
+            usage.get("prompt_cache_hit_tokens")
+            or usage.get("cached_input_tokens")
             or usage.get("cache_read_input_tokens")
             or prompt_details.get("cached_tokens")
             or prompt_details.get("cache_read_tokens")
@@ -1449,7 +1500,9 @@ def _jilu_l4_youhua_zhuizong(
             or completion_details.get("reasoning_tokens")
             or 0
         )
+        cache_usage_available = any(key in usage for key in ("prompt_cache_hit_tokens", "cached_input_tokens", "cache_read_input_tokens")) or any(key in prompt_details for key in ("cached_tokens", "cache_read_tokens"))
         row["usage"] = {
+            "cache_usage_available": cache_usage_available,
             "prompt_tokens": usage.get("prompt_tokens") or usage.get("input_tokens"),
             "completion_tokens": usage.get("completion_tokens") or usage.get("output_tokens"),
             "total_tokens": usage.get("total_tokens"),
@@ -1471,9 +1524,24 @@ def _jilu_l4_youhua_zhuizong(
         pass
 
 
+def _split_runtime_context(system_prompt: str) -> tuple[str, str]:
+    """Relocate complete host WU slots only; never rewrite their identities."""
+    slots = []
+    def capture(match):
+        slots.append(match.group(0))
+        return ""
+    stable = re.sub(r"\[WORLD_CONTEXT_SLOT\].*?\[/WORLD_CONTEXT_SLOT\]", capture,
+                    system_prompt, flags=re.DOTALL).rstrip()
+    return (stable, "\n\n".join(slots)) if slots else (system_prompt, "")
+
+
 def _cache_prefix_observation(payload: dict[str, Any]) -> dict[str, Any]:
     """Record the stable provider cache prefix without persisting prompt text."""
     messages = payload.get("messages") if isinstance(payload.get("messages"), list) else []
+    if isinstance(payload.get("instructions"), str):
+        messages = [{"role": "system", "content": payload["instructions"]}]
+    elif payload.get("system"):
+        messages = [{"role": "system", "content": payload["system"]}]
     stable_messages: list[dict[str, Any]] = []
     prefix_chars = 0
     for message in messages:
@@ -1487,7 +1555,7 @@ def _cache_prefix_observation(payload: dict[str, Any]) -> dict[str, Any]:
         stable_messages.append(message)
     tools = payload.get("tools") if isinstance(payload.get("tools"), list) else []
     canonical = json.dumps(
-        {"tools": tools, "messages": stable_messages},
+        {"model": payload.get("model"), "tools": tools, "messages": stable_messages},
         ensure_ascii=False,
         sort_keys=True,
         separators=(",", ":"),

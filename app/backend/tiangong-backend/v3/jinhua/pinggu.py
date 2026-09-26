@@ -143,38 +143,18 @@ class JinhuaPinggu:
         return quekou_list
 
     def _tongji_shibai_moshi(self, shenti: ShentiZhuangtai) -> dict:
-        """统计最近行动中的失败模式频次"""
-        tongji = {nid: {"zongcishu": 0, "shibai_cishu": 0, "moshi_xiangqing": {}}
-                  for nid in NENGLI_WEIDU}
-
-        xingdong_list = getattr(shenti, "zuijin_xingdong", []) or []
-        if not xingdong_list:
-            return tongji
-
-        xianzai = datetime.now()
-        for xd in xingdong_list[-100:]:  # 只看最近100条
-            neirong = str(xd) if isinstance(xd, str) else xd.get("neirong", "") if isinstance(xd, dict) else ""
-            leixing = xd.get("leixing", "") if isinstance(xd, dict) else ""
-            jieguo = xd.get("jieguo", "") if isinstance(xd, dict) else ""
-
-            full_text = f"{leixing} {neirong} {jieguo}".lower()
-
-            for nid, info in NENGLI_WEIDU.items():
-                # 检查是否命中该能力的关键词
-                hit = any(kw.lower() in full_text for kw in info["guanjianci"])
-                if not hit:
-                    continue
-
-                tongji[nid]["zongcishu"] += 1
-
-                # 检查失败模式
-                for moshi in info["shibai_moshi"]:
-                    if moshi.lower() in full_text:
-                        tongji[nid]["shibai_cishu"] += 1
-                        tongji[nid]["moshi_xiangqing"][moshi] = \
-                            tongji[nid]["moshi_xiangqing"].get(moshi, 0) + 1
-
-        return tongji
+        """Count typed action results; never guess failures from action prose."""
+        result = {nid: {"zongcishu": 0, "shibai_cishu": 0, "moshi_xiangqing": {}} for nid in NENGLI_WEIDU}
+        for action in (getattr(shenti, "zuijin_xingdong", []) or [])[-100:]:
+            if not isinstance(action, dict):
+                continue
+            nid = action.get("nengli_id")
+            if nid not in result:
+                continue
+            result[nid]["zongcishu"] += 1
+            if action.get("ok") is False:
+                result[nid]["shibai_cishu"] += 1
+        return result
 
     def _shouji_dibiao_xinhao(self, shenti: ShentiZhuangtai) -> dict:
         """收集低指标信号"""
@@ -241,10 +221,8 @@ class JinhuaPinggu:
         xingdong_list = getattr(shenti, "zuijin_xingdong", []) or []
         xianzai = datetime.now()
         for xd in xingdong_list[-20:]:
-            text = str(xd).lower()
-            if any(kw.lower() in text for kw in weidu_info["guanjianci"]):
-                if any(mo.lower() in text for mo in weidu_info["shibai_moshi"]):
-                    zuijin_fen = min(1.0, zuijin_fen + 0.3)
+            if isinstance(xd, dict) and xd.get("nengli_id") == nengli_id and xd.get("ok") is False:
+                zuijin_fen = min(1.0, zuijin_fen + 0.3)
 
         # ── 成长阶段适配分(0..1) ──
         cd = shenti.shengming.chengzhang_jindu

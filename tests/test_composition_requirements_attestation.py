@@ -12,7 +12,13 @@ def value(tmp_path):
     from total_gateway.composition_task_floor import validate_request_execution_floor, seal_execution_requirements_attestation
     text = "请保留现有产物 summary.json。"
     (tmp_path / "summary.json").write_text("{}", encoding="utf-8")
-    floor = validate_request_execution_floor(text, [], workspace_root=tmp_path)
+    import hashlib
+    target = tmp_path / "summary.json"
+    floor = {"obligations_count": 1, "obligations_sha256": canonical_sha256([{"kind": "retained_output"}]),
+        "required_outputs": ["summary.json"], "output_witnesses": [{"requested_path": "summary.json",
+        "native_path": str(target), "exists": True, "size_bytes": 2,
+        "sha256": hashlib.sha256(target.read_bytes()).hexdigest(), "source": "gateway.native-final-output-probe"}],
+        "execution_requirements_verified": True, "business_outcome_verified": False}
     proof = seal_execution_requirements_attestation(floor, request_id="request.test", user_text=text,
         executable_plan_id="plan.test", executable_plan_sha256="a"*64, supporting_fact_ids=("fact.actual",), execution_completed_at_ms=3)
     from total_gateway.composition_final_result import encode_composition_final_result

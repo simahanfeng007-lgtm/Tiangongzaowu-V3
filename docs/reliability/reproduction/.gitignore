@@ -1,0 +1,7 @@
+source
+candidate-source.json
+cache-harness/private/
+cache-harness/runs/
+cache-harness/comparison-*.json*
+cache-harness/compare-*.log
+**/__pycache__/

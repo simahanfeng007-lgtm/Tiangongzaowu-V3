@@ -168,6 +168,9 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Prepare and verify Linux containment and media runtimes
+        run: bash scripts/setup-linux-ci-sandbox.sh
+
       - name: Install full source-runtime dependencies
         run: python -m pip install -r requirements-source.lock
 

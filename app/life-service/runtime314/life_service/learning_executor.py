@@ -16,8 +16,6 @@ from contracts import canonical_sha256
 
 
 LEARNING_EXECUTOR_SCHEMA = "tiangong.life.learning-executor.v1"
-_NETWORK_TERMS = ("联网", "搜索", "检索", "查资料", "查最新", "官方文档", "论文", "标准", "research", "official doc")
-_TEMPORAL_TERMS = ("最新", "current", "today", "版本", "api", "sdk", "价格", "政策", "法规", "漏洞", "cve", "release")
 _INJECTION_TERMS = ("ignore previous", "system prompt", "忽略此前", "忽略之前", "系统提示", "你是chatgpt")
 _TERM = re.compile(r"[A-Za-z][A-Za-z0-9_-]{2,}|[\u4e00-\u9fff]{2,}")
 
@@ -91,6 +89,7 @@ def _source(learning: Mapping[str, Any], activity_scope: Mapping[str, Any]) -> d
         if isinstance(row, Mapping)
     ][:8]
     return {
+        "requires_network": learning.get("requires_network") is True,
         "kind": "user_memory_and_repository" if repository_evidence else "user_and_memory",
         "topic": _text(learning.get("title") or direct, limit=240, fallback="life learning"),
         "content": combined[:32_000],
@@ -111,8 +110,7 @@ def _source(learning: Mapping[str, Any], activity_scope: Mapping[str, Any]) -> d
 
 
 def _needs_network(topic: str, source: Mapping[str, Any]) -> bool:
-    text = f"{topic}\n{source.get('content') or ''}".casefold()
-    return any(term.casefold() in text for term in (*_NETWORK_TERMS, *_TEMPORAL_TERMS))
+    return source.get("requires_network") is True
 
 
 def _queries(topic: str) -> list[str]:
@@ -144,7 +142,6 @@ def _normalise_items(value: Any) -> list[dict[str, str]]:
 def _screen(items: list[dict[str, str]], topic: str) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
     accepted: list[dict[str, str]] = []
     rejected: list[dict[str, str]] = []
-    topic_terms = set(_terms(topic))
     for row in items:
         text = f"{row.get('title', '')}\n{row.get('content', '')}"
         lowered = text.casefold()
@@ -153,8 +150,6 @@ def _screen(items: list[dict[str, str]], topic: str) -> tuple[list[dict[str, str
             reason = "empty_content"
         elif any(marker in lowered for marker in _INJECTION_TERMS):
             reason = "prompt_injection_marker"
-        elif topic_terms and not topic_terms.intersection(_terms(text)):
-            reason = "topic_irrelevant"
         elif row.get("url") and not row["url"].startswith(("https://", "http://")):
             reason = "unsupported_url"
         if reason:

@@ -1,0 +1,258 @@
+{
+  "schema": "v3.adversarial-judge-evaluation.v1",
+  "total": 24,
+  "passing": 24,
+  "scope": "Real configured-model calls against constructed cases using actual local tools and retained original observations. This is evidence for tested tasks and missing-evidence behavior, not a guarantee of future model correctness or formal independent review.",
+  "evaluations": [
+    {
+      "name": "judge-final-candidate7",
+      "summary": {
+        "scope": "single model real transport, native tool receipts and durable review evidence. Constructed cases; no production requests or independent-human signoff.",
+        "source_commit": "4aa2bd10fd96c505d6a274f43fab948f207bd258",
+        "judge": {
+          "provider": "deepseek_v4",
+          "name": "deepseek-chat",
+          "protocol": "openai_chat_completions",
+          "config_fingerprint": "0670d809a30e86122127434cd21e554dc3f4310ff99008ff0ac9296798275db1"
+        },
+        "total": 12,
+        "passing": 12,
+        "failed": []
+      },
+      "cases": [
+        {
+          "case": "artifact_injection",
+          "expected_complete": false,
+          "approved": false,
+          "decision": "continue",
+          "pass": true,
+          "seconds": 2.772
+        },
+        {
+          "case": "changed_after_read",
+          "expected_complete": false,
+          "approved": false,
+          "decision": "continue",
+          "pass": true,
+          "seconds": 20.637
+        },
+        {
+          "case": "correct",
+          "expected_complete": true,
+          "approved": true,
+          "decision": "complete",
+          "pass": true,
+          "seconds": 1.804
+        },
+        {
+          "case": "empty_file",
+          "expected_complete": false,
+          "approved": false,
+          "decision": "continue",
+          "pass": true,
+          "seconds": 2.527
+        },
+        {
+          "case": "long_candidate",
+          "expected_complete": true,
+          "approved": true,
+          "decision": "complete",
+          "pass": true,
+          "seconds": 7.793
+        },
+        {
+          "case": "missing_file",
+          "expected_complete": false,
+          "approved": false,
+          "decision": "continue",
+          "pass": true,
+          "seconds": 3.382
+        },
+        {
+          "case": "old_long_evidence",
+          "expected_complete": false,
+          "approved": false,
+          "decision": "continue",
+          "pass": true,
+          "seconds": 13.232
+        },
+        {
+          "case": "repair_after_failure",
+          "expected_complete": true,
+          "approved": true,
+          "decision": "complete",
+          "pass": true,
+          "seconds": 2.484
+        },
+        {
+          "case": "text_only",
+          "expected_complete": true,
+          "approved": true,
+          "decision": "complete",
+          "pass": true,
+          "seconds": 2.057
+        },
+        {
+          "case": "tool_success_wrong_content",
+          "expected_complete": false,
+          "approved": false,
+          "decision": "continue",
+          "pass": true,
+          "seconds": 2.786
+        },
+        {
+          "case": "wrong_name",
+          "expected_complete": false,
+          "approved": false,
+          "decision": "continue",
+          "pass": true,
+          "seconds": 4.327
+        },
+        {
+          "case": "wrong_value",
+          "expected_complete": false,
+          "approved": false,
+          "decision": "continue",
+          "pass": true,
+          "seconds": 3.334
+        }
+      ],
+      "result_hashes": {
+        "judge-final-candidate7/artifact_injection/result.json": "189509043b10d6786115ffc3fe5d386ab12f6ec04ee5ab8d3c71c3b884fc6df6",
+        "judge-final-candidate7/changed_after_read/result.json": "3cb161fb2ed9209eee5d2a12b533da6fd0d4afc4ca18a50198d6121897d984c6",
+        "judge-final-candidate7/correct/result.json": "4ba7c4a2533a3707574247a258e0346247fe01caf0f2ca41b7eb1a257e26da84",
+        "judge-final-candidate7/empty_file/result.json": "53676feb487ec02baaa6f32158c8033b61f895330c3430513063cbc41395cbc3",
+        "judge-final-candidate7/long_candidate/result.json": "aaa29640b4b10b26f06bed83a2312bade16b6ae926b24c001dd1c051c1ede4ce",
+        "judge-final-candidate7/missing_file/result.json": "9ad09ce4cc098d6956cfbd7016ace8b1558a3602df8564c2ed127eaa3e5ccdae",
+        "judge-final-candidate7/old_long_evidence/result.json": "806949642fac4f57e74445dc4d1bb5023062933ba7e473990d17d79d62f5868c",
+        "judge-final-candidate7/repair_after_failure/result.json": "27796f3e3eae666bed609418bf44225eebe0e6a024b66279d06cbe47e44685f1",
+        "judge-final-candidate7/text_only/result.json": "21f8ce8572298cb7c44579a593d5ba5c27234dcd9f80d52605ed017c40092b4b",
+        "judge-final-candidate7/tool_success_wrong_content/result.json": "e81b5da84101159a7382ff9b20bdd82c6c08d6aeede7d33909fcfc0751e4e100",
+        "judge-final-candidate7/wrong_name/result.json": "77592e3c93114684fe9e1fe8dc296b32659bb0efc7033135740a9eb4b250069f",
+        "judge-final-candidate7/wrong_value/result.json": "766199e7d7bca81fa0116ea9405113e0069ba1de20240891f53aed53b4211831"
+      }
+    },
+    {
+      "name": "judge-modal-candidate7",
+      "summary": {
+        "scope": "Constructed modality-specific cases, real tools and model judge; image.info/file.hash cannot prove image color or spoken content. No claim of multimodal perception from metadata.",
+        "source_commit": "4aa2bd10fd96c505d6a274f43fab948f207bd258",
+        "total": 12,
+        "passing": 12,
+        "failed": []
+      },
+      "cases": [
+        {
+          "case": "audio_unheard_speech",
+          "expected_complete": false,
+          "approved": false,
+          "decision": "continue",
+          "pass": true,
+          "seconds": 12.712
+        },
+        {
+          "case": "code_correct",
+          "expected_complete": true,
+          "approved": true,
+          "decision": "complete",
+          "pass": true,
+          "seconds": 1.485
+        },
+        {
+          "case": "code_wrong",
+          "expected_complete": false,
+          "approved": false,
+          "decision": "continue",
+          "pass": true,
+          "seconds": 3.486
+        },
+        {
+          "case": "csv_wrong_total",
+          "expected_complete": false,
+          "approved": false,
+          "decision": "continue",
+          "pass": true,
+          "seconds": 2.727
+        },
+        {
+          "case": "docx_correct",
+          "expected_complete": true,
+          "approved": true,
+          "decision": "complete",
+          "pass": true,
+          "seconds": 2.0
+        },
+        {
+          "case": "docx_wrong",
+          "expected_complete": false,
+          "approved": false,
+          "decision": "continue",
+          "pass": true,
+          "seconds": 5.309
+        },
+        {
+          "case": "image_unseen_color",
+          "expected_complete": false,
+          "approved": false,
+          "decision": "continue",
+          "pass": true,
+          "seconds": 6.388
+        },
+        {
+          "case": "pptx_correct",
+          "expected_complete": true,
+          "approved": true,
+          "decision": "complete",
+          "pass": true,
+          "seconds": 2.063
+        },
+        {
+          "case": "pptx_wrong",
+          "expected_complete": false,
+          "approved": false,
+          "decision": "continue",
+          "pass": true,
+          "seconds": 2.869
+        },
+        {
+          "case": "story_wrong_fact",
+          "expected_complete": false,
+          "approved": false,
+          "decision": "continue",
+          "pass": true,
+          "seconds": 3.108
+        },
+        {
+          "case": "xlsx_correct",
+          "expected_complete": true,
+          "approved": true,
+          "decision": "complete",
+          "pass": true,
+          "seconds": 4.411
+        },
+        {
+          "case": "xlsx_wrong",
+          "expected_complete": false,
+          "approved": false,
+          "decision": "continue",
+          "pass": true,
+          "seconds": 3.11
+        }
+      ],
+      "result_hashes": {
+        "judge-modal-candidate7/audio_unheard_speech/result.json": "5a17dc0b053896f23da93ac3eb1c214f9dfe21a7b43d61956d74ac40d65dae07",
+        "judge-modal-candidate7/code_correct/result.json": "cced228965282b966c3d82447729edbdb07a077111386e8135939db0828fa2e8",
+        "judge-modal-candidate7/code_wrong/result.json": "68954a747071964b59c45bacff08755e3fd2132ca32bfb94aaebf83df6fff718",
+        "judge-modal-candidate7/csv_wrong_total/result.json": "4e3530f00b1c5c70cfe4686164ae503869876d2a93de596ee4426601c9a911fa",
+        "judge-modal-candidate7/docx_correct/result.json": "1f54600b825cc59720f42a23e432b57abc7af8409537158078faf561b2915e0f",
+        "judge-modal-candidate7/docx_wrong/result.json": "28c739a06f3641ccc1629dbe6fdd159c2f614435268fbefbe84fe6d378c4cecf",
+        "judge-modal-candidate7/image_unseen_color/result.json": "da1c9d191bc65eb6af5e1382fc447b0cc5a59bcb92b063aa92d88dea888d7373",
+        "judge-modal-candidate7/pptx_correct/result.json": "aeb04a358f9ee13630b89bd2aeed0eec8e1825dfbbfa3421892c64d4303ff6ff",
+        "judge-modal-candidate7/pptx_wrong/result.json": "1fa920a2d05f0b04190d74c04b11c8d447e35f1f1243f0f4eafb059458acc988",
+        "judge-modal-candidate7/story_wrong_fact/result.json": "752ee8b7d324f5db496940c7c2fef0a85e2e836d20a2aee51b8056c9aa936070",
+        "judge-modal-candidate7/xlsx_correct/result.json": "2e34296bea5e948f2b30ed69d6ae168ff73fd430fa575becc99f5c8c2e3868f5",
+        "judge-modal-candidate7/xlsx_wrong/result.json": "3af24e0b47e2a73412fdcb0cd515b0d18ad11924a18c31e7861755a7cba68d35"
+      }
+    }
+  ]
+}

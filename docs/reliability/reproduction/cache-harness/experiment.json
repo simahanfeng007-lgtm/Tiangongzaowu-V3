@@ -1,0 +1,122 @@
+{
+  "schema": "adversarial.paired-feasibility.v1",
+  "arms": {
+    "canonical": "Existing canonical context with reuse disabled",
+    "reuse": "Append-only context with bounded full World refresh"
+  },
+  "replicates": 3,
+  "task_deadline_seconds": 240,
+  "pilot_deadline_seconds": 180,
+  "tasks": [
+    {
+      "id": "files",
+      "family": "文件整理",
+      "prompt": "将 inbox 下所有文件复制到 organized，保留各自相对于 inbox 的子目录和原始字节。生成 manifest.csv，表头 source,target,size,sha256，每个文件一行；source 以 inbox/ 开头，target 以 organized/ 开头。保留输入文件。所有操作限定在当前工作区，禁止访问桌面。请实际生成并检查交付文件。"
+    },
+    {
+      "id": "data",
+      "family": "数据汇总",
+      "prompt": "根据 orders.csv 汇总。只统计 status=paid 的行，退款行 refunded 不计入。生成 summary.json，顶层字段 regions、grand_total_cents；regions 按地区名称升序排列，每项字段 region、quantity、revenue_cents，收入为 quantity 乘 unit_price_cents。全部金额用整数分。保留输入。所有操作限定在当前工作区，禁止访问桌面。请实际生成并检查交付文件。"
+    },
+    {
+      "id": "code",
+      "family": "代码修复",
+      "prompt": "修复 calc.py 中 net_total(rows) 的计算错误：忽略 cancelled=true 的记录，其他记录按 qty*unit_cents-discount_cents 求和，结果为整数分。保留命令行接口 python calc.py input.json output.json，输出 {\"total_cents\":整数}。实际运行样例 orders.json，生成 result.json。不要修改 orders.json。所有操作限定在当前工作区，禁止访问桌面。请实际生成并检查交付文件。"
+    },
+    {
+      "id": "docx",
+      "family": "Word文档",
+      "prompt": "读取 notice.json，生成 notice.docx，包含源数据给定的标题、日期、时间、地点、主持人、两项议程及注意事项；姓名和时间逐字保留，不添加虚构事项。文档短而清楚即可，保留输入文件。所有操作限定在当前工作区，禁止访问桌面。请实际生成并检查交付文件。"
+    },
+    {
+      "id": "xlsx",
+      "family": "Excel表格",
+      "prompt": "根据 products.csv 生成 sales.xlsx，工作表名为 Sales。A1:D1 依次为 product,quantity,unit_price_cents,revenue_cents；按输入顺序写三行，D2:D4 使用同一行 B 乘 C 的 Excel 公式。A5 写 TOTAL，D5 使用 SUM(D2:D4) 公式。保留输入，不要求公式缓存值。所有操作限定在当前工作区，禁止访问桌面。请实际生成并检查交付文件。"
+    },
+    {
+      "id": "pptx",
+      "family": "PPT演示",
+      "prompt": "读取 brief.json，生成 briefing.pptx，恰好四页。每页标题按源文件 slides 顺序逐字使用，正文包含对应页给定的全部 facts，不改写数字、单位和姓名。无需商务风格评分或额外 CTA。保留输入。所有操作限定在当前工作区，禁止访问桌面。请实际生成并检查交付文件。"
+    },
+    {
+      "id": "story",
+      "family": "短篇写作",
+      "prompt": "读取 story_brief.json，按其中人物和关键事实写 story.md。三个章节标题依次为“一、灯塔”“二、来信”“三、归航”。全文含标题共 400 至 700 个汉字，必须出现两个人物的完整姓名、船只编号和约定日期；情节完整、有结尾。保留输入文件。所有操作限定在当前工作区，禁止访问桌面。请实际生成并检查交付文件。"
+    },
+    {
+      "id": "image",
+      "family": "图片处理",
+      "prompt": "将 source.png 中心裁剪为正方形，再缩放成 256×256 像素，保存 thumbnail.png。保留颜色和输入文件，不加文字、边框或其他图案。所有操作限定在当前工作区，禁止访问桌面。请实际生成并检查交付文件。"
+    }
+  ],
+  "fixtures_sha256": {
+    "files": {
+      "inbox/a/notes.txt": "aa8d7a6a2217fc19f4a61c74378b487af823a2bb1651441b72e9729f9adc7ce2",
+      "inbox/b/notes.txt": "5daed5ac0dfcbd7c0bf206ea3b2912bdbc9cda62da09244a35c866f487779fd9",
+      "inbox/data.csv": "205b7aa7d14c88dbc7c2caf9cdc0239c20a2ae9abbcdf4dac419c52f5a60bc72",
+      "inbox/raw.bin": "40aff2e9d2d8922e47afd4648e6967497158785fbd1da870e7110266bf944880",
+      "inbox/empty.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "data": {
+      "orders.csv": "2ed01942ba3de0ab5bb519b8d767b9bb23b055f3f15b14cc4a495a5adbde24cd"
+    },
+    "code": {
+      "calc.py": "44bc7fc0f9edb1950bfdc73f965c0d9b232552c3009475779a327866ef3207df",
+      "orders.json": "619b696245f78f7eeee7ec337c02a4216c6b8a0a317c286fca164e36e3149bf6"
+    },
+    "docx": {
+      "notice.json": "4472596efde10eab29bb1b7fad46a3121d21b35ddaa4650a714b3e4004bd52e0"
+    },
+    "xlsx": {
+      "products.csv": "4fb3623a156a2cab3cc8eef68cfdf3ff0380eb76d02504e5ef8959c739d04859"
+    },
+    "pptx": {
+      "brief.json": "9f4917abc4aa8515aa4aa0831badae46298f96f3d9bf8e9973be3f8da77518b6"
+    },
+    "story": {
+      "story_brief.json": "6d463436062bc396bc152bb22f0721a84f4a226a934aade9c09b4fcf89d77051"
+    },
+    "image": {
+      "source.png": "3bba9fa577458096137e97a12a4dd304efbad0d7a29c75be9733c92958630fbd"
+    },
+    "smoke": {
+      "input.json": "b3fae877403c2c7b186042e5c5005620e776c45873ae2f9a75e579a900f1d5d1"
+    }
+  },
+  "pairing": "Same exact candidate and prompts, two isolated processes, alternating arm order. All execution/judge/auxiliary calls included.",
+  "scope": "Cache comparison on 8 synthetic tasks; original artifacts required; no dictionary short codes.",
+  "primary_endpoint": "Frozen independent artifact check AND Gateway COMPLETED within identical 240 second deadline",
+  "secondary_endpoints": [
+    "artifact-only check",
+    "latency",
+    "prompt/completion/cache tokens",
+    "model wire requests",
+    "schema discovery",
+    "registered compositions",
+    "short-code use",
+    "step failure counts",
+    "false completion",
+    "output correct but runtime incomplete"
+  ],
+  "artifact_checks": "Only requirements explicitly in each frozen prompt; no invented business/style gates; story check covers mechanical constraints, not literary quality.",
+  "attribution_limit": "Small paired benchmark on one configured model and transport. Cache reuse across tasks cannot be excluded.",
+  "context_injection_scope": "Only Gateway-bound user task model calls carrying omni_body. Auxiliary World semantic calls and autonomous Life background calls are unchanged in both arms.",
+  "model_identity": {
+    "configured_provider": "deepseek_v4",
+    "configured_model": "deepseek-chat",
+    "observed_server_name_from_pilot": "deepseek-flash",
+    "immutable_revision_verified": false,
+    "main_task_wire_settings": {
+      "thinking": {
+        "type": "enabled"
+      },
+      "reasoning_effort": "high",
+      "max_tokens": 8192
+    }
+  },
+  "token_reporting": "Report main task plus reviewer separately from all auxiliary calls; tokens are not monetary bill; identify incomplete usage",
+  "baseline_commit": "a372dbc7fb7d5218c07d96c33d21d29da4f48694",
+  "source_commit": "4aa2bd10fd96c505d6a274f43fab948f207bd258",
+  "image_oracle": "Pillow center crop and resize reference; pixel MAE <= 2 and maximum absolute channel error <= 8",
+  "stop_rule": "Prospectively run all 48 bounded cases including fail-closed model/protocol failures; stop on false completion, artifact corruption with claimed success, harness failure, or source drift. No reruns or replaced cases."
+}

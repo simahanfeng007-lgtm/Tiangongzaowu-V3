@@ -1,0 +1,61 @@
+{
+  "schema": "v3.reliability-review-evidence.v1",
+  "product_integration_commit": "6c0a153975f7423b77e89f74cc988482a67fc648",
+  "tested_product_commit": "4aa2bd10fd96c505d6a274f43fab948f207bd258",
+  "product_tree_sha256": "ef6f3f8c2b75d7c0a8f45ef56f3e33e956b99ee6d9925fbeb2223f1b41a7b5cc",
+  "identical_product_files": 893,
+  "local_evidence_root": "acceptance/v3-reliability-2026-09-26/",
+  "status": "Local testing and ledger audit complete with test-only version assertion corrected; final GitHub Linux/Windows checks pending.",
+  "judge_cases": {
+    "total": 24,
+    "passed": 24
+  },
+  "paired_tasks": {
+    "total": 48,
+    "completed_and_artifact_passed": 48
+  },
+  "usage_boundary": {
+    "responses_with_usage": 546,
+    "transmission_attempts_without_usage": 1,
+    "affected_case": "reuse/r2-xlsx",
+    "rule": "Unknown usage remains unknown; no claim of complete billing or cost savings."
+  },
+  "files": {
+    "adversarial-judge.json": "320f4cd70e2b2be0b13a7128a0e6fbf789c4cc3b1d4fdc388c8eb7bf6d6bad49",
+    "attempt-history.json": "f77282b364badd1597e0798ed999dfddbe3f52164a93d48379dce6adbd598636",
+    "cache-comparison.json": "554a51301947c106ae353c83fd0426c13e402b3ba7cab96748b822043c32b695",
+    "fault-recovery.json": "7652595dd8d52edb3465ef9c7177fa0b061619d8999d72fef683d46fe74d240a",
+    "local-regression.json": "d45a85e89a0def14fb345692c588d4698b0d4af53ef0181fe979850a026ab937",
+    "office-rendering.json": "098845988fcb69aaead12bee0afa1d3ab82911eb9f0d36f11e8acd88421de665",
+    "office-visual-sample.json": "2e7fa2a0e065f0f3f82063b4e50d4a6b757783069fe014bed95d36749ead2bc1",
+    "reproduction/.gitignore": "de637581a6528a7bf680b01ccdc2eac15e618343823f4bd566ee2c9376a613d7",
+    "reproduction/README.md": "3a383a232c8165608f9b122b1d7af105bc206e0fbbc44903c1446356bd625a0e",
+    "reproduction/cache-harness/codec.py": "36dcf88b07b1d00c96cd057127a86f726554c7c3c6b3e15099a5f4ec54c40d7a",
+    "reproduction/cache-harness/dictionary-context.txt": "56eda0603392d7d2f6bfa5500c5bda6417e6bca3ff4a74e260f0a300470b5b1c",
+    "reproduction/cache-harness/experiment.json": "5617f4bcc0cc4ca81cb5499c0de3d27a0b890275460f2fc205c61705950e0c3b",
+    "reproduction/cache-harness/fixtures/code/calc.py": "44bc7fc0f9edb1950bfdc73f965c0d9b232552c3009475779a327866ef3207df",
+    "reproduction/cache-harness/fixtures/code/orders.json": "619b696245f78f7eeee7ec337c02a4216c6b8a0a317c286fca164e36e3149bf6",
+    "reproduction/cache-harness/fixtures/data/orders.csv": "2ed01942ba3de0ab5bb519b8d767b9bb23b055f3f15b14cc4a495a5adbde24cd",
+    "reproduction/cache-harness/fixtures/docx/notice.json": "4472596efde10eab29bb1b7fad46a3121d21b35ddaa4650a714b3e4004bd52e0",
+    "reproduction/cache-harness/fixtures/files/inbox/a/notes.txt": "aa8d7a6a2217fc19f4a61c74378b487af823a2bb1651441b72e9729f9adc7ce2",
+    "reproduction/cache-harness/fixtures/files/inbox/b/notes.txt": "5daed5ac0dfcbd7c0bf206ea3b2912bdbc9cda62da09244a35c866f487779fd9",
+    "reproduction/cache-harness/fixtures/files/inbox/data.csv": "205b7aa7d14c88dbc7c2caf9cdc0239c20a2ae9abbcdf4dac419c52f5a60bc72",
+    "reproduction/cache-harness/fixtures/files/inbox/empty.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "reproduction/cache-harness/fixtures/files/inbox/raw.bin": "40aff2e9d2d8922e47afd4648e6967497158785fbd1da870e7110266bf944880",
+    "reproduction/cache-harness/fixtures/image/source.png": "3bba9fa577458096137e97a12a4dd304efbad0d7a29c75be9733c92958630fbd",
+    "reproduction/cache-harness/fixtures/pptx/brief.json": "9f4917abc4aa8515aa4aa0831badae46298f96f3d9bf8e9973be3f8da77518b6",
+    "reproduction/cache-harness/fixtures/smoke/input.json": "b3fae877403c2c7b186042e5c5005620e776c45873ae2f9a75e579a900f1d5d1",
+    "reproduction/cache-harness/fixtures/story/story_brief.json": "6d463436062bc396bc152bb22f0721a84f4a226a934aade9c09b4fcf89d77051",
+    "reproduction/cache-harness/fixtures/xlsx/products.csv": "4fb3623a156a2cab3cc8eef68cfdf3ff0380eb76d02504e5ef8959c739d04859",
+    "reproduction/cache-harness/full-short-dictionary.json": "da2d75998e2f430849941364c15b6362405b169a5e67a23aae87f9e78e42331c",
+    "reproduction/cache-harness/gateway_entry.py": "9d26d3738e769eb149f73665dcf3522c34a74cbac2f1ef367c3683eed852c10c",
+    "reproduction/cache-harness/instrumentation.py": "1b52b499f451581f55a4b033df98504fae621fcf444f85ecc60f2a062fd1a908",
+    "reproduction/cache-harness/run_cache_comparison.py": "6036290fef43765d0f909b5ac7f10918c923302e3e3f4878d799eb1bc08b1a11",
+    "reproduction/cache-harness/run_case.py": "5aa01374c9df2d3b4b1f0251764e5183c49760e9a44c80dcbf2ae02c0f3f19d3",
+    "reproduction/cache-harness/suite.py": "bb4a941548453fdcccdcf2f89cc2161c3e7d7464dc9b52bcdb71018626090e50",
+    "reproduction/prepare.py": "e5d62ad59802a958556ce4639daffed6eddb25167b6097aa927faaabebd34e3b",
+    "reproduction/source-template.json": "0614f1c7a8d73c784b2f8e09f5d1b0696ef1389d2fd7fc65fa6f0be473b4f0ef",
+    "tool-coverage.json": "40dd8e9d440fbed70101a38b4c8ec3f81f90ff40b15a8bf51a3c360c6d15766c"
+  },
+  "snapshot_phase": "pre_pull_request; final remote CI and merge state are recorded by the corresponding GitHub pull request"
+}

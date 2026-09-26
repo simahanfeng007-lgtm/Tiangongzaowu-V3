@@ -140,6 +140,15 @@ def test_happy_path_share_bounded() -> None:
     assert happy / len(rows) <= 0.5
 
 
+def test_retired_gate_source_is_archived_with_exact_historical_identity():
+    archive = FIXTURES / 'historical/office_content_gate.e29bb9ba.py.txt'
+    manifest = json.loads(archive.with_suffix('.json').read_text())
+    assert manifest['source_revision'] == BASELINE
+    assert manifest['source_path'] == 'tests/test_office_content_gate.py'
+    assert manifest['status'] == 'HISTORICAL_SOURCE_NOT_CURRENT_ACCEPTANCE'
+    assert hashlib.sha256(archive.read_bytes()).hexdigest() == manifest['sha256']
+
+
 def test_m0_records_no_enforcement_above_alert() -> None:
     """M0 阶段没有 BLOCK 权限：语料执法档不得高于 ALERT。"""
     for row in _load_corpus():

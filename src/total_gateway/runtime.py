@@ -334,13 +334,9 @@ def _gateway_p15_memory_remember(runtime: object, user_text: object) -> dict[str
     """Persist one user-explicit memory as L4 user_asserted (P15)."""
 
     try:
-        from life_service.explicit_memory import detect_explicit_intent
-
         text = str(user_text or "").strip()
         if not text:
             return {"ok": False, "error": "empty_user_text"}
-        if not detect_explicit_intent(text).triggered:
-            return {"ok": False, "error": "not_explicit_intent"}
         life_service = getattr(runtime, "life_service", None)
         if life_service is None:
             return {"ok": False, "error": "life_service_unavailable"}
@@ -358,6 +354,7 @@ def _gateway_p15_memory_remember(runtime: object, user_text: object) -> dict[str
             {
                 "life_id": life_id,
                 "content": {"text": text},
+                "explicit_memory": True,
                 "epistemic_status": "user_asserted",
                 "actor": "user",
             },
@@ -383,8 +380,6 @@ def _gateway_p15_memory_recall(runtime: object, user_text: object) -> str:
     """Return bounded, non-expired long-term memory for chat context (P15)."""
 
     try:
-        from life_service.explicit_memory import detect_explicit_intent, expiry_deadline_ms
-
         text = str(user_text or "").strip()
         life_service = getattr(runtime, "life_service", None)
         if life_service is None:
@@ -393,38 +388,15 @@ def _gateway_p15_memory_recall(runtime: object, user_text: object) -> str:
         life_id = str(active.get("life_id") or "")
         if not life_id:
             return ""
-        memory_markers = (
-            "名字", "我叫", "我是谁", "称呼", "记住", "记得", "之前", "上次",
-            "偏好", "习惯", "忘了", "长期", "以后",
-        )
         lines: list[str] = []
         seen: set[str] = set()
-        now_ms = time.time_ns() // 1_000_000
 
-        def created_at_ms(row: Mapping[str, object]) -> int | None:
-            raw = str(row.get("created_at") or "").strip()
-            if not raw:
-                return None
-            try:
-                parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
-                if parsed.tzinfo is None:
-                    parsed = parsed.replace(tzinfo=timezone.utc)
-                return int(parsed.timestamp() * 1000)
-            except (TypeError, ValueError, OverflowError):
-                return None
-
-        def recallable(row: Mapping[str, object], snippet: str) -> bool:
-            try:
-                detection = detect_explicit_intent(snippet)
-            except ValueError:
+        def recallable(row: Mapping[str, object]) -> bool:
+            deadline = row.get("expires_at_ms")
+            if deadline is None:
                 return True
-            if not detection.triggered or detection.expiry_kind is None:
-                return True
-            created_ms = created_at_ms(row)
-            if created_ms is None:
-                return False
-            deadline = expiry_deadline_ms(detection.expiry_kind, created_ms)
-            return deadline is None or now_ms < deadline
+            return (isinstance(deadline, int) and not isinstance(deadline, bool)
+                    and time.time_ns() // 1_000_000 < deadline)
 
         def collect(query: str, limit: int = 10) -> None:
             status, payload, _ = life_service.request(
@@ -445,55 +417,15 @@ def _gateway_p15_memory_recall(runtime: object, user_text: object) -> str:
                 else:
                     snippet = ""
                 snippet = str(snippet).strip()
-                if snippet and snippet not in seen and recallable(row, snippet):
+                if snippet and snippet not in seen and recallable(row):
                     seen.add(snippet)
                     lines.append(snippet[:1200])
 
         collect(text)
 
-        # 显式备忘直通道（原 v3 jiyi L4 触发唤醒的 P15 化）：用户明确说
-        # "记住"的长期备忘是常备规则而非情景记忆——不应依赖关键词碰巧
-        # 命中才浮现。只要未过期就始终随召回注入（有界、带标签），让
-        # 模型知道这是用户的常设指令；关键词召回继续负责情景记忆。
-        # 备忘量大时再引入触发词匹配做裁剪（当前个人体量直通更可靠）。
-        explicit_lines: list[str] = []
-        browse_status, browse_payload, _ = life_service.request(
-            "POST",
-            "/api/v1/v3/life/memory/search",
-            {"life_id": life_id, "query": "", "limit": 40},
-        )
-        if (
-            browse_status < 400
-            and isinstance(browse_payload, Mapping)
-            and browse_payload.get("ok") is True
-        ):
-            for row in (browse_payload.get("results") or [])[:40]:
-                if not isinstance(row, Mapping):
-                    continue
-                content = row.get("content")
-                if isinstance(content, str):
-                    snippet = content
-                elif isinstance(content, Mapping):
-                    snippet = str(content.get("text") or content.get("content") or "")
-                else:
-                    snippet = ""
-                snippet = str(snippet).strip()
-                if not snippet or snippet in seen:
-                    continue
-                try:
-                    detection = detect_explicit_intent(snippet)
-                except ValueError:
-                    continue
-                if not detection.triggered or not recallable(row, snippet):
-                    continue
-                explicit_lines.append(f"[长期备忘·用户明确要求记住] {snippet[:600]}")
-                seen.add(snippet)
-                if len(explicit_lines) >= 6:
-                    break
-
-        if not lines and any(marker in text for marker in memory_markers):
+        if not lines:
             collect("")
-        return "\n".join((explicit_lines + lines)[:10])
+        return "\n".join(lines[:10])
     except Exception:
         import sys as _sw; diagnostic_log(f"swallowed: {_sw.exc_info()[0].__name__}: {str(_sw.exc_info()[1])[:120]}")
         return ""

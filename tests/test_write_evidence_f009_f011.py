@@ -187,7 +187,7 @@ def test_sandbox_real_redirect_write_is_detected() -> None:
 
 def test_desktop_deliverable_format_magic_check(tmp_path: Path) -> None:
     """D-24：文本冒充 .docx 不得过桌面交付校验；真 zip 容器过。"""
-    from v3.zongdiaodu import _simple_chain_paths_match_desktop
+    from v3.zongdiaodu import _simple_chain_desktop_file_format_ok
 
     desktop = tmp_path / "Desktop"
     desktop.mkdir()
@@ -205,8 +205,8 @@ def test_desktop_deliverable_format_magic_check(tmp_path: Path) -> None:
         mp.setattr("v3.simple_chain.kernel._path_under_desktop", lambda p: str(p).startswith(str(desktop)))
         mp.setattr("v3.simple_chain.kernel._simple_chain_expected_suffixes", lambda m: {".docx"} if "word" in m or "docx" in m else set())
         msg = "帮我在桌面上写个作文，我要word格式"
-        assert _simple_chain_paths_match_desktop([str(fake)], msg) is False
-        assert _simple_chain_paths_match_desktop([str(real)], msg) is True
+        assert _simple_chain_desktop_file_format_ok(str(fake), ".docx") is False
+        assert _simple_chain_desktop_file_format_ok(str(real), ".docx") is True
 
 
 def test_desktop_deliverable_text_suffix_skips_format_check(tmp_path: Path) -> None:

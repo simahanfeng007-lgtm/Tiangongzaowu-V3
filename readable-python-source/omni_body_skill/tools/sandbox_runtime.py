@@ -5,14 +5,17 @@ long-running work. Each invocation receives a private workspace copy, a
 secret-free environment, process-tree lifetime controls, bounded output, and a
 brokered atomic merge back into the real workspace. On Windows the process is
 created inside an AppContainer with no capabilities (therefore no network) and
-is attached to a kill-on-close Job Object. Other platforms retain the same
-workspace broker and resource limits for deterministic tests/development.
+is attached to a kill-on-close Job Object. Linux strict execution uses bubblewrap
+with private process/network namespaces and only system runtimes plus the copied
+workspace mounted. Missing OS containment fails closed; the portable supervisor
+alone is retained only for callers explicitly allowing development execution.
 """
 from __future__ import annotations
 
 import base64
 from dataclasses import dataclass
 import hashlib
+import json
 import os
 from pathlib import Path
 import re
@@ -72,6 +75,8 @@ _SKIP_NAMES = {
     ".omni_backups",
     ".omni_trash",
     ".omni_workspace.lock",
+    # Default Fact ledger/locks are runtime authority, not tool input/output.
+    ".tiangong",
     ".tiangong_sandboxes",
     ".tiangong_emergency_audit",
 }
@@ -293,13 +298,22 @@ def _snapshot(root: Path) -> dict[str, tuple[int, str]]:
 
 
 def _atomic_copy(source: Path, destination: Path) -> None:
-    destination.parent.mkdir(parents=True, exist_ok=True)
+    from .workspace_commit import make_directory
+    make_directory(destination.parent)
     fd, temp_name = tempfile.mkstemp(prefix=f".{destination.name}.", suffix=".sandbox", dir=str(destination.parent))
-    os.close(fd)
     temp = Path(temp_name)
     try:
-        shutil.copy2(source, temp)
+        # Windows FlushFileBuffers requires a writable handle. Keep mkstemp's
+        # writer open until the bytes are durable, including read-only sources.
+        with os.fdopen(fd, "wb") as stream:
+            with source.open("rb") as origin:
+                shutil.copyfileobj(origin, stream)
+            stream.flush()
+            os.fsync(stream.fileno())
+        shutil.copystat(source, temp)
         os.replace(temp, destination)
+        from .workspace_commit import sync_directory
+        sync_directory(destination.parent)
     finally:
         temp.unlink(missing_ok=True)
 
@@ -312,6 +326,9 @@ def _merge_changes(
     max_changed_bytes: int,
     trash_root: Path,
     allow_deletions: bool = True,
+    transaction_root: Path | None = None,
+    operation: str = "", input_digest: str = "", receipt: dict | None = None,
+    cancel_check=None,
 ) -> dict[str, Any]:
     _tree_size(sandbox_workspace, max_changed_bytes + sum(v[0] for v in before.values()))
     after = _snapshot(sandbox_workspace)
@@ -335,21 +352,13 @@ def _merge_changes(
                     if destination.is_file() else None)
         if observed != before.get(rel) or (destination.exists() and not destination.is_file()):
             raise SandboxError(f"sandbox_destination_changed:{rel}")
-    for rel in changed:
-        source = sandbox_workspace / Path(rel)
-        destination = real_workspace / Path(rel)
-        if _is_link_or_reparse(source):
-            raise SandboxError(f"sandbox_output_link_forbidden:{rel}")
-        _atomic_copy(source, destination)
-    timestamp = str(int(time.time() * 1000))
-    for rel in deleted:
-        destination = real_workspace / Path(rel)
-        if not destination.exists() or _is_link_or_reparse(destination):
-            continue
-        trash = trash_root / timestamp / Path(rel)
-        trash.parent.mkdir(parents=True, exist_ok=True)
-        os.replace(destination, trash)
-    return {"changed_files": changed, "deleted_files": deleted, "changed_bytes": changed_bytes}
+    from .workspace_commit import commit
+    return commit(source=sandbox_workspace, workspace=real_workspace,
+                  before=dict(before), after=after, changed=changed, deleted=deleted,
+                  root=transaction_root or (trash_root / "transactions"),
+                  operation=operation or uuid.uuid4().hex, input_digest=input_digest,
+                  receipt={**(receipt or {}), "changed_files": changed, "deleted_files": deleted,
+                           "changed_bytes": changed_bytes}, cancel_check=cancel_check)
 
 
 def _rewrite_workspace_paths(command: Sequence[str] | str, real: Path, sandbox: Path) -> list[str] | str:
@@ -482,7 +491,7 @@ def _posix_preexec(limits: SandboxLimits):
     return apply
 
 
-def _run_portable(
+def _run_captured_process(
     command: Sequence[str] | str, cwd: Path, env: Mapping[str, str], limits: SandboxLimits,
     *, cancel_check=None,
 ) -> tuple[int, bytes, bytes, str]:
@@ -526,6 +535,11 @@ def _run_portable(
         if len(stdout) + len(stderr) > limits.max_output_bytes:
             raise SandboxError("sandbox_process_output_limit")
         return process.returncode, stdout, stderr, "portable-resource-sandbox"
+
+
+def _run_portable(command, cwd, env, limits, *, cancel_check=None):
+    """Explicit resource-only compatibility path, without OS containment."""
+    return _run_captured_process(command, cwd, env, limits, cancel_check=cancel_check)
 
 
 # Windows AppContainer launcher is isolated here so importing on other platforms
@@ -573,7 +587,12 @@ class SandboxRunner:
         self.limits = limits or SandboxLimits()
         self.state_root.mkdir(parents=True, exist_ok=True)
 
-    def run(
+    def run(self, command, **kwargs):
+        from .omni_body_tool import _workspace_lock_for, _workspace_mutation_guard
+        with _workspace_mutation_guard(self.workspace, _workspace_lock_for(self.workspace)):
+            return self._run_locked(command, **kwargs)
+
+    def _run_locked(
         self,
         command: Sequence[str] | str,
         *,
@@ -593,7 +612,8 @@ class SandboxRunner:
         if type(allow_deletions) is not bool:
             raise SandboxError("sandbox_commit_policy_invalid")
         if require_os_containment and os.name != "nt":
-            raise SandboxError("sandbox_os_containment_unavailable")
+            from .linux_sandbox import bubblewrap_executable
+            bubblewrap_executable()
         if cancel_check is not None and (not callable(cancel_check) or cancel_check()):
             raise SandboxError("sandbox_cancelled")
         if not command:
@@ -608,7 +628,19 @@ class SandboxRunner:
         # component. A content-addressed short name preserves uniqueness and
         # audit correlation without consuming roughly 100 path characters.
         run_id = "r_" + hashlib.sha256(raw_run_id.encode("utf-8", errors="surrogatepass")).hexdigest()[:16]
-        run_root = self.state_root / (run_id or f"run_{time.time_ns()}")
+        workspace_key = hashlib.sha256(str(self.workspace).encode()).hexdigest()[:32]
+        run_root = self.state_root / "runs" / workspace_key / run_id
+        from .workspace_commit import recover, replay
+        transactions = self.state_root / "commits" / workspace_key
+        recover(transactions, self.workspace)
+        input_digest = hashlib.sha256(json.dumps({"command": command,
+            "cwd": str(cwd or self.workspace), "allow_deletions": allow_deletions,
+            "require_os_containment": require_os_containment,
+            "expected_workspace_files": dict(expected_workspace_files or {})},
+            ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+        recovered = replay(transactions, self.workspace, raw_run_id, input_digest)
+        if recovered is not None:
+            return recovered
         sandbox_workspace = run_root / "workspace"
         temp_dir = run_root / "temp"
         moniker = "TG3.Run." + uuid.uuid4().hex[:20]
@@ -702,24 +734,24 @@ class SandboxRunner:
                     require_os_containment=require_os_containment,
                     moniker=moniker, cancel_check=cancel_check,
                 )
+            elif require_os_containment:
+                from .linux_sandbox import run_linux_sandbox
+                code, stdout, stderr, containment = run_linux_sandbox(
+                    rewritten, sandbox_cwd, env, limits, sandbox_workspace,
+                    workspace_aliases=(self.workspace, self._workspace_input), cancel_check=cancel_check)
             else:
                 code, stdout, stderr, containment = _run_portable(rewritten, sandbox_cwd, env, limits, cancel_check=cancel_check)
             if len(stdout) + len(stderr) > limits.max_output_bytes:
                 raise SandboxError("sandbox_process_output_limit")
             if cancel_check is not None and cancel_check():
                 raise SandboxError("sandbox_cancelled")
-            merge = _merge_changes(
-                sandbox_workspace, self.workspace, before,
-                max_changed_bytes=limits.max_changed_bytes, trash_root=self.trash_root,
-                allow_deletions=allow_deletions,
-            ) if code == 0 else {"changed_files": [], "deleted_files": [], "changed_bytes": 0}
             decoded_stdout = decode_portable_bytes(
                 stdout, source="sandbox stdout", allow_legacy_windows=True
             )
             decoded_stderr = decode_portable_bytes(
                 stderr, source="sandbox stderr", allow_legacy_windows=True
             )
-            return {
+            receipt = {
                 "returncode": int(code),
                 "stdout": decoded_stdout.text,
                 "stderr": decoded_stderr.text,
@@ -735,11 +767,18 @@ class SandboxRunner:
                 "committed_workspace": str(self.workspace),
                 "outputs_truncated": False,
                 "containment": containment,
-                "network": "denied" if containment == "windows-appcontainer" else "not_os_enforced",
+                "network": "denied" if containment in {"windows-appcontainer", "linux-bubblewrap"} else "not_os_enforced",
                 "sandbox_root": str(run_root),
                 "elapsed_seconds": round(time.monotonic() - started, 3),
-                **merge,
             }
+            if code == 0:
+                return _merge_changes(
+                    sandbox_workspace, self.workspace, before,
+                    max_changed_bytes=limits.max_changed_bytes, trash_root=self.trash_root,
+                    allow_deletions=allow_deletions, transaction_root=transactions,
+                    operation=raw_run_id, input_digest=input_digest, receipt=receipt,
+                    cancel_check=cancel_check)
+            return {**receipt, "changed_files": [], "deleted_files": [], "changed_bytes": 0}
         finally:
             if os.environ.get("TIANGONG_KEEP_SANDBOX", "0").strip().lower() not in {"1", "true", "yes", "on"}:
                 shutil.rmtree(_windows_long_path(run_root), ignore_errors=True)
