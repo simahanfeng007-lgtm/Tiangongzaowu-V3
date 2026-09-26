@@ -286,6 +286,9 @@ def execute_streaming_turn(
                             telemetry["elapsed_ms"] - (previous if previous is not None else 0))
                         telemetry["finish_reason"] = state.finish_reason
                         telemetry["event_count"] = state.raw_events
+                        # Usage can arrive before a length/error terminal event.
+                        # Keep every attempt, including rejected or partial ones.
+                        telemetry["usage"] = dict(state.usage or {})
                 except httpx.HTTPStatusError as exc:
                     status = int(exc.response.status_code)
                     lifecycle.check()

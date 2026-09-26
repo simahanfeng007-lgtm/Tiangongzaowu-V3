@@ -38,7 +38,7 @@ class Client:
 
     @contextmanager
     def scoped_semantic_inference(self, *, endpoint, max_output_tokens):
-        assert max_output_tokens in (3072, 8192)
+        assert max_output_tokens in (3072, 8192, 16384)
         self.scoped = True
         try:
             yield

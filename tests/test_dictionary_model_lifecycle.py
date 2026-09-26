@@ -123,6 +123,20 @@ def test_partial_tool_arguments_prevent_blind_transport_retry(endpoint):
     assert client.sent == 1
 
 
+def test_rejected_stream_preserves_reported_usage_without_private_reasoning(endpoint):
+    usage = {"prompt_tokens": 1000, "completion_tokens": 8192,
+             "prompt_cache_hit_tokens": 640, "prompt_cache_miss_tokens": 360}
+    client = Client(lambda: iter([
+        event({"reasoning_content": "private reasoning must never be in metrics"}, "length"),
+        'data: ' + json.dumps({"choices": [], "usage": usage}), "data: [DONE]",
+    ]))
+    with pytest.raises(executor.TransportExecutionError) as caught:
+        execute(endpoint, client)
+    assert caught.value.error_code == "output_truncated"
+    assert caught.value.response_metrics["attempts"][0]["usage"] == usage
+    assert "private reasoning" not in json.dumps(caught.value.response_metrics)
+
+
 def test_auxiliary_interpretation_does_not_trigger_tool_output_repair(endpoint):
     client = Client(lambda: iter([event({"content": '{"hypotheses":['}, "length"), "data: [DONE]"]))
     with pytest.raises(executor.TransportExecutionError) as caught:

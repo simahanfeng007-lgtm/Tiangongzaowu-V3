@@ -254,6 +254,12 @@ class ReviewSession:
 
 COMPLETION_SCHEMA = "tiangong.adversarial-completion.v2"
 MAX_COMPLETION_ATTEMPTS = 6
+
+
+def _judge_output_budget(packet):
+    """Allow reasoning over large evidence without removing the parent bound."""
+    from .context_compactor import estimate_tokens
+    return 16384 if estimate_tokens(_json(packet)) > 12000 else 8192
 COMPLETION_SYSTEM = """You are the adversarial agent responsible for deciding whether the user's
 entire task is complete. The executor's answer is only a candidate. Challenge its completion claim
 against the original task, latest user guidance, actual observations and the candidate final delivery.
@@ -440,7 +446,8 @@ class CompletionSession(ReviewSession):
         from .context_compactor import estimate_tokens
         from .model_roles import input_budget
         text = _json(packet)
-        if estimate_tokens(system + text) > input_budget(endpoint, output_reserve=8192):
+        output_budget = _judge_output_budget(packet) if system == COMPLETION_SYSTEM else 8192
+        if estimate_tokens(system + text) > input_budget(endpoint, output_reserve=output_budget):
             raise ValueError("judge_input_budget")
         if not self._busy.acquire(blocking=False):
             raise ValueError("judge_still_running")
@@ -449,7 +456,7 @@ class CompletionSession(ReviewSession):
                 from contextlib import nullcontext
                 role = "judge" if system == COMPLETION_SYSTEM else "challenger"
                 call_scope = (self.client.scoped_call_context(role) if callable(getattr(self.client, "scoped_call_context", None)) else nullcontext())
-                with call_scope, self.client.scoped_semantic_inference(endpoint=endpoint, max_output_tokens=8192):
+                with call_scope, self.client.scoped_semantic_inference(endpoint=endpoint, max_output_tokens=output_budget):
                     lifecycle.check()
                     return self.client.llm_diaoyong(system, text, provider_id=endpoint.provider_identity)
             finally:
@@ -523,7 +530,13 @@ class CompletionSession(ReviewSession):
                 output = None
                 try:
                     output = self._infer(endpoint, COMPLETION_SYSTEM, packet,
-                        seconds=min(60.0, available - 5), cancel_check=cancel_check)
+                        seconds=min(90.0 if _judge_output_budget(packet) > 8192 else 60.0,
+                                    available - 5), cancel_check=cancel_check)
+                    provider_failure = model_turn_failure(output)
+                    if provider_failure:
+                        call["provider_failure"] = provider_failure
+                        if provider_failure == "output_truncated":
+                            raise ValueError("judge_output_truncated")
                     parse_packet = {**packet, "evidence_index": index or packet.get("evidence_index", [])}
                     value = parse_completion(output, parse_packet)
                     call["status"] = "completed"
@@ -626,7 +639,8 @@ class CompletionSession(ReviewSession):
         except Exception as exc:
             allowed = {"judge_budget_exhausted", "judge_input_budget", "judge_deadline_budget",
                 "judge_client_unavailable", "judge_still_running", "judge_cancelled", "judge_evidence_unavailable",
-                "judge_candidate_not_fully_seen", "judge_repeated_evidence_request", "judge_evidence_range", "judge_retrieval_budget"}
+                "judge_candidate_not_fully_seen", "judge_repeated_evidence_request", "judge_evidence_range", "judge_retrieval_budget",
+                "judge_output_truncated"}
             reason = str(exc) if type(exc) is ValueError and str(exc) in allowed else "judge_unavailable_or_invalid"
             record.update(call_status="unavailable", coverage_gaps=[reason])
         record["candidate_ranges_supplied"] = ranges

@@ -19,6 +19,7 @@ from __future__ import annotations
 # 1.44 adds one protocol correction by the same judge; invalid verdicts never approve.
 # 1.43 additionally bounds generated FFmpeg thread pools inside unchanged OS limits.
 # 1.42 binds recoverable commits, durable reviewer evidence, v2 completion and pinned model roles.
-VERIFICATION_PLANE_VERSION = "1.45"
+# 1.46 scales bounded judge reasoning for large evidence and preserves failed-call usage.
+VERIFICATION_PLANE_VERSION = "1.46"
 
 __all__ = ["VERIFICATION_PLANE_VERSION"]

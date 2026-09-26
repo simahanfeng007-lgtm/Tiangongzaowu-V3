@@ -2592,7 +2592,7 @@ class Zongdiaodu:
         except Exception:
             pass
 
-        review_reserve_seconds = min(90.0, max(65.0, effective_wall_clock_seconds * 0.2),
+        review_reserve_seconds = min(120.0, max(95.0, effective_wall_clock_seconds * 0.2),
                                      effective_wall_clock_seconds * 0.5) if judge_completion else 0.0
         run_state.setdefault("budget", {})["review_reserved_seconds"] = review_reserve_seconds
 

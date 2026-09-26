@@ -26,6 +26,34 @@ def endpoint(model="mimo-v2.6-pro"):
         optimization_family="mimo", config_fingerprint=model)
 
 
+def test_truncated_judge_response_keeps_usage_and_bounded_budget(monkeypatch):
+    from v3.jineng import http_kehuduan as http
+    from v3.jineng.model_transport_executor import TransportExecutionError
+    from v3.endpoint_security import EndpointBinding
+    pinned, traces, sent = endpoint(), [], []
+    usage = {"prompt_tokens": 20000, "completion_tokens": 16384, "prompt_cache_hit_tokens": 512}
+    monkeypatch.setattr(http, "duqu_endpoint_api_miyao", lambda *a: "fixture")
+    monkeypatch.setattr(http, "_jilu_l4_youhua_zhuizong", lambda *a, **kw: traces.append(kw))
+    monkeypatch.setattr(http, "validate_model_endpoint", lambda *a, **kw: EndpointBinding(
+        provider_id="mimo", base_url=pinned.base_url, origin="https://example.test", host="example.test",
+        port=443, official=False, custom_scope="test", resolved_ips=("203.0.113.10",)))
+    def execute(**kw):
+        sent.append(kw["canonical_payload"])
+        raise TransportExecutionError("model_output_truncated", "https://example.test/v1",
+            error_code="output_truncated", response_metrics={"attempts": [{"usage": usage}]})
+    monkeypatch.setattr(http, "execute_streaming_turn", execute)
+    client = http.HttpKehuduan()
+    try:
+        with client.scoped_call_context("judge"), client.scoped_semantic_inference(endpoint=pinned, max_output_tokens=16384):
+            result = client.llm_diaoyong("judge", "evidence")
+    finally:
+        client.guanbi()
+    assert sent[0]["max_tokens"] == 16384
+    assert result.stop_semantics == "output_truncated" and result.usage == usage
+    assert result.stream_metadata["attempts"][0]["usage"] == usage
+    assert traces[-1]["usage"] == usage and traces[-1]["api_status"] == "output_truncated"
+
+
 def bundle():
     return build_semantic_input(scope=scope(), known_records=(known("GIT_OBSERVED", "repo", "source", native="one"),))
 

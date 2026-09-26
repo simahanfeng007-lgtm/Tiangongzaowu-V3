@@ -752,6 +752,8 @@ def _error_turn(
     optimization_family: str,
     model_name: str,
     error_code: str = "error",
+    usage: dict[str, Any] | None = None,
+    stream_metadata: dict[str, Any] | None = None,
 ) -> ProviderTurnEnvelope:
     return ProviderTurnEnvelope(
         value,
@@ -764,6 +766,8 @@ def _error_turn(
         provider_id=optimization_family,
         finish_reason="error",
         stop_semantics=error_code,
+        usage=dict(usage or {}),
+        stream_metadata=dict(stream_metadata or {}),
     )
 
 
@@ -799,7 +803,8 @@ class HttpKehuduan:
     @contextmanager
     def scoped_semantic_inference(self, *, endpoint, max_output_tokens: int = 2048):
         """Use one resolved endpoint and an isolated, tool-free interpretation turn."""
-        limit = 8192 if _MODEL_CALL_ROLE.get() in {"judge", "challenger"} else 4096
+        role = _MODEL_CALL_ROLE.get()
+        limit = 16384 if role == "judge" else 8192 if role == "challenger" else 4096
         token = self._semantic_inference.set((endpoint, max(128, min(limit, int(max_output_tokens)))))
         try:
             with self.scoped_tools(disable_tools=True), self.scoped_native_history(()), self.scoped_native_audio(()):
@@ -1159,6 +1164,8 @@ class HttpKehuduan:
                 max_wall_clock_seconds=effective_llm_max_seconds,
             )
         except TransportExecutionError as exc:
+            attempts = exc.response_metrics.get("attempts") or []
+            failed_usage = dict(attempts[-1].get("usage") or {}) if attempts else {}
             api_status = "wall_clock_deadline" if exc.deadline_exceeded else (
                 "http_error" if exc.error_code == "http_error" else exc.error_code
             )
@@ -1170,6 +1177,7 @@ class HttpKehuduan:
                 retry_count=exc.retry_count,
                 error_preview=exc.response_preview or exc.reason,
                 response_metrics=exc.response_metrics,
+                usage=failed_usage,
             )
             hint = (
                 # bug-fix: Kimi#14 墙钟超时/网络失败 hint 由英文改中文，用户不再看到英文提示（2026-08-26，凌霜）
@@ -1199,6 +1207,8 @@ class HttpKehuduan:
                 optimization_family=pid,
                 model_name=model_name,
                 error_code=exc.error_code,
+                usage=failed_usage,
+                stream_metadata=exc.response_metrics,
             )
             return _with_native_audio(
                 error,
