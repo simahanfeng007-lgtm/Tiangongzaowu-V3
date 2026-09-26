@@ -58,6 +58,22 @@ def test_capture_only_exact_approved_bytes_and_bound_reply(tmp_path):
     assert ids == ('oref',)
 
 
+def test_approved_empty_local_file_keeps_version_check_without_empty_attachment(tmp_path):
+    from total_gateway.object_store import ContentAddressedObjectStore
+    path, payload, bridge, ticket, captured = approved_case(tmp_path)
+    path.write_bytes(b'')
+    payload['adversarial_completion']['reports'][-1]['artifact_versions'] = artifact_versions({'generated_attachments':[{'path':str(path)}]})
+    objects = ContentAddressedObjectStore.open(tmp_path / 'objects', now_ms=1)
+    bridge._objects = objects
+    try:
+        assert bridge._capture_outputs(ticket, payload, created_at_ms=1) == ([], ())
+        path.write_text('unapproved')
+        with pytest.raises(FrozenBackendCompatibilityError, match='artifact_changed'):
+            bridge._capture_outputs(ticket, payload, created_at_ms=1)
+    finally:
+        objects.close()
+
+
 @pytest.mark.parametrize('change', ['bytes', 'missing', 'oversize', 'reply', 'request', 'generation', 'old_protocol'])
 def test_changed_review_basis_never_exports_an_artifact(tmp_path, change):
     path, payload, bridge, ticket, captured = approved_case(tmp_path)

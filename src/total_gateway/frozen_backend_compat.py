@@ -873,13 +873,16 @@ class FrozenBackendCompatibilityTransport(BackendExecutionTransport):
                 if approved_versions is not None:
                     raise FrozenBackendCompatibilityError("compat.review.artifact_changed_after_approval")
                 continue
-            if not data and approved_versions is None:
-                continue
             if approved_versions is not None:
                 approved = approved_versions.get(str(source))
                 if (approved is None or approved.get("size_bytes") != len(data)
                         or approved.get("sha256") != hashlib.sha256(data).hexdigest()):
                     raise FrozenBackendCompatibilityError("compat.review.artifact_changed_after_approval")
+            # Empty local files are valid workspace effects, but the existing
+            # attachment ObjectStore deliberately excludes empty objects. Check
+            # their approved version above, then retain the local-only receipt.
+            if not data:
+                continue
             reference = self._objects.put_bytes(
                 data,
                 kind="artifact",
