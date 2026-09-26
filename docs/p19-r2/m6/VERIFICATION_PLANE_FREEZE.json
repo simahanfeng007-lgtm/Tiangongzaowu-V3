@@ -1,5 +1,5 @@
 {
- "verification_plane_version": "1.44",
+ "verification_plane_version": "1.45",
  "baseline_sha": "9a3344de9fe468fa845d2ff501166484439b8ec4",
  "store_schema_version": 33,
  "contract_schema_versions": {
@@ -23,7 +23,7 @@
   "src/world_understanding/inquiry/observation.py": "860ccb98470dc6814ee56633a2d424e30428ef744fbaffc13a6e3bc89bebbf68",
   "app/backend/tiangong-backend/v3/world_dictionary_binding.py": "f6f64425904317b484bba53b734d96a18b35bb6b792c271b92775956f64d6fc5",
   "app/backend/tiangong-backend/v3/world_semantic_binding.py": "9a62e6446dd6f505fd9d419dc112c4d7854549787dffac599fcfdf5ebba4b27a",
-  "app/backend/tiangong-backend/v3/adversarial_review.py": "40b1f39c30df99bbda84df80ccf08454a126c7197e3365e5f49661928883b157",
+  "app/backend/tiangong-backend/v3/adversarial_review.py": "5ebde0fa2fb72a71c6ab81c12108f2846c70690f4b0512018d8fb691c57007fc",
   "app/backend/tiangong-backend/v3/review_evidence.py": "3741e8323309313359213f6b008c4c2d40af5fd6e85c9b6b2de3f372459ba57f",
   "app/backend/tiangong-backend/v3/model_roles.py": "036c27db62edda18738855c4360ff4bf89c45edc8342db05cd3058a889b123a3",
   "app/backend/tiangong-backend/v3/gutong/gutong_ceng.py": "8a90760bd7c715b1e1c5bd655c6f907071879799dd63a9d67c6c80e8d000ab96",
@@ -59,7 +59,7 @@
   "app/backend/tiangong-backend/v3/composition_turn.py": "ac931b2a07259b56cec9ef48b74587d57567a223b3652bd329fd3a6ef2f73aa6",
   "app/backend/tiangong-backend/v3/execution_integrity.py": "cceb80273e82a85a34aa2a29c794f2891cd348008a7094687d9ffc001892d8e8",
   "app/backend/tiangong-backend/v3/simple_chain/kernel.py": "ddd685723999e94985b629b9b54a67628f7ca07793248f9e880eae035baec569",
-  "app/backend/tiangong-backend/v3/zongdiaodu.py": "4fba7ad8ff07bc97d0cba6a183f28f948a94463dcf6e934ed5893a44172865d8",
+  "app/backend/tiangong-backend/v3/zongdiaodu.py": "96ecc74688321b4407496adf36a7681ae7957b355e9a849dbdcc78966dd0461e",
   "src/world_understanding/known/rules/__init__.py": "d1236ff1fad812804d24a9733886a9bf669f6a43fc7c77ea6fbd17a983845dd5",
   "app/main.js": "f1252b5960763c1bf05f41b967c3b8a23c9dcf609b065bc87c4ea4904b7e89bb",
   "scripts/rebind-source-execution-profile.py": "0766f13bfaa792ea9e3ba4d9a457d6b706f502451ea5e7026eae06793e0c7947",
@@ -158,7 +158,7 @@
   "src/total_gateway/verification_repair_coordinator.py": "089efa6a4c888d4e06d4bdd5044a0adc283d69648463a859f42e2c063f0187f6",
   "src/total_gateway/verification_repair_policy.py": "bb2ac036d01a516729d43cc068b37bb3e92f71983004275937fcfab82b2e9eaf",
   "src/total_gateway/verification_plan_executor.py": "63a27353f037dca87e64e8ef80ceee187260949650d404e6ea9fd83d84174452",
-  "src/total_gateway/verification_plane.py": "d8c01f87921978b449600a9f4a5f4ef6630940e97c8a35b5725b185300aa849f",
+  "src/total_gateway/verification_plane.py": "e0b17b9722b55c8a0089ee940743b6f4d00634cbc00cc63850f1ea32ff16a662",
   "src/total_gateway/verification_readiness.py": "3c1e7f89fb958ba82cb2aed7de85a237a007717839727a5146a3d29d532a8a39",
   "src/total_gateway/verification_failure_evidence.py": "955b1d3c2e77b2ec229ebdd8da612f8ce26794d6fdfc849967ffaaef6fd73dea",
   "src/total_gateway/verification_registry.py": "afab7caae8079c241953c42d85945fbeb5b106114e16963219c1f8c5524b310a",

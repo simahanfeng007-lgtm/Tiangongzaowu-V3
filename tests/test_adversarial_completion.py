@@ -76,6 +76,22 @@ def test_no_valid_verdict_never_means_complete(case):
     assert not reviewer.approved(state, evidence, "候选")
 
 
+@pytest.mark.parametrize("remaining", [120, 48])
+def test_reasoning_judge_has_time_to_finish_without_exceeding_parent_budget(monkeypatch, remaining):
+    reviewer, state = session(Client()), run_state()
+    budgets = []
+    def infer(endpoint, system, packet, *, seconds, cancel_check):
+        budgets.append(seconds)
+        # A reasoning call can need more than the former 30-second cap.
+        if seconds < 40:
+            raise TimeoutError("reasoning_incomplete")
+        return verdict()
+    monkeypatch.setattr(reviewer, "_infer", infer)
+    result = reviewer.judge(state, observations(), "候选", remaining_seconds=remaining)
+    assert result["review"]["decision"] == "complete"
+    assert len(budgets) == 1 and 40 <= budgets[0] <= min(60, remaining - 5)
+
+
 @pytest.mark.parametrize("bad", ["extra_authority", "contradiction", "duplicate", "forged_ref", "invented_requirement"])
 def test_invalid_completion_protocol(bad):
     state = run_state()

@@ -15,9 +15,10 @@ from __future__ import annotations
 # 1.34 versions mutable execution receipts and ordered composition feedback.
 # 1.36 removes prose-derived task gates; structured evidence and authority remain.
 # 1.40 adds Linux workspace OS containment and corrects image/archive execution receipts.
+# 1.45 gives reasoning judges a bounded 60-second call and reserves closeout time.
 # 1.44 adds one protocol correction by the same judge; invalid verdicts never approve.
 # 1.43 additionally bounds generated FFmpeg thread pools inside unchanged OS limits.
 # 1.42 binds recoverable commits, durable reviewer evidence, v2 completion and pinned model roles.
-VERIFICATION_PLANE_VERSION = "1.44"
+VERIFICATION_PLANE_VERSION = "1.45"
 
 __all__ = ["VERIFICATION_PLANE_VERSION"]

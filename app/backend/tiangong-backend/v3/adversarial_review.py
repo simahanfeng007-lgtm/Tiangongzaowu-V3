@@ -523,7 +523,7 @@ class CompletionSession(ReviewSession):
                 output = None
                 try:
                     output = self._infer(endpoint, COMPLETION_SYSTEM, packet,
-                        seconds=min(30.0, available - 5), cancel_check=cancel_check)
+                        seconds=min(60.0, available - 5), cancel_check=cancel_check)
                     parse_packet = {**packet, "evidence_index": index or packet.get("evidence_index", [])}
                     value = parse_completion(output, parse_packet)
                     call["status"] = "completed"
