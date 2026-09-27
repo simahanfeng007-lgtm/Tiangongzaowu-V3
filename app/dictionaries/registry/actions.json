@@ -2556,6 +2556,17 @@
       "status": "active",
       "summary": "Concatenate audio files using ffmpeg concat demuxer."
     },
+    "audio.observe": {
+      "effect": "execute",
+      "execution_binding": {
+        "kind": "delivery",
+        "target": "delivery_kernel"
+      },
+      "implemented": true,
+      "risk": "A3",
+      "status": "active",
+      "summary": "Submit actual WAV/MP3 to the configured audio-capable model; no metadata or transcript-only substitution."
+    },
     "audio.tone": {
       "effect": "execute",
       "execution_binding": {
@@ -4912,7 +4923,7 @@
       "adapter": "core_builtin",
       "alias_to": "quality.python_syntax",
       "app_id": "core.code",
-      "effect": "execute",
+      "effect": "verify",
       "evidence": [
         "ok",
         "path",
@@ -4940,7 +4951,7 @@
       "adapter": "core_builtin",
       "alias_to": "quality.run_tests",
       "app_id": "core.code",
-      "effect": "write",
+      "effect": "verify",
       "evidence": [
         "ok",
         "path",
@@ -5153,7 +5164,7 @@
         "additionalProperties": true,
         "type": "object"
       },
-      "risk": "A3",
+      "risk": "A2",
       "rollback": true,
       "status": "active",
       "summary": "Core Filesystem 工具组动作：file.mkdir。底层路由到 file.mkdir。",
@@ -8253,7 +8264,7 @@
     },
     "file.patch_replace": {
       "alias_to": "code.patch_replace",
-      "effect": "execute",
+      "effect": "write",
       "execution_binding": {
         "kind": "alias",
         "target": "code.patch_replace"
@@ -10597,6 +10608,17 @@
       "status": "active",
       "summary": "Inspect image size/mode/format."
     },
+    "image.observe": {
+      "effect": "execute",
+      "execution_binding": {
+        "kind": "delivery",
+        "target": "delivery_kernel"
+      },
+      "implemented": true,
+      "risk": "A3",
+      "status": "active",
+      "summary": "Submit actual image pixels to the configured vision model; bind interpretation to original bytes and submitted resolution."
+    },
     "image.resize": {
       "effect": "write",
       "execution_binding": {
@@ -12478,6 +12500,50 @@
       "summary": "macOS Desktop 工具组动作：window list。需要接入 apple_script_or_accessibility 后端；当前包只挂载动作协议，不假装执行。",
       "tool_group": "macOS Desktop"
     },
+    "mcp.action.call": {
+      "effect": "execute",
+      "execution_binding": {
+        "kind": "delivery",
+        "target": "delivery_kernel"
+      },
+      "implemented": true,
+      "risk": "A4",
+      "status": "active",
+      "summary": "Execute an owner-bound requirement only after matching its actual remote input schema hash."
+    },
+    "mcp.auth.begin": {
+      "effect": "execute",
+      "execution_binding": {
+        "kind": "delivery",
+        "target": "delivery_kernel"
+      },
+      "implemented": true,
+      "risk": "A3",
+      "status": "active",
+      "summary": "Start an owner-configured PKCE login; requires account-owner browser authorization."
+    },
+    "mcp.auth.status": {
+      "effect": "read",
+      "execution_binding": {
+        "kind": "delivery",
+        "target": "delivery_kernel"
+      },
+      "implemented": true,
+      "risk": "A0",
+      "status": "active",
+      "summary": "Observe OAuth authorization status without exposing credentials."
+    },
+    "mcp.bindings.list": {
+      "effect": "read",
+      "execution_binding": {
+        "kind": "delivery",
+        "target": "delivery_kernel"
+      },
+      "implemented": true,
+      "risk": "A0",
+      "status": "active",
+      "summary": "Discover every dictionary requirement and its explicit owner MCP tool binding."
+    },
     "mcp.servers.list": {
       "effect": "execute",
       "execution_binding": {
@@ -12488,6 +12554,61 @@
       "risk": "A0",
       "status": "active",
       "summary": "Discover owner-configured MCP services and application connection requirements, environment locations and associations. Credentials omitted; configuration is not connection proof."
+    },
+    "mcp.session.close": {
+      "effect": "write",
+      "execution_binding": {
+        "kind": "delivery",
+        "target": "delivery_kernel"
+      },
+      "implemented": true,
+      "risk": "A2",
+      "status": "active",
+      "summary": "Close this run scope connection; remote jobs are not cancelled."
+    },
+    "mcp.tasks.cancel": {
+      "effect": "execute",
+      "execution_binding": {
+        "kind": "delivery",
+        "target": "delivery_kernel"
+      },
+      "implemented": true,
+      "risk": "A3",
+      "status": "active",
+      "summary": "Request remote job cancellation; reconcile unknown outcomes and already applied effects."
+    },
+    "mcp.tasks.get": {
+      "effect": "read",
+      "execution_binding": {
+        "kind": "delivery",
+        "target": "delivery_kernel"
+      },
+      "implemented": true,
+      "risk": "A0",
+      "status": "active",
+      "summary": "Read actual remote job status; an accepted job is not a completed business task."
+    },
+    "mcp.tasks.list": {
+      "effect": "read",
+      "execution_binding": {
+        "kind": "delivery",
+        "target": "delivery_kernel"
+      },
+      "implemented": true,
+      "risk": "A0",
+      "status": "active",
+      "summary": "Read a page of remote tasks under the original configured connection identity."
+    },
+    "mcp.tasks.result": {
+      "effect": "read",
+      "execution_binding": {
+        "kind": "delivery",
+        "target": "delivery_kernel"
+      },
+      "implemented": true,
+      "risk": "A0",
+      "status": "active",
+      "summary": "Read terminal task result with matching remote task identity and target readback still required."
     },
     "mcp.tool.call": {
       "effect": "execute",
@@ -14451,10 +14572,10 @@
         "verification_hint"
       ],
       "execution_binding": {
-        "kind": "method",
-        "target": "_action_obsidian_graph_export"
+        "kind": "delivery",
+        "target": "delivery_kernel"
       },
-      "implemented": false,
+      "implemented": true,
       "parameters": {
         "additionalProperties": true,
         "type": "object"
@@ -14463,11 +14584,11 @@
         "filesystem_or_plugin_configured",
         "valid_auth_or_visible_session"
       ],
-      "risk": "A0",
+      "risk": "A2",
       "rollback": false,
       "rollback_status": "not_implemented",
       "status": "active",
-      "summary": "Obsidian 工具组动作：graph export。需要接入 filesystem_or_plugin 后端；当前包只挂载动作协议，不假装执行。",
+      "summary": "Export Markdown wiki-link references, including unresolved links, to a fresh JSON file.",
       "tool_group": "Obsidian"
     },
     "obsidian.link.create": {
@@ -14480,10 +14601,10 @@
         "verification_hint"
       ],
       "execution_binding": {
-        "kind": "method",
-        "target": "_action_obsidian_link_create"
+        "kind": "delivery",
+        "target": "delivery_kernel"
       },
-      "implemented": false,
+      "implemented": true,
       "parameters": {
         "additionalProperties": true,
         "type": "object"
@@ -14496,7 +14617,7 @@
       "rollback": false,
       "rollback_status": "not_implemented",
       "status": "active",
-      "summary": "Obsidian 工具组动作：link create。需要接入 filesystem_or_plugin 后端；当前包只挂载动作协议，不假装执行。",
+      "summary": "Append a wiki-link to a note at an expected version; returns actual new bytes.",
       "tool_group": "Obsidian"
     },
     "obsidian.note.create": {
@@ -14509,10 +14630,10 @@
         "verification_hint"
       ],
       "execution_binding": {
-        "kind": "method",
-        "target": "_action_obsidian_note_create"
+        "kind": "delivery",
+        "target": "delivery_kernel"
       },
-      "implemented": false,
+      "implemented": true,
       "parameters": {
         "additionalProperties": true,
         "type": "object"
@@ -14525,7 +14646,7 @@
       "rollback": false,
       "rollback_status": "not_implemented",
       "status": "active",
-      "summary": "Obsidian 工具组动作：note create。需要接入 filesystem_or_plugin 后端；当前包只挂载动作协议，不假装执行。",
+      "summary": "Create a new Markdown note; refuses to overwrite an existing note.",
       "tool_group": "Obsidian"
     },
     "obsidian.note.read": {
@@ -14538,10 +14659,10 @@
         "verification_hint"
       ],
       "execution_binding": {
-        "kind": "method",
-        "target": "_action_obsidian_note_read"
+        "kind": "delivery",
+        "target": "delivery_kernel"
       },
-      "implemented": false,
+      "implemented": true,
       "parameters": {
         "additionalProperties": true,
         "type": "object"
@@ -14554,7 +14675,7 @@
       "rollback": false,
       "rollback_status": "not_implemented",
       "status": "active",
-      "summary": "Obsidian 工具组动作：note read。需要接入 filesystem_or_plugin 后端；当前包只挂载动作协议，不假装执行。",
+      "summary": "Read exact Markdown note bytes as text with hash and character range.",
       "tool_group": "Obsidian"
     },
     "obsidian.note.update": {
@@ -14567,10 +14688,10 @@
         "verification_hint"
       ],
       "execution_binding": {
-        "kind": "method",
-        "target": "_action_obsidian_note_update"
+        "kind": "delivery",
+        "target": "delivery_kernel"
       },
-      "implemented": false,
+      "implemented": true,
       "parameters": {
         "additionalProperties": true,
         "type": "object"
@@ -14583,7 +14704,7 @@
       "rollback": false,
       "rollback_status": "not_implemented",
       "status": "active",
-      "summary": "Obsidian 工具组动作：note update。需要接入 filesystem_or_plugin 后端；当前包只挂载动作协议，不假装执行。",
+      "summary": "Replace a note only at the expected SHA256 version, retaining an original snapshot.",
       "tool_group": "Obsidian"
     },
     "obsidian.search": {
@@ -14596,10 +14717,10 @@
         "verification_hint"
       ],
       "execution_binding": {
-        "kind": "method",
-        "target": "_action_obsidian_search"
+        "kind": "delivery",
+        "target": "delivery_kernel"
       },
-      "implemented": false,
+      "implemented": true,
       "parameters": {
         "additionalProperties": true,
         "type": "object"
@@ -14612,7 +14733,7 @@
       "rollback": false,
       "rollback_status": "not_implemented",
       "status": "active",
-      "summary": "Obsidian 工具组动作：search。需要接入 filesystem_or_plugin 后端；当前包只挂载动作协议，不假装执行。",
+      "summary": "Search local Markdown note text literally and paginate results without changing notes.",
       "tool_group": "Obsidian"
     },
     "obsidian.vault.list": {
@@ -14625,10 +14746,10 @@
         "verification_hint"
       ],
       "execution_binding": {
-        "kind": "method",
-        "target": "_action_obsidian_vault_list"
+        "kind": "delivery",
+        "target": "delivery_kernel"
       },
-      "implemented": false,
+      "implemented": true,
       "parameters": {
         "additionalProperties": true,
         "type": "object"
@@ -14641,7 +14762,7 @@
       "rollback": false,
       "rollback_status": "not_implemented",
       "status": "active",
-      "summary": "Obsidian 工具组动作：vault list。需要接入 filesystem_or_plugin 后端；当前包只挂载动作协议，不假装执行。",
+      "summary": "List Markdown notes in an authorized local vault with explicit pagination.",
       "tool_group": "Obsidian"
     },
     "openai_api.audio.transcribe": {
@@ -16214,7 +16335,7 @@
     },
     "search_web": {
       "alias_to": "browser.search_web",
-      "effect": "execute",
+      "effect": "read",
       "execution_binding": {
         "kind": "alias",
         "target": "browser.search_web"
@@ -16687,10 +16808,10 @@
         "verification_hint"
       ],
       "execution_binding": {
-        "kind": "method",
-        "target": "_action_sqlite_backup_create"
+        "kind": "delivery",
+        "target": "delivery_kernel"
       },
-      "implemented": false,
+      "implemented": true,
       "parameters": {
         "additionalProperties": true,
         "type": "object"
@@ -16703,7 +16824,7 @@
       "rollback": false,
       "rollback_status": "not_implemented",
       "status": "active",
-      "summary": "SQLite 工具组动作：backup create。需要接入 sqlite3 后端；当前包只挂载动作协议，不假装执行。",
+      "summary": "Create a consistent SQLite online backup to a fresh file and verify integrity.",
       "tool_group": "SQLite"
     },
     "sqlite.query": {
@@ -16742,10 +16863,10 @@
         "verification_hint"
       ],
       "execution_binding": {
-        "kind": "method",
-        "target": "_action_sqlite_schema_read"
+        "kind": "delivery",
+        "target": "delivery_kernel"
       },
-      "implemented": false,
+      "implemented": true,
       "parameters": {
         "additionalProperties": true,
         "type": "object"
@@ -16758,7 +16879,7 @@
       "rollback": false,
       "rollback_status": "not_implemented",
       "status": "active",
-      "summary": "SQLite 工具组动作：schema read。需要接入 sqlite3 后端；当前包只挂载动作协议，不假装执行。",
+      "summary": "Read the real SQLite schema without writes.",
       "tool_group": "SQLite"
     },
     "sqlite.table.export_csv": {
@@ -16771,39 +16892,10 @@
         "verification_hint"
       ],
       "execution_binding": {
-        "kind": "method",
-        "target": "_action_sqlite_table_export_csv"
+        "kind": "delivery",
+        "target": "delivery_kernel"
       },
-      "implemented": false,
-      "parameters": {
-        "additionalProperties": true,
-        "type": "object"
-      },
-      "preconditions": [
-        "sqlite3_configured",
-        "valid_auth_or_visible_session"
-      ],
-      "risk": "A0",
-      "rollback": false,
-      "rollback_status": "not_implemented",
-      "status": "active",
-      "summary": "SQLite 工具组动作：table export csv。需要接入 sqlite3 后端；当前包只挂载动作协议，不假装执行。",
-      "tool_group": "SQLite"
-    },
-    "sqlite.table.import_csv": {
-      "adapter": "sqlite3",
-      "app_id": "sqlite",
-      "effect": "execute",
-      "evidence": [
-        "adapter_result",
-        "state_after",
-        "verification_hint"
-      ],
-      "execution_binding": {
-        "kind": "method",
-        "target": "_action_sqlite_table_import_csv"
-      },
-      "implemented": false,
+      "implemented": true,
       "parameters": {
         "additionalProperties": true,
         "type": "object"
@@ -16816,7 +16908,36 @@
       "rollback": false,
       "rollback_status": "not_implemented",
       "status": "active",
-      "summary": "SQLite 工具组动作：table import csv。需要接入 sqlite3 后端；当前包只挂载动作协议，不假装执行。",
+      "summary": "Export every row of one SQLite table to a fresh CSV; report total rows and input version.",
+      "tool_group": "SQLite"
+    },
+    "sqlite.table.import_csv": {
+      "adapter": "sqlite3",
+      "app_id": "sqlite",
+      "effect": "execute",
+      "evidence": [
+        "adapter_result",
+        "state_after",
+        "verification_hint"
+      ],
+      "execution_binding": {
+        "kind": "delivery",
+        "target": "delivery_kernel"
+      },
+      "implemented": true,
+      "parameters": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "preconditions": [
+        "sqlite3_configured",
+        "valid_auth_or_visible_session"
+      ],
+      "risk": "A2",
+      "rollback": false,
+      "rollback_status": "not_implemented",
+      "status": "active",
+      "summary": "Append a rectangular CSV to an existing table in one transaction; malformed input rolls back.",
       "tool_group": "SQLite"
     },
     "stable_diffusion_webui.image.generate": {
@@ -17404,6 +17525,17 @@
       "status": "active",
       "summary": "Inspect video metadata using ffprobe."
     },
+    "video.observe_frames": {
+      "effect": "execute",
+      "execution_binding": {
+        "kind": "delivery",
+        "target": "delivery_kernel"
+      },
+      "implemented": true,
+      "risk": "A3",
+      "status": "active",
+      "summary": "Decode specified video times and submit those frames to the configured vision model; does not observe unsampled intervals or audio."
+    },
     "video.slideshow": {
       "effect": "execute",
       "execution_binding": {
@@ -17662,33 +17794,33 @@
         "target": "browser.open"
       },
       "implemented": true,
-      "risk": "A0",
+      "risk": "A2",
       "status": "active",
       "summary": "Compatibility alias to web.read.",
       "support_scope": "canonical_action_with_declared_defaults"
     },
     "web.read": {
       "alias_to": "browser.open",
-      "effect": "read",
+      "effect": "execute",
       "execution_binding": {
         "kind": "alias",
         "target": "browser.open"
       },
       "implemented": true,
-      "risk": "A0",
+      "risk": "A2",
       "status": "active",
       "summary": "Read visible text from a URL.",
       "support_scope": "canonical_action_with_declared_defaults"
     },
     "web.readability_extract": {
       "alias_to": "browser.open",
-      "effect": "read",
+      "effect": "execute",
       "execution_binding": {
         "kind": "alias",
         "target": "browser.open"
       },
       "implemented": true,
-      "risk": "A0",
+      "risk": "A2",
       "status": "active",
       "summary": "Compatibility alias to web.read.",
       "support_scope": "canonical_action_with_declared_defaults"
@@ -17708,13 +17840,13 @@
     },
     "web_readability_extract": {
       "alias_to": "browser.open",
-      "effect": "write",
+      "effect": "execute",
       "execution_binding": {
         "kind": "alias",
         "target": "browser.open"
       },
       "implemented": true,
-      "risk": "A0",
+      "risk": "A2",
       "status": "active",
       "summary": "Compatibility alias to web.read.",
       "support_scope": "canonical_action_with_declared_defaults"

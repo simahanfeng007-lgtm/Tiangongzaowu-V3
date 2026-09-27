@@ -774,6 +774,47 @@ def _error_turn(
 _MODEL_CALL_ROLE = contextvars.ContextVar("tiangong_model_call_role", default="auxiliary")
 
 
+def _inject_native_images(payload, paths, protocol_family):
+    """Bind actual decoded pixels to the existing model transport and receipt."""
+    if not paths:
+        return []
+    if protocol_family != ProtocolFamily.OPENAI_CHAT_COMPLETIONS.value:
+        raise ValueError("native_image_protocol_unavailable")
+    if len(paths) > 12:
+        raise ValueError("native_image_count_exceeded")
+    from PIL import Image, ImageOps
+    from io import BytesIO
+    messages = payload.get("messages") or []
+    user = next((m for m in reversed(messages) if m.get("role") == "user"), None)
+    if user is None:
+        raise ValueError("native_image_user_message_missing")
+    content = user.get("content")
+    parts = list(content) if isinstance(content, list) else [{"type": "text", "text": str(content or "")}]
+    receipts = []
+    for path_text in paths:
+        path = Path(path_text)
+        with path.open("rb") as stream:
+            raw = stream.read(20 * 1024 * 1024 + 1)
+        if not raw or len(raw) > 20 * 1024 * 1024:
+            raise ValueError("native_image_size_exceeded")
+        with Image.open(BytesIO(raw)) as source:
+            width, height = source.size
+            if width * height > 40000000:
+                raise ValueError("native_image_pixels_exceeded")
+            source.load()
+            img = ImageOps.exif_transpose(source).convert("RGB")
+            img.thumbnail((2048, 2048))
+            output = BytesIO(); img.save(output, format="JPEG", quality=90)
+            encoded = output.getvalue()
+            parts.append({"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + base64.b64encode(encoded).decode("ascii")}})
+            receipts.append({"path": str(path), "sha256": hashlib.sha256(raw).hexdigest(),
+                "submitted_sha256": hashlib.sha256(encoded).hexdigest(), "source_size": [width, height],
+                "submitted_size": list(img.size), "conversion": "EXIF transpose, RGB JPEG quality90, bounded2048",
+                "semantic_visibility": "submitted"})
+    user["content"] = parts
+    return receipts
+
+
 class HttpKehuduan:
     """唯一生产 HTTP 客户端；协议差异只经 Transport Registry。"""
 
@@ -784,6 +825,7 @@ class HttpKehuduan:
         self._allowed_tool_names = contextvars.ContextVar("tiangong_allowed_tool_names", default=None)
         self._disable_tools = contextvars.ContextVar("tiangong_disable_tools", default=False)
         self._native_audio_paths = contextvars.ContextVar("tiangong_native_audio_paths", default=())
+        self._native_image_paths = contextvars.ContextVar("tiangong_native_image_paths", default=())
         self._append_context = contextvars.ContextVar("tiangong_append_context", default=None)
         self._native_history = contextvars.ContextVar("tiangong_native_history", default=())
         self._native_observations = contextvars.ContextVar("tiangong_native_observations", default=())
@@ -807,7 +849,7 @@ class HttpKehuduan:
         limit = 16384 if role == "judge" else 8192 if role == "challenger" else 4096
         token = self._semantic_inference.set((endpoint, max(128, min(limit, int(max_output_tokens)))))
         try:
-            with self.scoped_tools(disable_tools=True), self.scoped_native_history(()), self.scoped_native_audio(()):
+            with self.scoped_tools(disable_tools=True), self.scoped_native_history(()), self.scoped_native_audio(()), self.scoped_native_images(()):
                 yield
         finally:
             self._semantic_inference.reset(token)
@@ -845,6 +887,14 @@ class HttpKehuduan:
             yield
         finally:
             self._native_audio_paths.reset(token)
+
+    @contextmanager
+    def scoped_native_images(self, paths=None):
+        token = self._native_image_paths.set(tuple(str(p) for p in (paths or ())))
+        try:
+            yield
+        finally:
+            self._native_image_paths.reset(token)
 
     def llm_diaoyong(
         self,
@@ -941,6 +991,7 @@ class HttpKehuduan:
 
         st = shenti or ShentiZhuangtai()
         native_audio_receipt: dict[str, Any] | None = None
+        native_image_receipts = []
         try:
             learned_skill_context = "" if semantic_inference is not None else _learned_skill_context()
             effective_system_tishi = system_tishi + learned_skill_context if learned_skill_context else system_tishi
@@ -1018,6 +1069,7 @@ class HttpKehuduan:
                 native_audio_receipt = _inject_native_audio_input(payload, audio_paths)
             else:
                 native_audio_receipt = _native_audio_unavailable_for_protocol(audio_paths, endpoint.protocol_family)
+            native_image_receipts = _inject_native_images(payload, self._native_image_paths.get(()), endpoint.protocol_family)
 
             if gongju_dingyi:
                 payload["tool_choice"] = "auto"
@@ -1261,7 +1313,11 @@ class HttpKehuduan:
                     **{**_turn_kwargs(turn), "visible_text": cleaned},
                 )
         visible = bool(turn.visible_text.strip()) and not turn.tool_calls
-        return _with_native_audio(turn, native_audio_receipt, visible=visible)
+        turn = _with_native_audio(turn, native_audio_receipt, visible=visible)
+        if native_image_receipts:
+            turn.native_image_evidence = [{**r, "semantic_visibility": "visible" if visible else "unavailable"}
+                                          for r in native_image_receipts]
+        return turn
 
     def zuowei_huidiao(
         self, provider_id: str | None = None

@@ -3102,6 +3102,46 @@
       "value_schemas": {},
       "value_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde"
     },
+    "audio.observe": {
+      "alias_to": "",
+      "argument_schema": {
+        "action": "audio.observe",
+        "args": {
+          "expected_sha256": "optional source byte SHA256",
+          "question": "specific question about actual content"
+        },
+        "required": [
+          "target",
+          "args.question"
+        ],
+        "target": "configured MCP server or authorized local media file"
+      },
+      "argument_schema_kind": "EXPLICIT",
+      "argument_schema_sha256": "547b0781447baada57db5718df82233bf0d308004bc9af6feb977d8ae5ff9cb2",
+      "argument_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde",
+      "declared_status": "implemented",
+      "dynamic": true,
+      "effect": "execute",
+      "executable": true,
+      "handler": "dynamic",
+      "id": "audio.observe",
+      "implemented": true,
+      "metadata_sha256": "04f7d314db8074b46b0fe094894b08b0108e959bbbd0a4bcc1ca7c4101ebe01f",
+      "reason": "",
+      "result_schema": {
+        "action": "audio.observe",
+        "kind": "OPAQUE",
+        "schema": "tiangong.omni-action-result-schema.v1"
+      },
+      "result_schema_kind": "OPAQUE",
+      "result_schema_sha256": "58e14a3665d4769b24a54d19fa637cae29a3a368e020b05c42275e3b4014eabd",
+      "result_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde",
+      "risk": "A3",
+      "summary": "Submit actual WAV/MP3 to the configured audio-capable model; no metadata or transcript-only substitution.",
+      "value_schema_kind": "OPAQUE",
+      "value_schemas": {},
+      "value_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde"
+    },
     "audio.tone": {
       "alias_to": "",
       "argument_schema": {
@@ -8078,12 +8118,12 @@
       "argument_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde",
       "declared_status": "implemented",
       "dynamic": false,
-      "effect": "execute",
+      "effect": "verify",
       "executable": true,
       "handler": "alias:quality.python_syntax",
       "id": "core.code.quality.python_syntax",
       "implemented": true,
-      "metadata_sha256": "55290b4aa1c39e30eac3ca53b435ea2181f11ed2351b2b5f73e3287cbefa8b19",
+      "metadata_sha256": "5578a5d062a1f30ea660473503afdc13da642912af8329dd75679fa1a168089c",
       "reason": "",
       "result_schema": {
         "action": "quality.python_syntax",
@@ -8111,12 +8151,12 @@
       "argument_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde",
       "declared_status": "implemented",
       "dynamic": false,
-      "effect": "write",
+      "effect": "verify",
       "executable": true,
       "handler": "alias:quality.run_tests",
       "id": "core.code.quality.run_tests",
       "implemented": true,
-      "metadata_sha256": "c8e5c343d0c600cf3012548002841e3ca5d7b06706e01ef47ed4d4efebb43efe",
+      "metadata_sha256": "3880c32ca5ec0a02ce85c8247d9b891892acae073b55508f8ca5ce5b8244d355",
       "reason": "",
       "result_schema": {
         "action": "quality.run_tests",
@@ -8875,7 +8915,7 @@
       "handler": "alias:file.mkdir",
       "id": "core.filesystem.file.mkdir",
       "implemented": true,
-      "metadata_sha256": "5e0f5ea7859d7e807c2f30c47c2ae15f23c3477450673c3b27105573e586239f",
+      "metadata_sha256": "aa75ab8ba3e71483470f5e23f8340a89ae02491a19acf115fc2e6348c9cabf17",
       "reason": "",
       "result_schema": {
         "action": "file.mkdir",
@@ -9087,7 +9127,7 @@
       "result_schema_kind": "EXPLICIT",
       "result_schema_sha256": "725ba6703cec9b52d8a60f0bace709f53ab2dcb5f0cb155d63597984f2e572f5",
       "result_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde",
-      "risk": "A3",
+      "risk": "A2",
       "summary": "Core Filesystem 工具组动作：file.mkdir。底层路由到 file.mkdir。",
       "value_schema_kind": "EXPLICIT",
       "value_schemas": {
@@ -14967,12 +15007,12 @@
       "argument_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde",
       "declared_status": "implemented",
       "dynamic": false,
-      "effect": "execute",
+      "effect": "write",
       "executable": true,
       "handler": "alias:code.patch_replace",
       "id": "file.patch_replace",
       "implemented": true,
-      "metadata_sha256": "f91bb8803e3d6e8b04cd222a7c1dda36ca43a32edaf4d535bbcd270275b1f7ea",
+      "metadata_sha256": "01482f54f30bbcb187b55a3d9f542156f85838d51aee992353fdd18fac3c1479",
       "reason": "",
       "result_schema": {
         "action": "code.patch_replace",
@@ -19058,6 +19098,46 @@
       "value_schemas": {},
       "value_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde"
     },
+    "image.observe": {
+      "alias_to": "",
+      "argument_schema": {
+        "action": "image.observe",
+        "args": {
+          "expected_sha256": "optional source byte SHA256",
+          "question": "specific question about actual content"
+        },
+        "required": [
+          "target",
+          "args.question"
+        ],
+        "target": "configured MCP server or authorized local media file"
+      },
+      "argument_schema_kind": "EXPLICIT",
+      "argument_schema_sha256": "ea6a3b6444dcbe895196e14505872d3addc830269164095b2c2ab076d36d234f",
+      "argument_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde",
+      "declared_status": "implemented",
+      "dynamic": true,
+      "effect": "execute",
+      "executable": true,
+      "handler": "dynamic",
+      "id": "image.observe",
+      "implemented": true,
+      "metadata_sha256": "1f65afe3ef6c309884427c823f886cc7f4518d3c82c8f365598c9aa2faa016e4",
+      "reason": "",
+      "result_schema": {
+        "action": "image.observe",
+        "kind": "OPAQUE",
+        "schema": "tiangong.omni-action-result-schema.v1"
+      },
+      "result_schema_kind": "OPAQUE",
+      "result_schema_sha256": "7bffaf725446538f781c5d4c622ec0d343f563dadcda20e077a8de7060f49c92",
+      "result_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde",
+      "risk": "A3",
+      "summary": "Submit actual image pixels to the configured vision model; bind interpretation to original bytes and submitted resolution.",
+      "value_schema_kind": "OPAQUE",
+      "value_schemas": {},
+      "value_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde"
+    },
     "image.resize": {
       "alias_to": "",
       "argument_schema": {
@@ -21521,6 +21601,158 @@
       "value_schemas": {},
       "value_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde"
     },
+    "mcp.action.call": {
+      "alias_to": "",
+      "argument_schema": {
+        "action": "mcp.action.call",
+        "args": {
+          "action_id": "dictionary requirement bound by owner configuration",
+          "arguments": "concrete arguments matching the observed MCP tool schema",
+          "timeout_ms": "optional bounded timeout"
+        },
+        "required": [
+          "target",
+          "args.action_id",
+          "args.arguments"
+        ],
+        "target": "configured MCP server or authorized local media file"
+      },
+      "argument_schema_kind": "EXPLICIT",
+      "argument_schema_sha256": "f45f2859c66b663b6083939ac27a72a07ce9fb0e551264ea5b9bb2c308eda3c7",
+      "argument_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde",
+      "declared_status": "implemented",
+      "dynamic": true,
+      "effect": "execute",
+      "executable": true,
+      "handler": "dynamic",
+      "id": "mcp.action.call",
+      "implemented": true,
+      "metadata_sha256": "64ab14d60f0439d25e61be3b39a61eeca7caab222bf2881e7c6ce5d07188e61d",
+      "reason": "",
+      "result_schema": {
+        "action": "mcp.action.call",
+        "kind": "OPAQUE",
+        "schema": "tiangong.omni-action-result-schema.v1"
+      },
+      "result_schema_kind": "OPAQUE",
+      "result_schema_sha256": "bd364903b1bb8b141350e58dfddf0cee561fe2560ce84331d1910f5d79db2c18",
+      "result_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde",
+      "risk": "A4",
+      "summary": "Execute an owner-bound requirement only after matching its actual remote input schema hash.",
+      "value_schema_kind": "OPAQUE",
+      "value_schemas": {},
+      "value_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde"
+    },
+    "mcp.auth.begin": {
+      "alias_to": "",
+      "argument_schema": {
+        "action": "mcp.auth.begin",
+        "args": {},
+        "required": [
+          "target"
+        ],
+        "target": "owner-configured MCP server name"
+      },
+      "argument_schema_kind": "EXPLICIT",
+      "argument_schema_sha256": "74389cb15fe21bfb496abed88442eb2d6238f9b9ae76c3ae9b0aefe0a81ee048",
+      "argument_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde",
+      "declared_status": "implemented",
+      "dynamic": true,
+      "effect": "execute",
+      "executable": true,
+      "handler": "dynamic",
+      "id": "mcp.auth.begin",
+      "implemented": true,
+      "metadata_sha256": "8bbc295a323cb0821e08644a64d4a0c2b21dd8c76aeb438b546c1f44bd65061a",
+      "reason": "",
+      "result_schema": {
+        "action": "mcp.auth.begin",
+        "kind": "OPAQUE",
+        "schema": "tiangong.omni-action-result-schema.v1"
+      },
+      "result_schema_kind": "OPAQUE",
+      "result_schema_sha256": "2cc8d7e4a44d932049584a257ad14796a09cbb62297864aad68759ab4ea03f2b",
+      "result_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde",
+      "risk": "A3",
+      "summary": "Start an owner-configured PKCE login; requires account-owner browser authorization.",
+      "value_schema_kind": "OPAQUE",
+      "value_schemas": {},
+      "value_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde"
+    },
+    "mcp.auth.status": {
+      "alias_to": "",
+      "argument_schema": {
+        "action": "mcp.auth.status",
+        "args": {},
+        "required": [
+          "target"
+        ],
+        "target": "owner-configured MCP server name"
+      },
+      "argument_schema_kind": "EXPLICIT",
+      "argument_schema_sha256": "ededa5faaa1a0fb68534c554c65a636960df9aff28fedd922a2c6a303a4b0410",
+      "argument_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde",
+      "declared_status": "implemented",
+      "dynamic": true,
+      "effect": "read",
+      "executable": true,
+      "handler": "dynamic",
+      "id": "mcp.auth.status",
+      "implemented": true,
+      "metadata_sha256": "de8ca558b04b1b5990c1df48822c25b138f65754e5f10dcf6833b7993f14801c",
+      "reason": "",
+      "result_schema": {
+        "action": "mcp.auth.status",
+        "kind": "OPAQUE",
+        "schema": "tiangong.omni-action-result-schema.v1"
+      },
+      "result_schema_kind": "OPAQUE",
+      "result_schema_sha256": "1552c523dd22f775a1648fd224634025c2620768357cf48bb2c10e634eda933d",
+      "result_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde",
+      "risk": "A0",
+      "summary": "Observe OAuth authorization status without exposing credentials.",
+      "value_schema_kind": "OPAQUE",
+      "value_schemas": {},
+      "value_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde"
+    },
+    "mcp.bindings.list": {
+      "alias_to": "",
+      "argument_schema": {
+        "action": "mcp.bindings.list",
+        "args": {
+          "action_id": "optional actual dictionary action ID",
+          "limit": "optional integer 1..100",
+          "offset": "optional integer"
+        },
+        "required": [],
+        "target": "configured MCP server or authorized local media file"
+      },
+      "argument_schema_kind": "EXPLICIT",
+      "argument_schema_sha256": "eca689e2abaa79cf2539ff37e7255c0d87c02ca1f414c11dc9de60c7e324614f",
+      "argument_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde",
+      "declared_status": "implemented",
+      "dynamic": true,
+      "effect": "read",
+      "executable": true,
+      "handler": "dynamic",
+      "id": "mcp.bindings.list",
+      "implemented": true,
+      "metadata_sha256": "21b13eb59d2d19ee3c6540a7bfaa1eeb4ad608e9d949ef752b7d063ee99f668f",
+      "reason": "",
+      "result_schema": {
+        "action": "mcp.bindings.list",
+        "kind": "OPAQUE",
+        "schema": "tiangong.omni-action-result-schema.v1"
+      },
+      "result_schema_kind": "OPAQUE",
+      "result_schema_sha256": "7ceb36c1cf5d95ba6733e27a71028450853f62e25faaee244c234dd7d9f86d66",
+      "result_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde",
+      "risk": "A0",
+      "summary": "Discover every dictionary requirement and its explicit owner MCP tool binding.",
+      "value_schema_kind": "OPAQUE",
+      "value_schemas": {},
+      "value_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde"
+    },
     "mcp.servers.list": {
       "alias_to": "",
       "argument_schema": {
@@ -21558,12 +21790,224 @@
       "value_schemas": {},
       "value_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde"
     },
+    "mcp.session.close": {
+      "alias_to": "",
+      "argument_schema": {
+        "action": "mcp.session.close",
+        "args": {
+          "connection_id": "optional earlier scoped connection id",
+          "timeout_ms": "optional integer 1000..120000"
+        },
+        "required": [
+          "target"
+        ],
+        "target": "configured MCP server name"
+      },
+      "argument_schema_kind": "EXPLICIT",
+      "argument_schema_sha256": "fe7cc87304280c0507478017c1caa525cc29181ba82520afe1099f4d82819529",
+      "argument_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde",
+      "declared_status": "implemented",
+      "dynamic": true,
+      "effect": "write",
+      "executable": true,
+      "handler": "dynamic",
+      "id": "mcp.session.close",
+      "implemented": true,
+      "metadata_sha256": "66b7a55c993819fe55b276296969eaf9e9efd5c6ba1fc909d43b354d8b30aefb",
+      "reason": "",
+      "result_schema": {
+        "action": "mcp.session.close",
+        "kind": "OPAQUE",
+        "schema": "tiangong.omni-action-result-schema.v1"
+      },
+      "result_schema_kind": "OPAQUE",
+      "result_schema_sha256": "17cb7fce7fc6ee5d078c0209261122db51a4519351c54aae0abac1c84c64d53b",
+      "result_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde",
+      "risk": "A2",
+      "summary": "Close this run scope connection; remote jobs are not cancelled.",
+      "value_schema_kind": "OPAQUE",
+      "value_schemas": {},
+      "value_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde"
+    },
+    "mcp.tasks.cancel": {
+      "alias_to": "",
+      "argument_schema": {
+        "action": "mcp.tasks.cancel",
+        "args": {
+          "connection_fingerprint": "original connection fingerprint from mcp.tools.list or mcp.tool.call",
+          "connection_id": "optional earlier scoped connection id",
+          "task_id": "actual remote task ID",
+          "timeout_ms": "optional integer 1000..120000"
+        },
+        "required": [
+          "target",
+          "args.connection_fingerprint",
+          "args.task_id"
+        ],
+        "target": "configured MCP server name"
+      },
+      "argument_schema_kind": "EXPLICIT",
+      "argument_schema_sha256": "cce5cc0b5f7c3e3adef88e17b53568c8ffd4d01ac2a1011ff6e2b83ffd94ebfe",
+      "argument_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde",
+      "declared_status": "implemented",
+      "dynamic": true,
+      "effect": "execute",
+      "executable": true,
+      "handler": "dynamic",
+      "id": "mcp.tasks.cancel",
+      "implemented": true,
+      "metadata_sha256": "e10239dcf0c7c228f5537072678570a04be5767d64953c9ed0e842e915c48ba4",
+      "reason": "",
+      "result_schema": {
+        "action": "mcp.tasks.cancel",
+        "kind": "OPAQUE",
+        "schema": "tiangong.omni-action-result-schema.v1"
+      },
+      "result_schema_kind": "OPAQUE",
+      "result_schema_sha256": "3f2ecc609af03baad7cc5470051151b9545cc7c7463597981582579df21266d2",
+      "result_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde",
+      "risk": "A3",
+      "summary": "Request remote job cancellation; reconcile unknown outcomes and already applied effects.",
+      "value_schema_kind": "OPAQUE",
+      "value_schemas": {},
+      "value_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde"
+    },
+    "mcp.tasks.get": {
+      "alias_to": "",
+      "argument_schema": {
+        "action": "mcp.tasks.get",
+        "args": {
+          "connection_fingerprint": "original connection fingerprint from mcp.tools.list or mcp.tool.call",
+          "connection_id": "optional earlier scoped connection id",
+          "task_id": "actual remote task ID",
+          "timeout_ms": "optional integer 1000..120000"
+        },
+        "required": [
+          "target",
+          "args.connection_fingerprint",
+          "args.task_id"
+        ],
+        "target": "configured MCP server name"
+      },
+      "argument_schema_kind": "EXPLICIT",
+      "argument_schema_sha256": "78d676a1270682848ea29625b0edc437834acc1db68ff8124d0c40efb4d935c8",
+      "argument_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde",
+      "declared_status": "implemented",
+      "dynamic": true,
+      "effect": "read",
+      "executable": true,
+      "handler": "dynamic",
+      "id": "mcp.tasks.get",
+      "implemented": true,
+      "metadata_sha256": "9d852666ecb5d739ce75ea2102225e6033de42b3c77848fde09199e48aec3fe8",
+      "reason": "",
+      "result_schema": {
+        "action": "mcp.tasks.get",
+        "kind": "OPAQUE",
+        "schema": "tiangong.omni-action-result-schema.v1"
+      },
+      "result_schema_kind": "OPAQUE",
+      "result_schema_sha256": "4994ad5395b221021486ecfb692492a52ae7db940bba1292286bdbe21b2eb950",
+      "result_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde",
+      "risk": "A0",
+      "summary": "Read actual remote job status; an accepted job is not a completed business task.",
+      "value_schema_kind": "OPAQUE",
+      "value_schemas": {},
+      "value_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde"
+    },
+    "mcp.tasks.list": {
+      "alias_to": "",
+      "argument_schema": {
+        "action": "mcp.tasks.list",
+        "args": {
+          "connection_fingerprint": "original connection fingerprint from mcp.tools.list or mcp.tool.call",
+          "connection_id": "optional earlier scoped connection id",
+          "cursor": "optional actual remote nextCursor",
+          "timeout_ms": "optional integer 1000..120000"
+        },
+        "required": [
+          "target",
+          "args.connection_fingerprint"
+        ],
+        "target": "configured MCP server name"
+      },
+      "argument_schema_kind": "EXPLICIT",
+      "argument_schema_sha256": "59efe335c978ee2bdc8525c51db95fefdd782eb8736a63bc45276500df5f5a5c",
+      "argument_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde",
+      "declared_status": "implemented",
+      "dynamic": true,
+      "effect": "read",
+      "executable": true,
+      "handler": "dynamic",
+      "id": "mcp.tasks.list",
+      "implemented": true,
+      "metadata_sha256": "859692534484af93b35f2b04cc7e95f7b95d457033143211da887d3f8942c7b6",
+      "reason": "",
+      "result_schema": {
+        "action": "mcp.tasks.list",
+        "kind": "OPAQUE",
+        "schema": "tiangong.omni-action-result-schema.v1"
+      },
+      "result_schema_kind": "OPAQUE",
+      "result_schema_sha256": "7e240b9a659d72fb85c3c3946b5eb71e803e0ce6619752ea261758acc6f54c52",
+      "result_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde",
+      "risk": "A0",
+      "summary": "Read a page of remote tasks under the original configured connection identity.",
+      "value_schema_kind": "OPAQUE",
+      "value_schemas": {},
+      "value_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde"
+    },
+    "mcp.tasks.result": {
+      "alias_to": "",
+      "argument_schema": {
+        "action": "mcp.tasks.result",
+        "args": {
+          "connection_fingerprint": "original connection fingerprint from mcp.tools.list or mcp.tool.call",
+          "connection_id": "optional earlier scoped connection id",
+          "task_id": "actual remote task ID",
+          "timeout_ms": "optional integer 1000..120000"
+        },
+        "required": [
+          "target",
+          "args.connection_fingerprint",
+          "args.task_id"
+        ],
+        "target": "configured MCP server name"
+      },
+      "argument_schema_kind": "EXPLICIT",
+      "argument_schema_sha256": "963cb4f4340f4743a7eb0338ad0d2df67aa4ac1a8b051adcaace399993ce1419",
+      "argument_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde",
+      "declared_status": "implemented",
+      "dynamic": true,
+      "effect": "read",
+      "executable": true,
+      "handler": "dynamic",
+      "id": "mcp.tasks.result",
+      "implemented": true,
+      "metadata_sha256": "17529baade5a85fb0a5bd72d7216f197fea180223edf0f11e9669abbae139ac7",
+      "reason": "",
+      "result_schema": {
+        "action": "mcp.tasks.result",
+        "kind": "OPAQUE",
+        "schema": "tiangong.omni-action-result-schema.v1"
+      },
+      "result_schema_kind": "OPAQUE",
+      "result_schema_sha256": "92bc2e000ab17b899c0d83644ba246c4d4bcd5fb0e789cc569b06b6ed3d69215",
+      "result_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde",
+      "risk": "A0",
+      "summary": "Read terminal task result with matching remote task identity and target readback still required.",
+      "value_schema_kind": "OPAQUE",
+      "value_schemas": {},
+      "value_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde"
+    },
     "mcp.tool.call": {
       "alias_to": "",
       "argument_schema": {
         "action": "mcp.tool.call",
         "args": {
           "arguments": "object matching actual inputSchema",
+          "connection_id": "optional earlier connection id; changed or expired connection fails without replay",
+          "task": "optional object {ttl: integer milliseconds 1000..86400000}; requires server and tool task support",
           "timeout_ms": "optional integer 1000..120000",
           "tool": "exact tool name from mcp.tools.list"
         },
@@ -21574,7 +22018,7 @@
         "target": "configured MCP server name"
       },
       "argument_schema_kind": "EXPLICIT",
-      "argument_schema_sha256": "7e2bfb551b10955cfcc3d4190a788c1b35e47cf75760786621fb3af8de44892a",
+      "argument_schema_sha256": "e64032969f04d4d6f21f4a5e1ae80814d8d12775f942b6d1871f64a6f67debce",
       "argument_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde",
       "declared_status": "implemented",
       "dynamic": true,
@@ -21604,6 +22048,7 @@
       "argument_schema": {
         "action": "mcp.tools.list",
         "args": {
+          "connection_id": "optional earlier connection id; changed or expired connection fails without replay",
           "cursor": "optional next_cursor from this server",
           "timeout_ms": "optional integer 1000..120000"
         },
@@ -21613,7 +22058,7 @@
         "target": "configured MCP server name"
       },
       "argument_schema_kind": "EXPLICIT",
-      "argument_schema_sha256": "8ea81c3434e9b3182b70f550007d2ff5a4877f4afe4bca0fb9cd5f7c9c63edc7",
+      "argument_schema_sha256": "9d884ef3e4d4cb4c17a34a4a93504730419894cf801b38036c4bfa1f1e180938",
       "argument_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde",
       "declared_status": "implemented",
       "dynamic": true,
@@ -24769,21 +25214,29 @@
       "alias_to": "",
       "argument_schema": {
         "action": "obsidian.graph.export",
-        "args": "action-specific object",
-        "target": "action-specific target; use system.action_schema when uncertain"
+        "args": {
+          "limit": "optional bounded integer",
+          "offset": "optional nonnegative integer",
+          "output": "fresh output JSON file"
+        },
+        "required": [
+          "target",
+          "args.output"
+        ],
+        "target": "authorized local database, vault directory or note path"
       },
-      "argument_schema_kind": "OPAQUE",
-      "argument_schema_sha256": "ceaa8bdbf2a32ab6b26621db429cb2c88bc4b7b2216e0b8cb0b9042d8762ddba",
+      "argument_schema_kind": "EXPLICIT",
+      "argument_schema_sha256": "1759d8ab7730472acc9de54e47c83744345d0e053da34fa70ca79b5899d4c586",
       "argument_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde",
-      "declared_status": "planned",
-      "dynamic": false,
+      "declared_status": "implemented",
+      "dynamic": true,
       "effect": "execute",
-      "executable": false,
-      "handler": "",
+      "executable": true,
+      "handler": "dynamic",
       "id": "obsidian.graph.export",
-      "implemented": false,
-      "metadata_sha256": "43bb014912fd2992ffc99c31fa270c8ade9c956c64147c036a812962d3248dc2",
-      "reason": "declared unavailable",
+      "implemented": true,
+      "metadata_sha256": "00af60c57f0027c35e6797b549e16cbf308a1504471f2957a21c2672dbfbcac3",
+      "reason": "",
       "result_schema": {
         "action": "obsidian.graph.export",
         "kind": "OPAQUE",
@@ -24792,8 +25245,8 @@
       "result_schema_kind": "OPAQUE",
       "result_schema_sha256": "bd965cf14e76c080707b8320da858bc2fa395cea7fd5bd27bfe1db4cc972e4a4",
       "result_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde",
-      "risk": "A0",
-      "summary": "Obsidian 工具组动作：graph export。需要接入 filesystem_or_plugin 后端；当前包只挂载动作协议，不假装执行。",
+      "risk": "A2",
+      "summary": "Export Markdown wiki-link references, including unresolved links, to a fresh JSON file.",
       "value_schema_kind": "OPAQUE",
       "value_schemas": {},
       "value_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde"
@@ -24802,21 +25255,31 @@
       "alias_to": "",
       "argument_schema": {
         "action": "obsidian.link.create",
-        "args": "action-specific object",
-        "target": "action-specific target; use system.action_schema when uncertain"
+        "args": {
+          "expected_sha256": "SHA256 from latest note evidence",
+          "limit": "optional bounded integer",
+          "link": "wiki-link target",
+          "offset": "optional nonnegative integer"
+        },
+        "required": [
+          "target",
+          "args.expected_sha256",
+          "args.link"
+        ],
+        "target": "authorized local database, vault directory or note path"
       },
-      "argument_schema_kind": "OPAQUE",
-      "argument_schema_sha256": "af8cb7642238e086f81323d6d1ee06cf22b52e6b9cbe669084eb683993189bac",
+      "argument_schema_kind": "EXPLICIT",
+      "argument_schema_sha256": "13403b8e2362ef1ab3cc339b63a57bf6b188eed9d168d0cf7dca965d7ecfcedd",
       "argument_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde",
-      "declared_status": "planned",
-      "dynamic": false,
+      "declared_status": "implemented",
+      "dynamic": true,
       "effect": "write",
-      "executable": false,
-      "handler": "",
+      "executable": true,
+      "handler": "dynamic",
       "id": "obsidian.link.create",
-      "implemented": false,
-      "metadata_sha256": "2f3a925a991c2e8ef3a9c79cdd35707fe87efbfb0baa0811a3f01a764d6f0ad8",
-      "reason": "declared unavailable",
+      "implemented": true,
+      "metadata_sha256": "57cd94c2b9e485a576c1a0c6fc844428009359dbb5fd02606a492de6c579aed0",
+      "reason": "",
       "result_schema": {
         "action": "obsidian.link.create",
         "kind": "OPAQUE",
@@ -24826,7 +25289,7 @@
       "result_schema_sha256": "dabc9c4de1f8120eb4b9839725b94945eeb7867a97f4e5c8cafca01bfa6c6477",
       "result_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde",
       "risk": "A2",
-      "summary": "Obsidian 工具组动作：link create。需要接入 filesystem_or_plugin 后端；当前包只挂载动作协议，不假装执行。",
+      "summary": "Append a wiki-link to a note at an expected version; returns actual new bytes.",
       "value_schema_kind": "OPAQUE",
       "value_schemas": {},
       "value_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde"
@@ -24835,21 +25298,29 @@
       "alias_to": "",
       "argument_schema": {
         "action": "obsidian.note.create",
-        "args": "action-specific object",
-        "target": "action-specific target; use system.action_schema when uncertain"
+        "args": {
+          "content": "Markdown text at most 5 MiB",
+          "limit": "optional bounded integer",
+          "offset": "optional nonnegative integer"
+        },
+        "required": [
+          "target",
+          "args.content"
+        ],
+        "target": "authorized local database, vault directory or note path"
       },
-      "argument_schema_kind": "OPAQUE",
-      "argument_schema_sha256": "3aa5595abcbf707e63cf401cda280a71703903652c198bc2ea5364d59224f297",
+      "argument_schema_kind": "EXPLICIT",
+      "argument_schema_sha256": "2f7cc05642a347e563f65f95a6729771784d279b7199d1c5a1fcc350473650a9",
       "argument_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde",
-      "declared_status": "planned",
-      "dynamic": false,
+      "declared_status": "implemented",
+      "dynamic": true,
       "effect": "write",
-      "executable": false,
-      "handler": "",
+      "executable": true,
+      "handler": "dynamic",
       "id": "obsidian.note.create",
-      "implemented": false,
-      "metadata_sha256": "99d9166438fb709e085d125ca9d5296c769cc102866dffaf09bfb15a4cc6b849",
-      "reason": "declared unavailable",
+      "implemented": true,
+      "metadata_sha256": "48d1d8f7742fad255e51f0fbe41c233349ff922a8fedaaf94c156ee949b05427",
+      "reason": "",
       "result_schema": {
         "action": "obsidian.note.create",
         "kind": "OPAQUE",
@@ -24859,7 +25330,7 @@
       "result_schema_sha256": "6c7a74896cb038d2ac7fc1147aa24b34cc5aa844e2459039b6b8be135079d1d3",
       "result_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde",
       "risk": "A2",
-      "summary": "Obsidian 工具组动作：note create。需要接入 filesystem_or_plugin 后端；当前包只挂载动作协议，不假装执行。",
+      "summary": "Create a new Markdown note; refuses to overwrite an existing note.",
       "value_schema_kind": "OPAQUE",
       "value_schemas": {},
       "value_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde"
@@ -24868,21 +25339,27 @@
       "alias_to": "",
       "argument_schema": {
         "action": "obsidian.note.read",
-        "args": "action-specific object",
-        "target": "action-specific target; use system.action_schema when uncertain"
+        "args": {
+          "limit": "optional bounded integer",
+          "offset": "optional nonnegative integer"
+        },
+        "required": [
+          "target"
+        ],
+        "target": "authorized local database, vault directory or note path"
       },
-      "argument_schema_kind": "OPAQUE",
-      "argument_schema_sha256": "f195e698568eb7166f62f57075feb80d30de2eb78d6778b5c48b6ba70ce06151",
+      "argument_schema_kind": "EXPLICIT",
+      "argument_schema_sha256": "fcaa1def83ce983736e96728e85fe5b5dbb27fa7ebf2d7124c8f2330a37bad09",
       "argument_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde",
-      "declared_status": "planned",
-      "dynamic": false,
+      "declared_status": "implemented",
+      "dynamic": true,
       "effect": "read",
-      "executable": false,
-      "handler": "",
+      "executable": true,
+      "handler": "dynamic",
       "id": "obsidian.note.read",
-      "implemented": false,
-      "metadata_sha256": "90f1c4adc7fb9f85251593e6466da98f3ec731b0f3cd3275cbe06703254ae078",
-      "reason": "declared unavailable",
+      "implemented": true,
+      "metadata_sha256": "59881554172b4f57328c7f1ef99f2c1654c23339f378d2d136da7e0bf2644ca0",
+      "reason": "",
       "result_schema": {
         "action": "obsidian.note.read",
         "kind": "OPAQUE",
@@ -24892,7 +25369,7 @@
       "result_schema_sha256": "af42976bdba3687e8a4011339d6bf5899321c65ed16c4c22388540d65996db1f",
       "result_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde",
       "risk": "A0",
-      "summary": "Obsidian 工具组动作：note read。需要接入 filesystem_or_plugin 后端；当前包只挂载动作协议，不假装执行。",
+      "summary": "Read exact Markdown note bytes as text with hash and character range.",
       "value_schema_kind": "OPAQUE",
       "value_schemas": {},
       "value_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde"
@@ -24901,21 +25378,31 @@
       "alias_to": "",
       "argument_schema": {
         "action": "obsidian.note.update",
-        "args": "action-specific object",
-        "target": "action-specific target; use system.action_schema when uncertain"
+        "args": {
+          "content": "Markdown text at most 5 MiB",
+          "expected_sha256": "SHA256 from latest note evidence",
+          "limit": "optional bounded integer",
+          "offset": "optional nonnegative integer"
+        },
+        "required": [
+          "target",
+          "args.content",
+          "args.expected_sha256"
+        ],
+        "target": "authorized local database, vault directory or note path"
       },
-      "argument_schema_kind": "OPAQUE",
-      "argument_schema_sha256": "535c8c64f279b5602de0d751709ccf25e9897f27290246bcff6bedf6ab67ff1d",
+      "argument_schema_kind": "EXPLICIT",
+      "argument_schema_sha256": "15227b5df60d91bb9ab6083680ae81e5039a2d85b2551298ae3d96e70f32570b",
       "argument_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde",
-      "declared_status": "planned",
-      "dynamic": false,
+      "declared_status": "implemented",
+      "dynamic": true,
       "effect": "execute",
-      "executable": false,
-      "handler": "",
+      "executable": true,
+      "handler": "dynamic",
       "id": "obsidian.note.update",
-      "implemented": false,
-      "metadata_sha256": "49f92ad2da6787a955cf02203898d92693895128ae917a261e41100ff474198e",
-      "reason": "declared unavailable",
+      "implemented": true,
+      "metadata_sha256": "2700aae472f896105c35ff989f08346557bcc2cd855a9a6e6b364637d72ceec9",
+      "reason": "",
       "result_schema": {
         "action": "obsidian.note.update",
         "kind": "OPAQUE",
@@ -24925,7 +25412,7 @@
       "result_schema_sha256": "1a26e9a909f1509593b2d91a4e518aa5b822b91b2fae71e44ceea35e85817d78",
       "result_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde",
       "risk": "A2",
-      "summary": "Obsidian 工具组动作：note update。需要接入 filesystem_or_plugin 后端；当前包只挂载动作协议，不假装执行。",
+      "summary": "Replace a note only at the expected SHA256 version, retaining an original snapshot.",
       "value_schema_kind": "OPAQUE",
       "value_schemas": {},
       "value_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde"
@@ -24934,21 +25421,29 @@
       "alias_to": "",
       "argument_schema": {
         "action": "obsidian.search",
-        "args": "action-specific object",
-        "target": "action-specific target; use system.action_schema when uncertain"
+        "args": {
+          "limit": "optional bounded integer",
+          "offset": "optional nonnegative integer",
+          "query": "nonempty literal string"
+        },
+        "required": [
+          "target",
+          "args.query"
+        ],
+        "target": "authorized local database, vault directory or note path"
       },
-      "argument_schema_kind": "OPAQUE",
-      "argument_schema_sha256": "a90efe9800305ae40ef6fc11bb61c4be76af4e947ae8a412247f9f82612744ab",
+      "argument_schema_kind": "EXPLICIT",
+      "argument_schema_sha256": "118267160a9935bec8f4c944fbd868ae2679ead5422c530efdd0af9f7798073c",
       "argument_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde",
-      "declared_status": "planned",
-      "dynamic": false,
+      "declared_status": "implemented",
+      "dynamic": true,
       "effect": "read",
-      "executable": false,
-      "handler": "",
+      "executable": true,
+      "handler": "dynamic",
       "id": "obsidian.search",
-      "implemented": false,
-      "metadata_sha256": "bb9e0d2ce55b882ca49d487ebf497d3b409ecf939aa8630b9ec9e493f685b0fe",
-      "reason": "declared unavailable",
+      "implemented": true,
+      "metadata_sha256": "0a5edcc586f0a39be045d83db18300afe0d825fec57c7ec0b56d13a92314a458",
+      "reason": "",
       "result_schema": {
         "action": "obsidian.search",
         "kind": "OPAQUE",
@@ -24958,7 +25453,7 @@
       "result_schema_sha256": "044711189a52b7ea0274cb51ac093285574453e89afa659240543a04ab9c697d",
       "result_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde",
       "risk": "A0",
-      "summary": "Obsidian 工具组动作：search。需要接入 filesystem_or_plugin 后端；当前包只挂载动作协议，不假装执行。",
+      "summary": "Search local Markdown note text literally and paginate results without changing notes.",
       "value_schema_kind": "OPAQUE",
       "value_schemas": {},
       "value_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde"
@@ -24967,21 +25462,27 @@
       "alias_to": "",
       "argument_schema": {
         "action": "obsidian.vault.list",
-        "args": "action-specific object",
-        "target": "action-specific target; use system.action_schema when uncertain"
+        "args": {
+          "limit": "optional bounded integer",
+          "offset": "optional nonnegative integer"
+        },
+        "required": [
+          "target"
+        ],
+        "target": "authorized local database, vault directory or note path"
       },
-      "argument_schema_kind": "OPAQUE",
-      "argument_schema_sha256": "bcf033a8018cdd2e1dc2206579edb6cdf3c8e328ea754591901c51061b2e9856",
+      "argument_schema_kind": "EXPLICIT",
+      "argument_schema_sha256": "8ba2ee3aadb9bd59d4c0541720ceda74b9ad0b37044fb5f53dd1d47a0617f845",
       "argument_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde",
-      "declared_status": "planned",
-      "dynamic": false,
+      "declared_status": "implemented",
+      "dynamic": true,
       "effect": "read",
-      "executable": false,
-      "handler": "",
+      "executable": true,
+      "handler": "dynamic",
       "id": "obsidian.vault.list",
-      "implemented": false,
-      "metadata_sha256": "22c35fea7db5a86c7a45bcde338e014098908fbf5c08b96cbfef53c46a499f86",
-      "reason": "declared unavailable",
+      "implemented": true,
+      "metadata_sha256": "99bc5ec47ea877af6cf2494cd26f9ad6d3408e63c8286376bb20d0b7852fb05b",
+      "reason": "",
       "result_schema": {
         "action": "obsidian.vault.list",
         "kind": "OPAQUE",
@@ -24991,7 +25492,7 @@
       "result_schema_sha256": "e7900d124828ba54f8081c73007b0f11bfddb17c5fe40c4c8f3ec7f87f76707d",
       "result_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde",
       "risk": "A0",
-      "summary": "Obsidian 工具组动作：vault list。需要接入 filesystem_or_plugin 后端；当前包只挂载动作协议，不假装执行。",
+      "summary": "List Markdown notes in an authorized local vault with explicit pagination.",
       "value_schema_kind": "OPAQUE",
       "value_schemas": {},
       "value_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde"
@@ -27893,12 +28394,12 @@
       "argument_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde",
       "declared_status": "implemented",
       "dynamic": false,
-      "effect": "execute",
+      "effect": "read",
       "executable": true,
       "handler": "alias:browser.search_web",
       "id": "search_web",
       "implemented": true,
-      "metadata_sha256": "3a5ad4cf0b3744a5e925a389f1e67ed04b16494ade044fddb1dce2183690eeab",
+      "metadata_sha256": "6dc5d3e6efc724c95fdeeddb1874d95ae527d3c299238f82a26d806932a5100c",
       "reason": "",
       "result_schema": {
         "action": "browser.search_web",
@@ -29310,21 +29811,29 @@
       "alias_to": "",
       "argument_schema": {
         "action": "sqlite.backup.create",
-        "args": "action-specific object",
-        "target": "action-specific target; use system.action_schema when uncertain"
+        "args": {
+          "limit": "optional bounded integer",
+          "offset": "optional nonnegative integer",
+          "output": "fresh workspace output file"
+        },
+        "required": [
+          "target",
+          "args.output"
+        ],
+        "target": "authorized local database, vault directory or note path"
       },
-      "argument_schema_kind": "OPAQUE",
-      "argument_schema_sha256": "60b50cff30910370edd66e58b54b453a91bd043c0f30a0d87f652f2bd72315eb",
+      "argument_schema_kind": "EXPLICIT",
+      "argument_schema_sha256": "dfda0bba883b07186926616f4d4ce6604987a839fd6b40fe2e0154f21756722a",
       "argument_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde",
-      "declared_status": "planned",
-      "dynamic": false,
+      "declared_status": "implemented",
+      "dynamic": true,
       "effect": "write",
-      "executable": false,
-      "handler": "",
+      "executable": true,
+      "handler": "dynamic",
       "id": "sqlite.backup.create",
-      "implemented": false,
-      "metadata_sha256": "a57a4c48ba1d9cfa7d332e984e5c436fb5ff79e698759771c090e7bd09f45839",
-      "reason": "declared unavailable",
+      "implemented": true,
+      "metadata_sha256": "c748bdbf8de58bd6b03e3adb877140c2c5fbea022615030104a6360ec196a6f1",
+      "reason": "",
       "result_schema": {
         "action": "sqlite.backup.create",
         "kind": "OPAQUE",
@@ -29334,7 +29843,7 @@
       "result_schema_sha256": "5e90d5d061949a5c72ed5dc2aa5ccec2ed0a326006d4a0c2a38312d5a262fddf",
       "result_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde",
       "risk": "A2",
-      "summary": "SQLite 工具组动作：backup create。需要接入 sqlite3 后端；当前包只挂载动作协议，不假装执行。",
+      "summary": "Create a consistent SQLite online backup to a fresh file and verify integrity.",
       "value_schema_kind": "OPAQUE",
       "value_schemas": {},
       "value_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde"
@@ -29431,21 +29940,27 @@
       "alias_to": "",
       "argument_schema": {
         "action": "sqlite.schema.read",
-        "args": "action-specific object",
-        "target": "action-specific target; use system.action_schema when uncertain"
+        "args": {
+          "limit": "optional bounded integer",
+          "offset": "optional nonnegative integer"
+        },
+        "required": [
+          "target"
+        ],
+        "target": "authorized local database, vault directory or note path"
       },
-      "argument_schema_kind": "OPAQUE",
-      "argument_schema_sha256": "70fb9cb439d4c750fe4a186cc1ffaf7d95cc3bfb2e3674117e31bd6471bb238b",
+      "argument_schema_kind": "EXPLICIT",
+      "argument_schema_sha256": "8b183292de5479117565722af0f8fe9d61b48d051ba1a8420052dccc5ba67204",
       "argument_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde",
-      "declared_status": "planned",
-      "dynamic": false,
+      "declared_status": "implemented",
+      "dynamic": true,
       "effect": "read",
-      "executable": false,
-      "handler": "",
+      "executable": true,
+      "handler": "dynamic",
       "id": "sqlite.schema.read",
-      "implemented": false,
-      "metadata_sha256": "870cc154b74cac5b557173e2a9adb5e58b2b8a680dd7c0d21d641c3f04c240df",
-      "reason": "declared unavailable",
+      "implemented": true,
+      "metadata_sha256": "d1d12b4411b157163ea390e39ff5004d62e4d4b321c112abc4e1c826627595c3",
+      "reason": "",
       "result_schema": {
         "action": "sqlite.schema.read",
         "kind": "OPAQUE",
@@ -29455,7 +29970,7 @@
       "result_schema_sha256": "5ab43545ee378c1a36461f2b3200abb22ab245367d17532250e6513cebbd1b46",
       "result_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde",
       "risk": "A0",
-      "summary": "SQLite 工具组动作：schema read。需要接入 sqlite3 后端；当前包只挂载动作协议，不假装执行。",
+      "summary": "Read the real SQLite schema without writes.",
       "value_schema_kind": "OPAQUE",
       "value_schemas": {},
       "value_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde"
@@ -29464,21 +29979,31 @@
       "alias_to": "",
       "argument_schema": {
         "action": "sqlite.table.export_csv",
-        "args": "action-specific object",
-        "target": "action-specific target; use system.action_schema when uncertain"
+        "args": {
+          "limit": "optional bounded integer",
+          "offset": "optional nonnegative integer",
+          "output": "fresh workspace output file",
+          "table": "exact SQLite table name"
+        },
+        "required": [
+          "target",
+          "args.table",
+          "args.output"
+        ],
+        "target": "authorized local database, vault directory or note path"
       },
-      "argument_schema_kind": "OPAQUE",
-      "argument_schema_sha256": "80e430ca794ec97c86cfc664f8d9b4f59dc932fcc244d7b7da3b4403db618e43",
+      "argument_schema_kind": "EXPLICIT",
+      "argument_schema_sha256": "438e318945698f9984e41a456c5ff8ac7a0c0d4460abf06b0e9de95e30d37390",
       "argument_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde",
-      "declared_status": "planned",
-      "dynamic": false,
+      "declared_status": "implemented",
+      "dynamic": true,
       "effect": "execute",
-      "executable": false,
-      "handler": "",
+      "executable": true,
+      "handler": "dynamic",
       "id": "sqlite.table.export_csv",
-      "implemented": false,
-      "metadata_sha256": "909a857b84cba7cc83b13a7f8fb7ed86006beedc769758f8fb4306c9ffeb098c",
-      "reason": "declared unavailable",
+      "implemented": true,
+      "metadata_sha256": "f93dd4ad478efdb114663c46691544e2393fd29ef0dbedc975258fcdef0325d7",
+      "reason": "",
       "result_schema": {
         "action": "sqlite.table.export_csv",
         "kind": "OPAQUE",
@@ -29487,8 +30012,8 @@
       "result_schema_kind": "OPAQUE",
       "result_schema_sha256": "4f1a964dea14d9606d142aee016e75af815313dae3138ea4f2ec8bbceddc2a6e",
       "result_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde",
-      "risk": "A0",
-      "summary": "SQLite 工具组动作：table export csv。需要接入 sqlite3 后端；当前包只挂载动作协议，不假装执行。",
+      "risk": "A2",
+      "summary": "Export every row of one SQLite table to a fresh CSV; report total rows and input version.",
       "value_schema_kind": "OPAQUE",
       "value_schemas": {},
       "value_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde"
@@ -29497,21 +30022,31 @@
       "alias_to": "",
       "argument_schema": {
         "action": "sqlite.table.import_csv",
-        "args": "action-specific object",
-        "target": "action-specific target; use system.action_schema when uncertain"
+        "args": {
+          "input": "workspace CSV with header matching existing table",
+          "limit": "optional bounded integer",
+          "offset": "optional nonnegative integer",
+          "table": "exact SQLite table name"
+        },
+        "required": [
+          "target",
+          "args.table",
+          "args.input"
+        ],
+        "target": "authorized local database, vault directory or note path"
       },
-      "argument_schema_kind": "OPAQUE",
-      "argument_schema_sha256": "f4c87a561b6ecdf74ac27021158349003c2794c60d35af71404aa88da70c8832",
+      "argument_schema_kind": "EXPLICIT",
+      "argument_schema_sha256": "5abd74f2cf20146b471711e066a7686e54966a35ac5444df1c4516ef17a0c650",
       "argument_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde",
-      "declared_status": "planned",
-      "dynamic": false,
+      "declared_status": "implemented",
+      "dynamic": true,
       "effect": "execute",
-      "executable": false,
-      "handler": "",
+      "executable": true,
+      "handler": "dynamic",
       "id": "sqlite.table.import_csv",
-      "implemented": false,
-      "metadata_sha256": "ddae46cbbb90f612c7ddd5c35c7b76da15b80825b0425054309913033a735bd3",
-      "reason": "declared unavailable",
+      "implemented": true,
+      "metadata_sha256": "aba4ef38ffb48883620a19f3e618845667b1af9ddbb314be34e3afec3d477862",
+      "reason": "",
       "result_schema": {
         "action": "sqlite.table.import_csv",
         "kind": "OPAQUE",
@@ -29521,7 +30056,7 @@
       "result_schema_sha256": "b2754aab14c6bbdc13d238f84d8f8693ce7b63e4dad492f3faff8c49f233c567",
       "result_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde",
       "risk": "A2",
-      "summary": "SQLite 工具组动作：table import csv。需要接入 sqlite3 后端；当前包只挂载动作协议，不假装执行。",
+      "summary": "Append a rectangular CSV to an existing table in one transaction; malformed input rolls back.",
       "value_schema_kind": "OPAQUE",
       "value_schemas": {},
       "value_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde"
@@ -30424,6 +30959,48 @@
       "value_schemas": {},
       "value_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde"
     },
+    "video.observe_frames": {
+      "alias_to": "",
+      "argument_schema": {
+        "action": "video.observe_frames",
+        "args": {
+          "expected_sha256": "optional source byte SHA256",
+          "question": "specific question about actual content",
+          "times": "explicit array of 1..12 seconds within [0,86400]"
+        },
+        "required": [
+          "target",
+          "args.question",
+          "args.times"
+        ],
+        "target": "configured MCP server or authorized local media file"
+      },
+      "argument_schema_kind": "EXPLICIT",
+      "argument_schema_sha256": "b808af5e352641d46ca627304bb5e7163b5f56267c42bc8d4cab08045868494b",
+      "argument_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde",
+      "declared_status": "implemented",
+      "dynamic": true,
+      "effect": "execute",
+      "executable": true,
+      "handler": "dynamic",
+      "id": "video.observe_frames",
+      "implemented": true,
+      "metadata_sha256": "4fd35cf01e5d71818dd94179170b1f110e0396d0239b2249f1f44c044162a0e7",
+      "reason": "",
+      "result_schema": {
+        "action": "video.observe_frames",
+        "kind": "OPAQUE",
+        "schema": "tiangong.omni-action-result-schema.v1"
+      },
+      "result_schema_kind": "OPAQUE",
+      "result_schema_sha256": "7fb480a026d05633ed209b2c684ffbdd299c52c2dfad652c7841706832325fef",
+      "result_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde",
+      "risk": "A3",
+      "summary": "Decode specified video times and submit those frames to the configured vision model; does not observe unsampled intervals or audio.",
+      "value_schema_kind": "OPAQUE",
+      "value_schemas": {},
+      "value_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde"
+    },
     "video.slideshow": {
       "alias_to": "",
       "argument_schema": {
@@ -30819,7 +31396,7 @@
       "handler": "alias:browser.open",
       "id": "web.fetch",
       "implemented": true,
-      "metadata_sha256": "d8461a892f2d1193ed9f43c2aae68b0600c3ed8f642fc7c2f0930dd7939ef3ac",
+      "metadata_sha256": "56ac1bba99bc37a3d3fc20fc94d937894a8b9f2754801983a3c12d0d5ab8c26d",
       "reason": "",
       "result_schema": {
         "action": "browser.open",
@@ -30829,7 +31406,7 @@
       "result_schema_kind": "OPAQUE",
       "result_schema_sha256": "410fee60cebf9768449422455156eb178b30c63f5a17335ce3c4707df729a72a",
       "result_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde",
-      "risk": "A0",
+      "risk": "A2",
       "summary": "Compatibility alias to web.read.",
       "value_schema_kind": "OPAQUE",
       "value_schemas": {},
@@ -30847,12 +31424,12 @@
       "argument_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde",
       "declared_status": "implemented",
       "dynamic": false,
-      "effect": "read",
+      "effect": "execute",
       "executable": true,
       "handler": "alias:browser.open",
       "id": "web.read",
       "implemented": true,
-      "metadata_sha256": "842572d6dff1cf8288c2b2f6075c83e688e8d0d8dee306d8fe63f0c3a130b55e",
+      "metadata_sha256": "5b524348180391b20598dca7e277b238cfe38d2cd5b2b4826313413d4caa9d02",
       "reason": "",
       "result_schema": {
         "action": "browser.open",
@@ -30862,7 +31439,7 @@
       "result_schema_kind": "OPAQUE",
       "result_schema_sha256": "410fee60cebf9768449422455156eb178b30c63f5a17335ce3c4707df729a72a",
       "result_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde",
-      "risk": "A0",
+      "risk": "A2",
       "summary": "Read visible text from a URL.",
       "value_schema_kind": "OPAQUE",
       "value_schemas": {},
@@ -30880,12 +31457,12 @@
       "argument_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde",
       "declared_status": "implemented",
       "dynamic": false,
-      "effect": "read",
+      "effect": "execute",
       "executable": true,
       "handler": "alias:browser.open",
       "id": "web.readability_extract",
       "implemented": true,
-      "metadata_sha256": "2241e1adb56fd080c3bc159f448f1a35a75b228086f9642e13f0c874a43e0f93",
+      "metadata_sha256": "56ac1bba99bc37a3d3fc20fc94d937894a8b9f2754801983a3c12d0d5ab8c26d",
       "reason": "",
       "result_schema": {
         "action": "browser.open",
@@ -30895,7 +31472,7 @@
       "result_schema_kind": "OPAQUE",
       "result_schema_sha256": "410fee60cebf9768449422455156eb178b30c63f5a17335ce3c4707df729a72a",
       "result_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde",
-      "risk": "A0",
+      "risk": "A2",
       "summary": "Compatibility alias to web.read.",
       "value_schema_kind": "OPAQUE",
       "value_schemas": {},
@@ -30946,12 +31523,12 @@
       "argument_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde",
       "declared_status": "implemented",
       "dynamic": false,
-      "effect": "write",
+      "effect": "execute",
       "executable": true,
       "handler": "alias:browser.open",
       "id": "web_readability_extract",
       "implemented": true,
-      "metadata_sha256": "f3eb97e2b0ae9ebff034df83022e8e1fdecff1270557c11b986816fe8659a958",
+      "metadata_sha256": "56ac1bba99bc37a3d3fc20fc94d937894a8b9f2754801983a3c12d0d5ab8c26d",
       "reason": "",
       "result_schema": {
         "action": "browser.open",
@@ -30961,7 +31538,7 @@
       "result_schema_kind": "OPAQUE",
       "result_schema_sha256": "410fee60cebf9768449422455156eb178b30c63f5a17335ce3c4707df729a72a",
       "result_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde",
-      "risk": "A0",
+      "risk": "A2",
       "summary": "Compatibility alias to web.read.",
       "value_schema_kind": "OPAQUE",
       "value_schemas": {},
@@ -33140,14 +33717,14 @@
       "value_validator_source_sha256": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde"
     }
   },
-  "executable": 274,
+  "executable": 297,
   "schema": "tiangong.v3.capability_manifest.v1",
-  "source_hash": "e94399d921573a5d5ab930c0a9200cda4af10d2181a870c0a0bc935fc2bacb99",
-  "total": 779,
-  "unavailable": 505,
+  "source_hash": "66b1fcfab9de32f609479dbe2a271c7a78e023955cef192a5ae7def974048bc1",
+  "total": 791,
+  "unavailable": 494,
   "validation": {
     "executable_without_route": [],
     "ok": true,
-    "source_hash": "e94399d921573a5d5ab930c0a9200cda4af10d2181a870c0a0bc935fc2bacb99"
+    "source_hash": "66b1fcfab9de32f609479dbe2a271c7a78e023955cef192a5ae7def974048bc1"
   }
 }

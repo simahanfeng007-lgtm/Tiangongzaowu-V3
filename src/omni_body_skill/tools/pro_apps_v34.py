@@ -26,6 +26,8 @@ import urllib.parse
 import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
+from .local_apps import LOCAL_APP_ACTIONS, handle_local_app
+from .media_observation import MEDIA_OBSERVATION_ACTIONS, handle_media_observation
 
 PRO_APP_ACTIONS: Dict[str, Dict[str, Any]] = {
     "v34.professional_apps.info": {"risk": "A0", "implemented": True, "summary": "Inspect v3.4 professional app adapter layer and native/fallback execution modes."},
@@ -75,7 +77,19 @@ PRO_APP_ACTIONS: Dict[str, Dict[str, Any]] = {
     "mcp.servers.list": {"risk": "A0", "implemented": True, "summary": "List user-configured MCP servers from ~/.tiangong/v3/mcp_servers.json (read-only, no env values)."},
     "mcp.tools.list": {"risk": "A0", "implemented": True, "summary": "Connect to a configured MCP server and list its tools with input schemas."},
     "mcp.tool.call": {"risk": "A3", "implemented": True, "summary": "Call one tool on a configured MCP server; A3 confirmation chain applies because MCP tools can have arbitrary side effects."},
+    "mcp.session.close": {"risk": "A2", "implemented": True, "summary": "Close this task scope's configured MCP connection; this does not cancel remote jobs."},
+    "mcp.tasks.list": {"risk": "A0", "implemented": True, "summary": "Read a page of remote MCP tasks in the configured account."},
+    "mcp.tasks.get": {"risk": "A0", "implemented": True, "summary": "Read actual remote task status without resubmitting the original operation."},
+    "mcp.tasks.result": {"risk": "A0", "implemented": True, "summary": "Read the identity-bound result of a completed remote MCP task."},
+    "mcp.tasks.cancel": {"risk": "A3", "implemented": True, "summary": "Request remote task cancellation and report the actual state; cancellation is not rollback."},
+    "mcp.auth.begin": {"risk": "A3", "implemented": True, "summary": "Prepare owner-configured OAuth PKCE login; the account owner follows the authorization URL."},
+    "mcp.auth.status": {"risk": "A0", "implemented": True, "summary": "Read secret-free OAuth status; no access or refresh token is returned."},
+    "mcp.bindings.list": {"risk": "A0", "implemented": True, "summary": "Discover explicit owner bindings for every dictionary requirement without claiming implementation."},
+    "mcp.action.call": {"risk": "A4", "implemented": True, "summary": "Execute an owner-bound requirement through its exact live MCP schema; refuses stale contracts and disabled actions."},
 }
+
+PRO_APP_ACTIONS.update(LOCAL_APP_ACTIONS)
+PRO_APP_ACTIONS.update(MEDIA_OBSERVATION_ACTIONS)
 
 APP_PROFILES: Dict[str, Dict[str, Any]] = {
     "browser.playwright": {
@@ -191,23 +205,27 @@ APP_PROFILES: Dict[str, Dict[str, Any]] = {
         "modules": ["sqlite3"],
         "executables": [],
         "env": [],
-        "native_actions": ["sqlite.query"],
+        "native_actions": [name for name in PRO_APP_ACTIONS if name.startswith("sqlite.")],
         "bridge_actions": [],
-        "official_path": "stdlib sqlite3 local database query/limited update executor.",
+        "official_path": "Local SQLite queries, schema observation, transactional CSV import, complete CSV export and online backup with independent readback.",
     },
     "mcp": {
         "label": "Model Context Protocol",
         "modules": [],
         "executables": [],
         "env": [],
-        "native_actions": ["mcp.servers.list", "mcp.tools.list", "mcp.tool.call"],
+        "native_actions": [name for name in PRO_APP_ACTIONS if name.startswith("mcp.")],
         "bridge_actions": [],
-        "official_path": "MCP stdio servers declared by the user in ~/.tiangong/v3/mcp_servers.json; the model can only reference configured server names and can never invent spawn commands.",
+        "official_path": "Owner-configured stdio or Streamable HTTP connections in ~/.tiangong/v3/mcp_servers.json; scoped sessions, explicit bindings, OAuth and negotiated remote Tasks. Configuration is not proof of account or target availability.",
     },
 }
 
 
 def handle_pro_app_action(runtime: Any, op_id: str, action: str, target: str | None, args: Dict[str, Any]) -> Dict[str, Any]:
+    if action in MEDIA_OBSERVATION_ACTIONS:
+        return handle_media_observation(runtime,action,target,args)
+    if action in LOCAL_APP_ACTIONS:
+        return handle_local_app(runtime, action, target, args)
     if action == "v34.professional_apps.info":
         return _info(runtime, target, args)
     if action == "app.adapter.health":
@@ -1053,6 +1071,10 @@ def _mcp_action(runtime: Any, action: str, target: str | None, args: Dict[str, A
         application_connections,
         list_servers,
         list_tools,
+        task_request,
+        close_sessions,
+        action_bindings,
+        call_bound_action,
     )
 
     def _timeout_ms() -> int:
@@ -1062,6 +1084,15 @@ def _mcp_action(runtime: Any, action: str, target: str | None, args: Dict[str, A
             return DEFAULT_TIMEOUT_MS
 
     try:
+        # Trusted runtime fields, never values proposed inside model args.
+        config = getattr(runtime, "config", None)
+        scope = None
+        if config is not None and getattr(config, "run_id", None):
+            import hashlib
+            scope = hashlib.sha256(json.dumps([str(runtime.workspace), config.run_id,
+                getattr(config, "principal_scope_hash", ""), getattr(config, "generation", -1)],
+                ensure_ascii=False).encode()).hexdigest()
+        connection_args = {"scope": scope, "expected_connection": args.get("connection_id")}
         def capture(value):
             if not callable(getattr(runtime, "_resolve", None)):
                 return None  # Standalone client tests have no product object workspace.
@@ -1069,6 +1100,21 @@ def _mcp_action(runtime: Any, action: str, target: str | None, args: Dict[str, A
             raw = json.dumps(value, ensure_ascii=False, sort_keys=True, allow_nan=False)
             digest = hashlib.sha256(raw.encode()).hexdigest()
             return _write_text(runtime, f"mcp_observations/{digest}.json", raw)
+
+        if action in {"mcp.auth.begin", "mcp.auth.status"}:
+            from . import mcp_client, mcp_oauth
+            server = str(target or args.get("server") or "")
+            method = mcp_oauth.begin if action.endswith("begin") else mcp_oauth.status
+            return {"success": True, "result": method(mcp_client.CONFIG_PATH, server, scope=scope)}
+        if action == "mcp.bindings.list":
+            return {"success": True, "result": action_bindings(action_id=args.get("action_id"),
+                    offset=args.get("offset",0),limit=args.get("limit",50))}
+        if action == "mcp.action.call":
+            result=call_bound_action(str(target or args.get("server") or ""),str(args.get("action_id") or ""),
+                args.get("arguments",{}),scope=scope,timeout_ms=_timeout_ms(),capture=capture)
+            return {"success":not result.get("is_error"),"result":result,
+                    "error":"mcp.tool.is_error" if result.get("is_error") else "",
+                    "ambiguous_effect":bool(result.get("is_error")),"reconciliation_required":bool(result.get("is_error"))}
 
         if action == "mcp.servers.list":
             servers = list_servers()
@@ -1084,13 +1130,30 @@ def _mcp_action(runtime: Any, action: str, target: str | None, args: Dict[str, A
             }
         if action == "mcp.tools.list":
             server = str(target or args.get("server") or "").strip()
-            result = list_tools(server, timeout_ms=_timeout_ms(), cursor=args.get("cursor"), capture=capture)
+            result = list_tools(server, timeout_ms=_timeout_ms(), cursor=args.get("cursor"), capture=capture, **connection_args)
             return {"success": True, "result": result}
+        if action == "mcp.session.close":
+            if not scope:
+                raise McpClientError("mcp.session.scope_required")
+            server = str(target or args.get("server") or "").strip()
+            if not server:
+                raise McpClientError("mcp.server.required")
+            return {"success": True, "result": {"closed": close_sessions(scope=scope, server=server),
+                    "remote_jobs_cancelled": False}}
+        if action.startswith("mcp.tasks."):
+            result = task_request(str(target or args.get("server") or ""), action.rsplit(".", 1)[-1],
+                task_id=args.get("task_id"), cursor=args.get("cursor"),
+                fingerprint=args.get("connection_fingerprint"), timeout_ms=_timeout_ms(),
+                capture=capture, **connection_args)
+            return {"success": not result.get("is_error"), "result": result,
+                    "error": "mcp.task.failed" if result.get("is_error") else "",
+                    "execution_state": result.get("execution_state")}
         if action == "mcp.tool.call":
             server = str(target or args.get("server") or "").strip()
             tool = str(args.get("tool") or args.get("name") or "").strip()
             arguments = args.get("arguments", {})
-            result = call_tool(server, tool, arguments, timeout_ms=_timeout_ms(), capture=capture)
+            result = call_tool(server, tool, arguments, timeout_ms=_timeout_ms(), capture=capture,
+                               task=args.get("task"), **connection_args)
             return {
                 "success": not result.get("is_error"),
                 # 两种失败（isError / McpClientError）保持同一形状：

@@ -7,7 +7,7 @@ Guards (M6 §7/§8) — enforced with AST/contract scans:
 - exactly ONE store schema authority constant
 - CompletionDecision construction lives ONLY in completion_gate.py
 - no standalone repair runtime/daemon entry point
-- the single Verification Plane version source exists and is "1.58"
+- the single Verification Plane version source exists and is "1.59"
 
 Freeze guard (M6 §23/§24): the freeze manifest records the authority
 surface hashes; any change fails with VERIFICATION_PLANE_FREEZE_CHANGED
@@ -149,12 +149,12 @@ class ArchitectureGuardTests(unittest.TestCase):
             VERIFICATION_PLANE_VERSION,
         )
 
-        self.assertEqual(VERIFICATION_PLANE_VERSION, "1.58")
+        self.assertEqual(VERIFICATION_PLANE_VERSION, "1.59")
         # the literal must appear in exactly ONE src module
         holders = [
             path.relative_to(ROOT)
             for path in _iter_py_files()
-            if '"1.58"' in (
+            if '"1.59"' in (
                 path.read_text(encoding="utf-8")
             )
             and path.name == "verification_plane.py"
@@ -227,6 +227,9 @@ class VerificationPlaneFreezeGuardTests(unittest.TestCase):
 
         # 1.53 MCP transport, browser and content observation boundaries.
         "src/omni_body_skill/tools/mcp_client.py",
+        "src/omni_body_skill/tools/mcp_oauth.py",
+        "src/omni_body_skill/tools/local_apps.py",
+        "src/omni_body_skill/tools/media_observation.py",
         "src/omni_body_skill/tools/pro_apps_v34.py",
         "src/omni_body_skill/tools/delivery_kernel.py",
         "src/omni_body_skill/tools/delivery_v33.py",

@@ -3591,6 +3591,28 @@
       "summary": "Concatenate audio files using ffmpeg concat demuxer.",
       "version": "1.0.0"
     },
+    "audio.observe": {
+      "binding": {
+        "kind": "delivery",
+        "target": "delivery_kernel"
+      },
+      "budget": {
+        "profile": "external-adapter"
+      },
+      "effect": "execute",
+      "id": "audio.observe",
+      "optional_dependencies": [],
+      "required_dependencies": [],
+      "retry": "observe_before_retry",
+      "runtime": {
+        "implemented": true,
+        "risk": "A3",
+        "status": "active",
+        "summary": "Submit actual WAV/MP3 to the configured audio-capable model; no metadata or transcript-only substitution."
+      },
+      "summary": "Submit actual WAV/MP3 to the configured audio-capable model; no metadata or transcript-only substitution.",
+      "version": "1.0.0"
+    },
     "audio.tone": {
       "binding": {
         "kind": "method",
@@ -6702,7 +6724,7 @@
         "target": "audio.concat"
       },
       "budget": {
-        "profile": "external-adapter"
+        "profile": "media-render"
       },
       "effect": "execute",
       "id": "core.audio.audio.concat",
@@ -6733,7 +6755,7 @@
         "tool_group": "Portable Audio Core"
       },
       "summary": "Portable Audio Core 工具组动作：audio.concat。底层路由到 audio.concat。",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "core.audio.audio.tone": {
       "binding": {
@@ -6741,7 +6763,7 @@
         "target": "audio.tone"
       },
       "budget": {
-        "profile": "external-adapter"
+        "profile": "media-render"
       },
       "effect": "execute",
       "id": "core.audio.audio.tone",
@@ -6772,7 +6794,7 @@
         "tool_group": "Portable Audio Core"
       },
       "summary": "Portable Audio Core 工具组动作：audio.tone。底层路由到 audio.tone。",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "core.audio.audio.trim": {
       "binding": {
@@ -6780,7 +6802,7 @@
         "target": "audio.trim"
       },
       "budget": {
-        "profile": "external-adapter"
+        "profile": "media-render"
       },
       "effect": "execute",
       "id": "core.audio.audio.trim",
@@ -6811,7 +6833,7 @@
         "tool_group": "Portable Audio Core"
       },
       "summary": "Portable Audio Core 工具组动作：audio.trim。底层路由到 audio.trim。",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "core.code.code.patch_replace": {
       "binding": {
@@ -6819,7 +6841,7 @@
         "target": "code.patch_replace"
       },
       "budget": {
-        "profile": "external-adapter"
+        "profile": "local-text"
       },
       "effect": "write",
       "id": "core.code.code.patch_replace",
@@ -6850,7 +6872,7 @@
         "tool_group": "Core Code & Python"
       },
       "summary": "Core Code & Python 工具组动作：code.patch_replace。底层路由到 code.patch_replace。",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "core.code.code.read": {
       "binding": {
@@ -6858,7 +6880,7 @@
         "target": "code.read"
       },
       "budget": {
-        "profile": "external-adapter"
+        "profile": "local-text"
       },
       "effect": "read",
       "id": "core.code.code.read",
@@ -6889,7 +6911,7 @@
         "tool_group": "Core Code & Python"
       },
       "summary": "Core Code & Python 工具组动作：code.read。底层路由到 code.read。",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "core.code.code.write": {
       "binding": {
@@ -6897,7 +6919,7 @@
         "target": "code.write"
       },
       "budget": {
-        "profile": "external-adapter"
+        "profile": "local-text"
       },
       "effect": "write",
       "id": "core.code.code.write",
@@ -6928,7 +6950,7 @@
         "tool_group": "Core Code & Python"
       },
       "summary": "Core Code & Python 工具组动作：code.write。底层路由到 code.write。",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "core.code.python.run": {
       "binding": {
@@ -6936,11 +6958,16 @@
         "target": "python.run"
       },
       "budget": {
-        "profile": "external-adapter"
+        "profile": "workspace-code"
       },
       "effect": "write",
       "id": "core.code.python.run",
-      "optional_dependencies": [],
+      "optional_dependencies": [
+        "python:PIL",
+        "python:openpyxl",
+        "python:pptx",
+        "python:imageio_ffmpeg"
+      ],
       "required_dependencies": [],
       "retry": "observe_before_retry",
       "runtime": {
@@ -6967,7 +6994,7 @@
         "tool_group": "Core Code & Python"
       },
       "summary": "Core Code & Python 工具组动作：python.run。底层路由到 python.run。",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "core.code.quality.python_syntax": {
       "binding": {
@@ -6977,7 +7004,7 @@
       "budget": {
         "profile": "external-adapter"
       },
-      "effect": "execute",
+      "effect": "verify",
       "id": "core.code.quality.python_syntax",
       "optional_dependencies": [],
       "required_dependencies": [],
@@ -7006,7 +7033,7 @@
         "tool_group": "Core Code & Python"
       },
       "summary": "Core Code & Python 工具组动作：quality.python_syntax。底层路由到 quality.python_syntax。",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "core.code.quality.run_tests": {
       "binding": {
@@ -7016,7 +7043,7 @@
       "budget": {
         "profile": "external-adapter"
       },
-      "effect": "write",
+      "effect": "verify",
       "id": "core.code.quality.run_tests",
       "optional_dependencies": [],
       "required_dependencies": [],
@@ -7045,7 +7072,7 @@
         "tool_group": "Core Code & Python"
       },
       "summary": "Core Code & Python 工具组动作：quality.run_tests。底层路由到 quality.run_tests。",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "core.code.shell.run": {
       "binding": {
@@ -7053,7 +7080,7 @@
         "target": "shell.run"
       },
       "budget": {
-        "profile": "external-adapter"
+        "profile": "workspace-code"
       },
       "effect": "write",
       "id": "core.code.shell.run",
@@ -7084,7 +7111,7 @@
         "tool_group": "Core Code & Python"
       },
       "summary": "Core Code & Python 工具组动作：shell.run。底层路由到 shell.run。",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "core.filesystem.file.append": {
       "binding": {
@@ -7092,7 +7119,7 @@
         "target": "file.append"
       },
       "budget": {
-        "profile": "external-adapter"
+        "profile": "local-text"
       },
       "effect": "write",
       "id": "core.filesystem.file.append",
@@ -7123,7 +7150,7 @@
         "tool_group": "Core Filesystem"
       },
       "summary": "Core Filesystem 工具组动作：file.append。底层路由到 file.append。",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "core.filesystem.file.copy": {
       "binding": {
@@ -7131,7 +7158,7 @@
         "target": "file.copy"
       },
       "budget": {
-        "profile": "external-adapter"
+        "profile": "local-text"
       },
       "effect": "write",
       "id": "core.filesystem.file.copy",
@@ -7162,7 +7189,7 @@
         "tool_group": "Core Filesystem"
       },
       "summary": "Core Filesystem 工具组动作：file.copy。底层路由到 file.copy。",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "core.filesystem.file.delete_to_trash": {
       "binding": {
@@ -7170,7 +7197,7 @@
         "target": "file.delete_to_trash"
       },
       "budget": {
-        "profile": "external-adapter"
+        "profile": "local-text"
       },
       "effect": "write",
       "id": "core.filesystem.file.delete_to_trash",
@@ -7201,7 +7228,7 @@
         "tool_group": "Core Filesystem"
       },
       "summary": "Core Filesystem 工具组动作：file.delete_to_trash。底层路由到 file.delete_to_trash。",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "core.filesystem.file.hash": {
       "binding": {
@@ -7209,7 +7236,7 @@
         "target": "file.hash"
       },
       "budget": {
-        "profile": "external-adapter"
+        "profile": "local-text"
       },
       "effect": "read",
       "id": "core.filesystem.file.hash",
@@ -7240,7 +7267,7 @@
         "tool_group": "Core Filesystem"
       },
       "summary": "Core Filesystem 工具组动作：file.hash。底层路由到 file.hash。",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "core.filesystem.file.list": {
       "binding": {
@@ -7248,7 +7275,7 @@
         "target": "file.list"
       },
       "budget": {
-        "profile": "external-adapter"
+        "profile": "local-text"
       },
       "effect": "read",
       "id": "core.filesystem.file.list",
@@ -7279,7 +7306,7 @@
         "tool_group": "Core Filesystem"
       },
       "summary": "Core Filesystem 工具组动作：file.list。底层路由到 file.list。",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "core.filesystem.file.mkdir": {
       "binding": {
@@ -7287,7 +7314,7 @@
         "target": "file.mkdir"
       },
       "budget": {
-        "profile": "external-adapter"
+        "profile": "local-text"
       },
       "effect": "write",
       "id": "core.filesystem.file.mkdir",
@@ -7310,7 +7337,7 @@
           "additionalProperties": true,
           "type": "object"
         },
-        "risk": "A3",
+        "risk": "A2",
         "rollback": true,
         "status": "active",
         "summary": "Core Filesystem 工具组动作：file.mkdir。底层路由到 file.mkdir。",
@@ -7318,7 +7345,7 @@
         "tool_group": "Core Filesystem"
       },
       "summary": "Core Filesystem 工具组动作：file.mkdir。底层路由到 file.mkdir。",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "core.filesystem.file.move": {
       "binding": {
@@ -7326,7 +7353,7 @@
         "target": "file.move"
       },
       "budget": {
-        "profile": "external-adapter"
+        "profile": "local-text"
       },
       "effect": "write",
       "id": "core.filesystem.file.move",
@@ -7357,7 +7384,7 @@
         "tool_group": "Core Filesystem"
       },
       "summary": "Core Filesystem 工具组动作：file.move。底层路由到 file.move。",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "core.filesystem.file.read": {
       "binding": {
@@ -7365,7 +7392,7 @@
         "target": "file.read"
       },
       "budget": {
-        "profile": "external-adapter"
+        "profile": "local-text"
       },
       "effect": "read",
       "id": "core.filesystem.file.read",
@@ -7396,7 +7423,7 @@
         "tool_group": "Core Filesystem"
       },
       "summary": "Core Filesystem 工具组动作：file.read。底层路由到 file.read。",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "core.filesystem.file.rename": {
       "binding": {
@@ -7404,7 +7431,7 @@
         "target": "file.rename"
       },
       "budget": {
-        "profile": "external-adapter"
+        "profile": "local-text"
       },
       "effect": "write",
       "id": "core.filesystem.file.rename",
@@ -7435,7 +7462,7 @@
         "tool_group": "Core Filesystem"
       },
       "summary": "Core Filesystem 工具组动作：file.rename。底层路由到 file.rename。",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "core.filesystem.file.search": {
       "binding": {
@@ -7443,7 +7470,7 @@
         "target": "file.search"
       },
       "budget": {
-        "profile": "external-adapter"
+        "profile": "local-text"
       },
       "effect": "read",
       "id": "core.filesystem.file.search",
@@ -7474,7 +7501,7 @@
         "tool_group": "Core Filesystem"
       },
       "summary": "Core Filesystem 工具组动作：file.search。底层路由到 file.search。",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "core.filesystem.file.write": {
       "binding": {
@@ -7482,7 +7509,7 @@
         "target": "file.write"
       },
       "budget": {
-        "profile": "external-adapter"
+        "profile": "local-text"
       },
       "effect": "write",
       "id": "core.filesystem.file.write",
@@ -7513,7 +7540,7 @@
         "tool_group": "Core Filesystem"
       },
       "summary": "Core Filesystem 工具组动作：file.write。底层路由到 file.write。",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "core.image.image.add_text": {
       "binding": {
@@ -7521,12 +7548,14 @@
         "target": "image.add_text"
       },
       "budget": {
-        "profile": "external-adapter"
+        "profile": "image-file"
       },
       "effect": "write",
       "id": "core.image.image.add_text",
       "optional_dependencies": [],
-      "required_dependencies": [],
+      "required_dependencies": [
+        "python:PIL"
+      ],
       "retry": "observe_before_retry",
       "runtime": {
         "adapter": "core_builtin",
@@ -7552,7 +7581,7 @@
         "tool_group": "Portable Image Core"
       },
       "summary": "Portable Image Core 工具组动作：image.add_text。底层路由到 image.add_text。",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "core.image.image.compose": {
       "binding": {
@@ -7560,12 +7589,14 @@
         "target": "image.compose"
       },
       "budget": {
-        "profile": "external-adapter"
+        "profile": "image-file"
       },
       "effect": "execute",
       "id": "core.image.image.compose",
       "optional_dependencies": [],
-      "required_dependencies": [],
+      "required_dependencies": [
+        "python:PIL"
+      ],
       "retry": "observe_before_retry",
       "runtime": {
         "adapter": "core_builtin",
@@ -7591,7 +7622,7 @@
         "tool_group": "Portable Image Core"
       },
       "summary": "Portable Image Core 工具组动作：image.compose。底层路由到 image.compose。",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "core.image.image.convert": {
       "binding": {
@@ -7599,12 +7630,14 @@
         "target": "image.convert"
       },
       "budget": {
-        "profile": "external-adapter"
+        "profile": "image-file"
       },
       "effect": "execute",
       "id": "core.image.image.convert",
       "optional_dependencies": [],
-      "required_dependencies": [],
+      "required_dependencies": [
+        "python:PIL"
+      ],
       "retry": "observe_before_retry",
       "runtime": {
         "adapter": "core_builtin",
@@ -7630,7 +7663,7 @@
         "tool_group": "Portable Image Core"
       },
       "summary": "Portable Image Core 工具组动作：image.convert。底层路由到 image.convert。",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "core.image.image.create_canvas": {
       "binding": {
@@ -7638,12 +7671,14 @@
         "target": "image.create_canvas"
       },
       "budget": {
-        "profile": "external-adapter"
+        "profile": "image-file"
       },
       "effect": "write",
       "id": "core.image.image.create_canvas",
       "optional_dependencies": [],
-      "required_dependencies": [],
+      "required_dependencies": [
+        "python:PIL"
+      ],
       "retry": "observe_before_retry",
       "runtime": {
         "adapter": "core_builtin",
@@ -7669,7 +7704,7 @@
         "tool_group": "Portable Image Core"
       },
       "summary": "Portable Image Core 工具组动作：image.create_canvas。底层路由到 image.create_canvas。",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "core.image.image.crop": {
       "binding": {
@@ -7677,12 +7712,14 @@
         "target": "image.crop"
       },
       "budget": {
-        "profile": "external-adapter"
+        "profile": "image-file"
       },
       "effect": "write",
       "id": "core.image.image.crop",
       "optional_dependencies": [],
-      "required_dependencies": [],
+      "required_dependencies": [
+        "python:PIL"
+      ],
       "retry": "observe_before_retry",
       "runtime": {
         "adapter": "core_builtin",
@@ -7708,7 +7745,7 @@
         "tool_group": "Portable Image Core"
       },
       "summary": "Portable Image Core 工具组动作：image.crop。底层路由到 image.crop。",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "core.image.image.info": {
       "binding": {
@@ -7716,12 +7753,14 @@
         "target": "image.info"
       },
       "budget": {
-        "profile": "external-adapter"
+        "profile": "image-file"
       },
       "effect": "execute",
       "id": "core.image.image.info",
       "optional_dependencies": [],
-      "required_dependencies": [],
+      "required_dependencies": [
+        "python:PIL"
+      ],
       "retry": "read_retry",
       "runtime": {
         "adapter": "core_builtin",
@@ -7747,7 +7786,7 @@
         "tool_group": "Portable Image Core"
       },
       "summary": "Portable Image Core 工具组动作：image.info。底层路由到 image.info。",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "core.image.image.resize": {
       "binding": {
@@ -7755,12 +7794,14 @@
         "target": "image.resize"
       },
       "budget": {
-        "profile": "external-adapter"
+        "profile": "image-file"
       },
       "effect": "write",
       "id": "core.image.image.resize",
       "optional_dependencies": [],
-      "required_dependencies": [],
+      "required_dependencies": [
+        "python:PIL"
+      ],
       "retry": "observe_before_retry",
       "runtime": {
         "adapter": "core_builtin",
@@ -7786,7 +7827,7 @@
         "tool_group": "Portable Image Core"
       },
       "summary": "Portable Image Core 工具组动作：image.resize。底层路由到 image.resize。",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "core.image.image.rotate": {
       "binding": {
@@ -7794,12 +7835,14 @@
         "target": "image.rotate"
       },
       "budget": {
-        "profile": "external-adapter"
+        "profile": "image-file"
       },
       "effect": "write",
       "id": "core.image.image.rotate",
       "optional_dependencies": [],
-      "required_dependencies": [],
+      "required_dependencies": [
+        "python:PIL"
+      ],
       "retry": "observe_before_retry",
       "runtime": {
         "adapter": "core_builtin",
@@ -7825,7 +7868,7 @@
         "tool_group": "Portable Image Core"
       },
       "summary": "Portable Image Core 工具组动作：image.rotate。底层路由到 image.rotate。",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "core.office.docx.create": {
       "binding": {
@@ -7833,12 +7876,14 @@
         "target": "docx.create"
       },
       "budget": {
-        "profile": "external-adapter"
+        "profile": "office-file"
       },
       "effect": "write",
       "id": "core.office.docx.create",
       "optional_dependencies": [],
-      "required_dependencies": [],
+      "required_dependencies": [
+        "python:docx"
+      ],
       "retry": "observe_before_retry",
       "runtime": {
         "adapter": "core_builtin",
@@ -7864,7 +7909,7 @@
         "tool_group": "Portable Office Generators"
       },
       "summary": "Portable Office Generators 工具组动作：docx.create。底层路由到 docx.create。",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "core.office.mindmap.create": {
       "binding": {
@@ -7911,7 +7956,7 @@
         "target": "pdf.create_from_text"
       },
       "budget": {
-        "profile": "external-adapter"
+        "profile": "office-file"
       },
       "effect": "write",
       "id": "core.office.pdf.create_from_text",
@@ -7942,7 +7987,7 @@
         "tool_group": "Portable Office Generators"
       },
       "summary": "Portable Office Generators 工具组动作：pdf.create_from_text。底层路由到 pdf.create_from_text。",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "core.office.pdf.extract_text": {
       "binding": {
@@ -7950,7 +7995,7 @@
         "target": "pdf.extract_text"
       },
       "budget": {
-        "profile": "external-adapter"
+        "profile": "office-file"
       },
       "effect": "write",
       "id": "core.office.pdf.extract_text",
@@ -7981,7 +8026,7 @@
         "tool_group": "Portable Office Generators"
       },
       "summary": "Portable Office Generators 工具组动作：pdf.extract_text。底层路由到 pdf.extract_text。",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "core.office.pptx.create": {
       "binding": {
@@ -7989,12 +8034,14 @@
         "target": "pptx.create"
       },
       "budget": {
-        "profile": "external-adapter"
+        "profile": "office-file"
       },
       "effect": "write",
       "id": "core.office.pptx.create",
       "optional_dependencies": [],
-      "required_dependencies": [],
+      "required_dependencies": [
+        "python:pptx"
+      ],
       "retry": "observe_before_retry",
       "runtime": {
         "adapter": "core_builtin",
@@ -8020,7 +8067,7 @@
         "tool_group": "Portable Office Generators"
       },
       "summary": "Portable Office Generators 工具组动作：pptx.create。底层路由到 pptx.create。",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "core.office.sheet.create": {
       "binding": {
@@ -8184,12 +8231,14 @@
         "target": "video.add_audio"
       },
       "budget": {
-        "profile": "external-adapter"
+        "profile": "media-render"
       },
       "effect": "write",
       "id": "core.video.video.add_audio",
       "optional_dependencies": [],
-      "required_dependencies": [],
+      "required_dependencies": [
+        "executable:ffmpeg"
+      ],
       "retry": "observe_before_retry",
       "runtime": {
         "adapter": "core_builtin",
@@ -8215,7 +8264,7 @@
         "tool_group": "Portable Video Core"
       },
       "summary": "Portable Video Core 工具组动作：video.add_audio。底层路由到 video.add_audio。",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "core.video.video.cut": {
       "binding": {
@@ -8223,12 +8272,14 @@
         "target": "video.cut"
       },
       "budget": {
-        "profile": "external-adapter"
+        "profile": "media-render"
       },
       "effect": "write",
       "id": "core.video.video.cut",
       "optional_dependencies": [],
-      "required_dependencies": [],
+      "required_dependencies": [
+        "executable:ffmpeg"
+      ],
       "retry": "observe_before_retry",
       "runtime": {
         "adapter": "core_builtin",
@@ -8254,7 +8305,7 @@
         "tool_group": "Portable Video Core"
       },
       "summary": "Portable Video Core 工具组动作：video.cut。底层路由到 video.cut。",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "core.video.video.extract_audio": {
       "binding": {
@@ -8262,12 +8313,14 @@
         "target": "video.extract_audio"
       },
       "budget": {
-        "profile": "external-adapter"
+        "profile": "media-render"
       },
       "effect": "write",
       "id": "core.video.video.extract_audio",
       "optional_dependencies": [],
-      "required_dependencies": [],
+      "required_dependencies": [
+        "executable:ffmpeg"
+      ],
       "retry": "observe_before_retry",
       "runtime": {
         "adapter": "core_builtin",
@@ -8293,7 +8346,7 @@
         "tool_group": "Portable Video Core"
       },
       "summary": "Portable Video Core 工具组动作：video.extract_audio。底层路由到 video.extract_audio。",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "core.video.video.info": {
       "binding": {
@@ -8301,12 +8354,14 @@
         "target": "video.info"
       },
       "budget": {
-        "profile": "external-adapter"
+        "profile": "media-render"
       },
       "effect": "execute",
       "id": "core.video.video.info",
       "optional_dependencies": [],
-      "required_dependencies": [],
+      "required_dependencies": [
+        "executable:ffmpeg"
+      ],
       "retry": "read_retry",
       "runtime": {
         "adapter": "core_builtin",
@@ -8332,7 +8387,7 @@
         "tool_group": "Portable Video Core"
       },
       "summary": "Portable Video Core 工具组动作：video.info。底层路由到 video.info。",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "core.video.video.slideshow": {
       "binding": {
@@ -8340,12 +8395,14 @@
         "target": "video.slideshow"
       },
       "budget": {
-        "profile": "external-adapter"
+        "profile": "media-render"
       },
       "effect": "execute",
       "id": "core.video.video.slideshow",
       "optional_dependencies": [],
-      "required_dependencies": [],
+      "required_dependencies": [
+        "executable:ffmpeg"
+      ],
       "retry": "observe_before_retry",
       "runtime": {
         "adapter": "core_builtin",
@@ -8371,7 +8428,7 @@
         "tool_group": "Portable Video Core"
       },
       "summary": "Portable Video Core 工具组动作：video.slideshow。底层路由到 video.slideshow。",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "course.lesson_plan.create": {
       "binding": {
@@ -10981,7 +11038,7 @@
         "target": "audio.concat"
       },
       "budget": {
-        "profile": "external-adapter"
+        "profile": "media-render"
       },
       "effect": "execute",
       "id": "ffmpeg.audio.concat",
@@ -11012,7 +11069,7 @@
         "tool_group": "FFmpeg"
       },
       "summary": "FFmpeg 工具组动作：audio.concat。底层路由到 audio.concat。",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "ffmpeg.audio.trim": {
       "binding": {
@@ -11020,7 +11077,7 @@
         "target": "audio.trim"
       },
       "budget": {
-        "profile": "external-adapter"
+        "profile": "media-render"
       },
       "effect": "execute",
       "id": "ffmpeg.audio.trim",
@@ -11051,7 +11108,7 @@
         "tool_group": "FFmpeg"
       },
       "summary": "FFmpeg 工具组动作：audio.trim。底层路由到 audio.trim。",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "ffmpeg.video.add_audio": {
       "binding": {
@@ -11059,12 +11116,14 @@
         "target": "video.add_audio"
       },
       "budget": {
-        "profile": "external-adapter"
+        "profile": "media-render"
       },
       "effect": "write",
       "id": "ffmpeg.video.add_audio",
       "optional_dependencies": [],
-      "required_dependencies": [],
+      "required_dependencies": [
+        "executable:ffmpeg"
+      ],
       "retry": "observe_before_retry",
       "runtime": {
         "adapter": "ffmpeg_cli",
@@ -11090,7 +11149,7 @@
         "tool_group": "FFmpeg"
       },
       "summary": "FFmpeg 工具组动作：video.add_audio。底层路由到 video.add_audio。",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "ffmpeg.video.cut": {
       "binding": {
@@ -11098,12 +11157,14 @@
         "target": "video.cut"
       },
       "budget": {
-        "profile": "external-adapter"
+        "profile": "media-render"
       },
       "effect": "write",
       "id": "ffmpeg.video.cut",
       "optional_dependencies": [],
-      "required_dependencies": [],
+      "required_dependencies": [
+        "executable:ffmpeg"
+      ],
       "retry": "observe_before_retry",
       "runtime": {
         "adapter": "ffmpeg_cli",
@@ -11129,7 +11190,7 @@
         "tool_group": "FFmpeg"
       },
       "summary": "FFmpeg 工具组动作：video.cut。底层路由到 video.cut。",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "ffmpeg.video.extract_audio": {
       "binding": {
@@ -11137,12 +11198,14 @@
         "target": "video.extract_audio"
       },
       "budget": {
-        "profile": "external-adapter"
+        "profile": "media-render"
       },
       "effect": "write",
       "id": "ffmpeg.video.extract_audio",
       "optional_dependencies": [],
-      "required_dependencies": [],
+      "required_dependencies": [
+        "executable:ffmpeg"
+      ],
       "retry": "observe_before_retry",
       "runtime": {
         "adapter": "ffmpeg_cli",
@@ -11168,7 +11231,7 @@
         "tool_group": "FFmpeg"
       },
       "summary": "FFmpeg 工具组动作：video.extract_audio。底层路由到 video.extract_audio。",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "ffmpeg.video.info": {
       "binding": {
@@ -11176,12 +11239,14 @@
         "target": "video.info"
       },
       "budget": {
-        "profile": "external-adapter"
+        "profile": "media-render"
       },
       "effect": "execute",
       "id": "ffmpeg.video.info",
       "optional_dependencies": [],
-      "required_dependencies": [],
+      "required_dependencies": [
+        "executable:ffmpeg"
+      ],
       "retry": "read_retry",
       "runtime": {
         "adapter": "ffmpeg_cli",
@@ -11207,7 +11272,7 @@
         "tool_group": "FFmpeg"
       },
       "summary": "FFmpeg 工具组动作：video.info。底层路由到 video.info。",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "ffmpeg.video.slideshow": {
       "binding": {
@@ -11215,12 +11280,14 @@
         "target": "video.slideshow"
       },
       "budget": {
-        "profile": "external-adapter"
+        "profile": "media-render"
       },
       "effect": "execute",
       "id": "ffmpeg.video.slideshow",
       "optional_dependencies": [],
-      "required_dependencies": [],
+      "required_dependencies": [
+        "executable:ffmpeg"
+      ],
       "retry": "observe_before_retry",
       "runtime": {
         "adapter": "ffmpeg_cli",
@@ -11246,7 +11313,7 @@
         "tool_group": "FFmpeg"
       },
       "summary": "FFmpeg 工具组动作：video.slideshow。底层路由到 video.slideshow。",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "figma.api.request_pack.create": {
       "binding": {
@@ -11752,7 +11819,7 @@
       "budget": {
         "profile": "local-text"
       },
-      "effect": "execute",
+      "effect": "write",
       "id": "file.patch_replace",
       "optional_dependencies": [],
       "required_dependencies": [],
@@ -11766,7 +11833,7 @@
         "support_scope": "canonical_action_with_declared_defaults"
       },
       "summary": "Compatibility alias for code.patch_replace.",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "file.read": {
       "binding": {
@@ -15115,6 +15182,28 @@
       "summary": "Inspect image size/mode/format.",
       "version": "1.0.0"
     },
+    "image.observe": {
+      "binding": {
+        "kind": "delivery",
+        "target": "delivery_kernel"
+      },
+      "budget": {
+        "profile": "external-adapter"
+      },
+      "effect": "execute",
+      "id": "image.observe",
+      "optional_dependencies": [],
+      "required_dependencies": [],
+      "retry": "observe_before_retry",
+      "runtime": {
+        "implemented": true,
+        "risk": "A3",
+        "status": "active",
+        "summary": "Submit actual image pixels to the configured vision model; bind interpretation to original bytes and submitted resolution."
+      },
+      "summary": "Submit actual image pixels to the configured vision model; bind interpretation to original bytes and submitted resolution.",
+      "version": "1.0.0"
+    },
     "image.resize": {
       "binding": {
         "kind": "method",
@@ -17760,6 +17849,94 @@
       "summary": "macOS Desktop 工具组动作：window list。需要接入 apple_script_or_accessibility 后端；当前包只挂载动作协议，不假装执行。",
       "version": "1.0.0"
     },
+    "mcp.action.call": {
+      "binding": {
+        "kind": "delivery",
+        "target": "delivery_kernel"
+      },
+      "budget": {
+        "profile": "external-adapter"
+      },
+      "effect": "execute",
+      "id": "mcp.action.call",
+      "optional_dependencies": [],
+      "required_dependencies": [],
+      "retry": "observe_before_retry",
+      "runtime": {
+        "implemented": true,
+        "risk": "A4",
+        "status": "active",
+        "summary": "Execute an owner-bound requirement only after matching its actual remote input schema hash."
+      },
+      "summary": "Execute an owner-bound requirement only after matching its actual remote input schema hash.",
+      "version": "1.0.0"
+    },
+    "mcp.auth.begin": {
+      "binding": {
+        "kind": "delivery",
+        "target": "delivery_kernel"
+      },
+      "budget": {
+        "profile": "external-adapter"
+      },
+      "effect": "execute",
+      "id": "mcp.auth.begin",
+      "optional_dependencies": [],
+      "required_dependencies": [],
+      "retry": "observe_before_retry",
+      "runtime": {
+        "implemented": true,
+        "risk": "A3",
+        "status": "active",
+        "summary": "Start an owner-configured PKCE login; requires account-owner browser authorization."
+      },
+      "summary": "Start an owner-configured PKCE login; requires account-owner browser authorization.",
+      "version": "1.0.0"
+    },
+    "mcp.auth.status": {
+      "binding": {
+        "kind": "delivery",
+        "target": "delivery_kernel"
+      },
+      "budget": {
+        "profile": "external-adapter"
+      },
+      "effect": "read",
+      "id": "mcp.auth.status",
+      "optional_dependencies": [],
+      "required_dependencies": [],
+      "retry": "observe_before_retry",
+      "runtime": {
+        "implemented": true,
+        "risk": "A0",
+        "status": "active",
+        "summary": "Observe OAuth authorization status without exposing credentials."
+      },
+      "summary": "Observe OAuth authorization status without exposing credentials.",
+      "version": "1.0.0"
+    },
+    "mcp.bindings.list": {
+      "binding": {
+        "kind": "delivery",
+        "target": "delivery_kernel"
+      },
+      "budget": {
+        "profile": "external-adapter"
+      },
+      "effect": "read",
+      "id": "mcp.bindings.list",
+      "optional_dependencies": [],
+      "required_dependencies": [],
+      "retry": "observe_before_retry",
+      "runtime": {
+        "implemented": true,
+        "risk": "A0",
+        "status": "active",
+        "summary": "Discover every dictionary requirement and its explicit owner MCP tool binding."
+      },
+      "summary": "Discover every dictionary requirement and its explicit owner MCP tool binding.",
+      "version": "1.0.0"
+    },
     "mcp.servers.list": {
       "binding": {
         "kind": "delivery",
@@ -17781,6 +17958,116 @@
       },
       "summary": "Discover owner-configured MCP services and application connection requirements, environment locations and associations. Credentials omitted; configuration is not connection proof.",
       "version": "2.0.0"
+    },
+    "mcp.session.close": {
+      "binding": {
+        "kind": "delivery",
+        "target": "delivery_kernel"
+      },
+      "budget": {
+        "profile": "external-adapter"
+      },
+      "effect": "write",
+      "id": "mcp.session.close",
+      "optional_dependencies": [],
+      "required_dependencies": [],
+      "retry": "observe_before_retry",
+      "runtime": {
+        "implemented": true,
+        "risk": "A2",
+        "status": "active",
+        "summary": "Close this run scope connection; remote jobs are not cancelled."
+      },
+      "summary": "Close this run scope connection; remote jobs are not cancelled.",
+      "version": "1.0.0"
+    },
+    "mcp.tasks.cancel": {
+      "binding": {
+        "kind": "delivery",
+        "target": "delivery_kernel"
+      },
+      "budget": {
+        "profile": "external-adapter"
+      },
+      "effect": "execute",
+      "id": "mcp.tasks.cancel",
+      "optional_dependencies": [],
+      "required_dependencies": [],
+      "retry": "observe_before_retry",
+      "runtime": {
+        "implemented": true,
+        "risk": "A3",
+        "status": "active",
+        "summary": "Request remote job cancellation; reconcile unknown outcomes and already applied effects."
+      },
+      "summary": "Request remote job cancellation; reconcile unknown outcomes and already applied effects.",
+      "version": "1.0.0"
+    },
+    "mcp.tasks.get": {
+      "binding": {
+        "kind": "delivery",
+        "target": "delivery_kernel"
+      },
+      "budget": {
+        "profile": "external-adapter"
+      },
+      "effect": "read",
+      "id": "mcp.tasks.get",
+      "optional_dependencies": [],
+      "required_dependencies": [],
+      "retry": "observe_before_retry",
+      "runtime": {
+        "implemented": true,
+        "risk": "A0",
+        "status": "active",
+        "summary": "Read actual remote job status; an accepted job is not a completed business task."
+      },
+      "summary": "Read actual remote job status; an accepted job is not a completed business task.",
+      "version": "1.0.0"
+    },
+    "mcp.tasks.list": {
+      "binding": {
+        "kind": "delivery",
+        "target": "delivery_kernel"
+      },
+      "budget": {
+        "profile": "external-adapter"
+      },
+      "effect": "read",
+      "id": "mcp.tasks.list",
+      "optional_dependencies": [],
+      "required_dependencies": [],
+      "retry": "observe_before_retry",
+      "runtime": {
+        "implemented": true,
+        "risk": "A0",
+        "status": "active",
+        "summary": "Read a page of remote tasks under the original configured connection identity."
+      },
+      "summary": "Read a page of remote tasks under the original configured connection identity.",
+      "version": "1.0.0"
+    },
+    "mcp.tasks.result": {
+      "binding": {
+        "kind": "delivery",
+        "target": "delivery_kernel"
+      },
+      "budget": {
+        "profile": "external-adapter"
+      },
+      "effect": "read",
+      "id": "mcp.tasks.result",
+      "optional_dependencies": [],
+      "required_dependencies": [],
+      "retry": "observe_before_retry",
+      "runtime": {
+        "implemented": true,
+        "risk": "A0",
+        "status": "active",
+        "summary": "Read terminal task result with matching remote task identity and target readback still required."
+      },
+      "summary": "Read terminal task result with matching remote task identity and target readback still required.",
+      "version": "1.0.0"
     },
     "mcp.tool.call": {
       "binding": {
@@ -18787,12 +19074,14 @@
         "target": "pptx.create"
       },
       "budget": {
-        "profile": "external-adapter"
+        "profile": "office-file"
       },
       "effect": "write",
       "id": "microsoft.powerpoint.pptx.create",
       "optional_dependencies": [],
-      "required_dependencies": [],
+      "required_dependencies": [
+        "python:pptx"
+      ],
       "retry": "observe_before_retry",
       "runtime": {
         "adapter": "office_com_or_pptx",
@@ -18818,7 +19107,7 @@
         "tool_group": "Microsoft PowerPoint"
       },
       "summary": "Microsoft PowerPoint 工具组动作：pptx.create。底层路由到 pptx.create。",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "microsoft.sharepoint.file.download": {
       "binding": {
@@ -19546,12 +19835,14 @@
         "target": "docx.create"
       },
       "budget": {
-        "profile": "external-adapter"
+        "profile": "office-file"
       },
       "effect": "write",
       "id": "microsoft.word.docx.create",
       "optional_dependencies": [],
-      "required_dependencies": [],
+      "required_dependencies": [
+        "python:docx"
+      ],
       "retry": "observe_before_retry",
       "runtime": {
         "adapter": "office_com_or_docx",
@@ -19577,7 +19868,7 @@
         "tool_group": "Microsoft Word"
       },
       "summary": "Microsoft Word 工具组动作：docx.create。底层路由到 docx.create。",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "microsoft.word.native.export_pdf": {
       "binding": {
@@ -19612,7 +19903,7 @@
         "target": "pdf.create_from_text"
       },
       "budget": {
-        "profile": "external-adapter"
+        "profile": "office-file"
       },
       "effect": "write",
       "id": "microsoft.word.pdf.create_from_text",
@@ -19643,7 +19934,7 @@
         "tool_group": "Microsoft Word"
       },
       "summary": "Microsoft Word 工具组动作：pdf.create_from_text。底层路由到 pdf.create_from_text。",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "mindmap.create": {
       "binding": {
@@ -20721,8 +21012,8 @@
     },
     "obsidian.graph.export": {
       "binding": {
-        "kind": "method",
-        "target": "_action_obsidian_graph_export"
+        "kind": "delivery",
+        "target": "delivery_kernel"
       },
       "budget": {
         "profile": "external-adapter"
@@ -20740,7 +21031,7 @@
           "state_after",
           "verification_hint"
         ],
-        "implemented": false,
+        "implemented": true,
         "parameters": {
           "additionalProperties": true,
           "type": "object"
@@ -20749,20 +21040,20 @@
           "filesystem_or_plugin_configured",
           "valid_auth_or_visible_session"
         ],
-        "risk": "A0",
+        "risk": "A2",
         "rollback": false,
         "rollback_status": "not_implemented",
         "status": "active",
-        "summary": "Obsidian 工具组动作：graph export。需要接入 filesystem_or_plugin 后端；当前包只挂载动作协议，不假装执行。",
+        "summary": "Export Markdown wiki-link references, including unresolved links, to a fresh JSON file.",
         "tool_group": "Obsidian"
       },
-      "summary": "Obsidian 工具组动作：graph export。需要接入 filesystem_or_plugin 后端；当前包只挂载动作协议，不假装执行。",
-      "version": "1.0.0"
+      "summary": "Export Markdown wiki-link references, including unresolved links, to a fresh JSON file.",
+      "version": "2.0.0"
     },
     "obsidian.link.create": {
       "binding": {
-        "kind": "method",
-        "target": "_action_obsidian_link_create"
+        "kind": "delivery",
+        "target": "delivery_kernel"
       },
       "budget": {
         "profile": "external-adapter"
@@ -20780,7 +21071,7 @@
           "state_after",
           "verification_hint"
         ],
-        "implemented": false,
+        "implemented": true,
         "parameters": {
           "additionalProperties": true,
           "type": "object"
@@ -20793,16 +21084,16 @@
         "rollback": false,
         "rollback_status": "not_implemented",
         "status": "active",
-        "summary": "Obsidian 工具组动作：link create。需要接入 filesystem_or_plugin 后端；当前包只挂载动作协议，不假装执行。",
+        "summary": "Append a wiki-link to a note at an expected version; returns actual new bytes.",
         "tool_group": "Obsidian"
       },
-      "summary": "Obsidian 工具组动作：link create。需要接入 filesystem_or_plugin 后端；当前包只挂载动作协议，不假装执行。",
-      "version": "1.0.0"
+      "summary": "Append a wiki-link to a note at an expected version; returns actual new bytes.",
+      "version": "2.0.0"
     },
     "obsidian.note.create": {
       "binding": {
-        "kind": "method",
-        "target": "_action_obsidian_note_create"
+        "kind": "delivery",
+        "target": "delivery_kernel"
       },
       "budget": {
         "profile": "external-adapter"
@@ -20820,7 +21111,7 @@
           "state_after",
           "verification_hint"
         ],
-        "implemented": false,
+        "implemented": true,
         "parameters": {
           "additionalProperties": true,
           "type": "object"
@@ -20833,16 +21124,16 @@
         "rollback": false,
         "rollback_status": "not_implemented",
         "status": "active",
-        "summary": "Obsidian 工具组动作：note create。需要接入 filesystem_or_plugin 后端；当前包只挂载动作协议，不假装执行。",
+        "summary": "Create a new Markdown note; refuses to overwrite an existing note.",
         "tool_group": "Obsidian"
       },
-      "summary": "Obsidian 工具组动作：note create。需要接入 filesystem_or_plugin 后端；当前包只挂载动作协议，不假装执行。",
-      "version": "1.0.0"
+      "summary": "Create a new Markdown note; refuses to overwrite an existing note.",
+      "version": "2.0.0"
     },
     "obsidian.note.read": {
       "binding": {
-        "kind": "method",
-        "target": "_action_obsidian_note_read"
+        "kind": "delivery",
+        "target": "delivery_kernel"
       },
       "budget": {
         "profile": "external-adapter"
@@ -20860,7 +21151,7 @@
           "state_after",
           "verification_hint"
         ],
-        "implemented": false,
+        "implemented": true,
         "parameters": {
           "additionalProperties": true,
           "type": "object"
@@ -20873,16 +21164,16 @@
         "rollback": false,
         "rollback_status": "not_implemented",
         "status": "active",
-        "summary": "Obsidian 工具组动作：note read。需要接入 filesystem_or_plugin 后端；当前包只挂载动作协议，不假装执行。",
+        "summary": "Read exact Markdown note bytes as text with hash and character range.",
         "tool_group": "Obsidian"
       },
-      "summary": "Obsidian 工具组动作：note read。需要接入 filesystem_or_plugin 后端；当前包只挂载动作协议，不假装执行。",
-      "version": "1.0.0"
+      "summary": "Read exact Markdown note bytes as text with hash and character range.",
+      "version": "2.0.0"
     },
     "obsidian.note.update": {
       "binding": {
-        "kind": "method",
-        "target": "_action_obsidian_note_update"
+        "kind": "delivery",
+        "target": "delivery_kernel"
       },
       "budget": {
         "profile": "external-adapter"
@@ -20900,7 +21191,7 @@
           "state_after",
           "verification_hint"
         ],
-        "implemented": false,
+        "implemented": true,
         "parameters": {
           "additionalProperties": true,
           "type": "object"
@@ -20913,16 +21204,16 @@
         "rollback": false,
         "rollback_status": "not_implemented",
         "status": "active",
-        "summary": "Obsidian 工具组动作：note update。需要接入 filesystem_or_plugin 后端；当前包只挂载动作协议，不假装执行。",
+        "summary": "Replace a note only at the expected SHA256 version, retaining an original snapshot.",
         "tool_group": "Obsidian"
       },
-      "summary": "Obsidian 工具组动作：note update。需要接入 filesystem_or_plugin 后端；当前包只挂载动作协议，不假装执行。",
-      "version": "1.0.0"
+      "summary": "Replace a note only at the expected SHA256 version, retaining an original snapshot.",
+      "version": "2.0.0"
     },
     "obsidian.search": {
       "binding": {
-        "kind": "method",
-        "target": "_action_obsidian_search"
+        "kind": "delivery",
+        "target": "delivery_kernel"
       },
       "budget": {
         "profile": "external-adapter"
@@ -20940,7 +21231,7 @@
           "state_after",
           "verification_hint"
         ],
-        "implemented": false,
+        "implemented": true,
         "parameters": {
           "additionalProperties": true,
           "type": "object"
@@ -20953,16 +21244,16 @@
         "rollback": false,
         "rollback_status": "not_implemented",
         "status": "active",
-        "summary": "Obsidian 工具组动作：search。需要接入 filesystem_or_plugin 后端；当前包只挂载动作协议，不假装执行。",
+        "summary": "Search local Markdown note text literally and paginate results without changing notes.",
         "tool_group": "Obsidian"
       },
-      "summary": "Obsidian 工具组动作：search。需要接入 filesystem_or_plugin 后端；当前包只挂载动作协议，不假装执行。",
-      "version": "1.0.0"
+      "summary": "Search local Markdown note text literally and paginate results without changing notes.",
+      "version": "2.0.0"
     },
     "obsidian.vault.list": {
       "binding": {
-        "kind": "method",
-        "target": "_action_obsidian_vault_list"
+        "kind": "delivery",
+        "target": "delivery_kernel"
       },
       "budget": {
         "profile": "external-adapter"
@@ -20980,7 +21271,7 @@
           "state_after",
           "verification_hint"
         ],
-        "implemented": false,
+        "implemented": true,
         "parameters": {
           "additionalProperties": true,
           "type": "object"
@@ -20993,11 +21284,11 @@
         "rollback": false,
         "rollback_status": "not_implemented",
         "status": "active",
-        "summary": "Obsidian 工具组动作：vault list。需要接入 filesystem_or_plugin 后端；当前包只挂载动作协议，不假装执行。",
+        "summary": "List Markdown notes in an authorized local vault with explicit pagination.",
         "tool_group": "Obsidian"
       },
-      "summary": "Obsidian 工具组动作：vault list。需要接入 filesystem_or_plugin 后端；当前包只挂载动作协议，不假装执行。",
-      "version": "1.0.0"
+      "summary": "List Markdown notes in an authorized local vault with explicit pagination.",
+      "version": "2.0.0"
     },
     "openai_api.audio.transcribe": {
       "binding": {
@@ -21289,12 +21580,14 @@
         "target": "image.add_text"
       },
       "budget": {
-        "profile": "external-adapter"
+        "profile": "image-file"
       },
       "effect": "write",
       "id": "pillow.image.add_text",
       "optional_dependencies": [],
-      "required_dependencies": [],
+      "required_dependencies": [
+        "python:PIL"
+      ],
       "retry": "observe_before_retry",
       "runtime": {
         "adapter": "pillow",
@@ -21320,7 +21613,7 @@
         "tool_group": "Pillow"
       },
       "summary": "Pillow 工具组动作：image.add_text。底层路由到 image.add_text。",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "pillow.image.compose": {
       "binding": {
@@ -21328,12 +21621,14 @@
         "target": "image.compose"
       },
       "budget": {
-        "profile": "external-adapter"
+        "profile": "image-file"
       },
       "effect": "execute",
       "id": "pillow.image.compose",
       "optional_dependencies": [],
-      "required_dependencies": [],
+      "required_dependencies": [
+        "python:PIL"
+      ],
       "retry": "observe_before_retry",
       "runtime": {
         "adapter": "pillow",
@@ -21359,7 +21654,7 @@
         "tool_group": "Pillow"
       },
       "summary": "Pillow 工具组动作：image.compose。底层路由到 image.compose。",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "pillow.image.convert": {
       "binding": {
@@ -21367,12 +21662,14 @@
         "target": "image.convert"
       },
       "budget": {
-        "profile": "external-adapter"
+        "profile": "image-file"
       },
       "effect": "execute",
       "id": "pillow.image.convert",
       "optional_dependencies": [],
-      "required_dependencies": [],
+      "required_dependencies": [
+        "python:PIL"
+      ],
       "retry": "observe_before_retry",
       "runtime": {
         "adapter": "pillow",
@@ -21398,7 +21695,7 @@
         "tool_group": "Pillow"
       },
       "summary": "Pillow 工具组动作：image.convert。底层路由到 image.convert。",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "pillow.image.create_canvas": {
       "binding": {
@@ -21406,12 +21703,14 @@
         "target": "image.create_canvas"
       },
       "budget": {
-        "profile": "external-adapter"
+        "profile": "image-file"
       },
       "effect": "write",
       "id": "pillow.image.create_canvas",
       "optional_dependencies": [],
-      "required_dependencies": [],
+      "required_dependencies": [
+        "python:PIL"
+      ],
       "retry": "observe_before_retry",
       "runtime": {
         "adapter": "pillow",
@@ -21437,7 +21736,7 @@
         "tool_group": "Pillow"
       },
       "summary": "Pillow 工具组动作：image.create_canvas。底层路由到 image.create_canvas。",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "pillow.image.crop": {
       "binding": {
@@ -21445,12 +21744,14 @@
         "target": "image.crop"
       },
       "budget": {
-        "profile": "external-adapter"
+        "profile": "image-file"
       },
       "effect": "write",
       "id": "pillow.image.crop",
       "optional_dependencies": [],
-      "required_dependencies": [],
+      "required_dependencies": [
+        "python:PIL"
+      ],
       "retry": "observe_before_retry",
       "runtime": {
         "adapter": "pillow",
@@ -21476,7 +21777,7 @@
         "tool_group": "Pillow"
       },
       "summary": "Pillow 工具组动作：image.crop。底层路由到 image.crop。",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "pillow.image.info": {
       "binding": {
@@ -21484,12 +21785,14 @@
         "target": "image.info"
       },
       "budget": {
-        "profile": "external-adapter"
+        "profile": "image-file"
       },
       "effect": "execute",
       "id": "pillow.image.info",
       "optional_dependencies": [],
-      "required_dependencies": [],
+      "required_dependencies": [
+        "python:PIL"
+      ],
       "retry": "read_retry",
       "runtime": {
         "adapter": "pillow",
@@ -21515,7 +21818,7 @@
         "tool_group": "Pillow"
       },
       "summary": "Pillow 工具组动作：image.info。底层路由到 image.info。",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "pillow.image.resize": {
       "binding": {
@@ -21523,12 +21826,14 @@
         "target": "image.resize"
       },
       "budget": {
-        "profile": "external-adapter"
+        "profile": "image-file"
       },
       "effect": "write",
       "id": "pillow.image.resize",
       "optional_dependencies": [],
-      "required_dependencies": [],
+      "required_dependencies": [
+        "python:PIL"
+      ],
       "retry": "observe_before_retry",
       "runtime": {
         "adapter": "pillow",
@@ -21554,7 +21859,7 @@
         "tool_group": "Pillow"
       },
       "summary": "Pillow 工具组动作：image.resize。底层路由到 image.resize。",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "pillow.image.rotate": {
       "binding": {
@@ -21562,12 +21867,14 @@
         "target": "image.rotate"
       },
       "budget": {
-        "profile": "external-adapter"
+        "profile": "image-file"
       },
       "effect": "write",
       "id": "pillow.image.rotate",
       "optional_dependencies": [],
-      "required_dependencies": [],
+      "required_dependencies": [
+        "python:PIL"
+      ],
       "retry": "observe_before_retry",
       "runtime": {
         "adapter": "pillow",
@@ -21593,7 +21900,7 @@
         "tool_group": "Pillow"
       },
       "summary": "Pillow 工具组动作：image.rotate。底层路由到 image.rotate。",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "poster.brief.create": {
       "binding": {
@@ -23332,7 +23639,7 @@
       "budget": {
         "profile": "external-adapter"
       },
-      "effect": "execute",
+      "effect": "read",
       "id": "search_web",
       "optional_dependencies": [],
       "required_dependencies": [],
@@ -23346,7 +23653,7 @@
         "support_scope": "canonical_action_with_declared_defaults"
       },
       "summary": "Alias to browser.search_web.",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "seo.content.brief.create": {
       "binding": {
@@ -24046,8 +24353,8 @@
     },
     "sqlite.backup.create": {
       "binding": {
-        "kind": "method",
-        "target": "_action_sqlite_backup_create"
+        "kind": "delivery",
+        "target": "delivery_kernel"
       },
       "budget": {
         "profile": "external-adapter"
@@ -24065,7 +24372,7 @@
           "state_after",
           "verification_hint"
         ],
-        "implemented": false,
+        "implemented": true,
         "parameters": {
           "additionalProperties": true,
           "type": "object"
@@ -24078,11 +24385,11 @@
         "rollback": false,
         "rollback_status": "not_implemented",
         "status": "active",
-        "summary": "SQLite 工具组动作：backup create。需要接入 sqlite3 后端；当前包只挂载动作协议，不假装执行。",
+        "summary": "Create a consistent SQLite online backup to a fresh file and verify integrity.",
         "tool_group": "SQLite"
       },
-      "summary": "SQLite 工具组动作：backup create。需要接入 sqlite3 后端；当前包只挂载动作协议，不假装执行。",
-      "version": "1.0.0"
+      "summary": "Create a consistent SQLite online backup to a fresh file and verify integrity.",
+      "version": "2.0.0"
     },
     "sqlite.query": {
       "binding": {
@@ -24134,8 +24441,8 @@
     },
     "sqlite.schema.read": {
       "binding": {
-        "kind": "method",
-        "target": "_action_sqlite_schema_read"
+        "kind": "delivery",
+        "target": "delivery_kernel"
       },
       "budget": {
         "profile": "external-adapter"
@@ -24153,7 +24460,7 @@
           "state_after",
           "verification_hint"
         ],
-        "implemented": false,
+        "implemented": true,
         "parameters": {
           "additionalProperties": true,
           "type": "object"
@@ -24166,16 +24473,16 @@
         "rollback": false,
         "rollback_status": "not_implemented",
         "status": "active",
-        "summary": "SQLite 工具组动作：schema read。需要接入 sqlite3 后端；当前包只挂载动作协议，不假装执行。",
+        "summary": "Read the real SQLite schema without writes.",
         "tool_group": "SQLite"
       },
-      "summary": "SQLite 工具组动作：schema read。需要接入 sqlite3 后端；当前包只挂载动作协议，不假装执行。",
-      "version": "1.0.0"
+      "summary": "Read the real SQLite schema without writes.",
+      "version": "2.0.0"
     },
     "sqlite.table.export_csv": {
       "binding": {
-        "kind": "method",
-        "target": "_action_sqlite_table_export_csv"
+        "kind": "delivery",
+        "target": "delivery_kernel"
       },
       "budget": {
         "profile": "external-adapter"
@@ -24193,7 +24500,7 @@
           "state_after",
           "verification_hint"
         ],
-        "implemented": false,
+        "implemented": true,
         "parameters": {
           "additionalProperties": true,
           "type": "object"
@@ -24202,20 +24509,20 @@
           "sqlite3_configured",
           "valid_auth_or_visible_session"
         ],
-        "risk": "A0",
+        "risk": "A2",
         "rollback": false,
         "rollback_status": "not_implemented",
         "status": "active",
-        "summary": "SQLite 工具组动作：table export csv。需要接入 sqlite3 后端；当前包只挂载动作协议，不假装执行。",
+        "summary": "Export every row of one SQLite table to a fresh CSV; report total rows and input version.",
         "tool_group": "SQLite"
       },
-      "summary": "SQLite 工具组动作：table export csv。需要接入 sqlite3 后端；当前包只挂载动作协议，不假装执行。",
-      "version": "1.0.0"
+      "summary": "Export every row of one SQLite table to a fresh CSV; report total rows and input version.",
+      "version": "2.0.0"
     },
     "sqlite.table.import_csv": {
       "binding": {
-        "kind": "method",
-        "target": "_action_sqlite_table_import_csv"
+        "kind": "delivery",
+        "target": "delivery_kernel"
       },
       "budget": {
         "profile": "external-adapter"
@@ -24233,7 +24540,7 @@
           "state_after",
           "verification_hint"
         ],
-        "implemented": false,
+        "implemented": true,
         "parameters": {
           "additionalProperties": true,
           "type": "object"
@@ -24246,11 +24553,11 @@
         "rollback": false,
         "rollback_status": "not_implemented",
         "status": "active",
-        "summary": "SQLite 工具组动作：table import csv。需要接入 sqlite3 后端；当前包只挂载动作协议，不假装执行。",
+        "summary": "Append a rectangular CSV to an existing table in one transaction; malformed input rolls back.",
         "tool_group": "SQLite"
       },
-      "summary": "SQLite 工具组动作：table import csv。需要接入 sqlite3 后端；当前包只挂载动作协议，不假装执行。",
-      "version": "1.0.0"
+      "summary": "Append a rectangular CSV to an existing table in one transaction; malformed input rolls back.",
+      "version": "2.0.0"
     },
     "stable_diffusion_webui.image.generate": {
       "binding": {
@@ -25142,6 +25449,28 @@
       "summary": "Inspect video metadata using ffprobe.",
       "version": "1.0.0"
     },
+    "video.observe_frames": {
+      "binding": {
+        "kind": "delivery",
+        "target": "delivery_kernel"
+      },
+      "budget": {
+        "profile": "external-adapter"
+      },
+      "effect": "execute",
+      "id": "video.observe_frames",
+      "optional_dependencies": [],
+      "required_dependencies": [],
+      "retry": "observe_before_retry",
+      "runtime": {
+        "implemented": true,
+        "risk": "A3",
+        "status": "active",
+        "summary": "Decode specified video times and submit those frames to the configured vision model; does not observe unsampled intervals or audio."
+      },
+      "summary": "Decode specified video times and submit those frames to the configured vision model; does not observe unsampled intervals or audio.",
+      "version": "1.0.0"
+    },
     "video.slideshow": {
       "binding": {
         "kind": "method",
@@ -25527,17 +25856,17 @@
       "id": "web.fetch",
       "optional_dependencies": [],
       "required_dependencies": [],
-      "retry": "read_retry",
+      "retry": "observe_before_retry",
       "runtime": {
         "alias_to": "browser.open",
         "implemented": true,
-        "risk": "A0",
+        "risk": "A2",
         "status": "active",
         "summary": "Compatibility alias to web.read.",
         "support_scope": "canonical_action_with_declared_defaults"
       },
       "summary": "Compatibility alias to web.read.",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "web.read": {
       "binding": {
@@ -25547,21 +25876,21 @@
       "budget": {
         "profile": "external-adapter"
       },
-      "effect": "read",
+      "effect": "execute",
       "id": "web.read",
       "optional_dependencies": [],
       "required_dependencies": [],
-      "retry": "read_retry",
+      "retry": "observe_before_retry",
       "runtime": {
         "alias_to": "browser.open",
         "implemented": true,
-        "risk": "A0",
+        "risk": "A2",
         "status": "active",
         "summary": "Read visible text from a URL.",
         "support_scope": "canonical_action_with_declared_defaults"
       },
       "summary": "Read visible text from a URL.",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "web.readability_extract": {
       "binding": {
@@ -25571,21 +25900,21 @@
       "budget": {
         "profile": "external-adapter"
       },
-      "effect": "read",
+      "effect": "execute",
       "id": "web.readability_extract",
       "optional_dependencies": [],
       "required_dependencies": [],
-      "retry": "read_retry",
+      "retry": "observe_before_retry",
       "runtime": {
         "alias_to": "browser.open",
         "implemented": true,
-        "risk": "A0",
+        "risk": "A2",
         "status": "active",
         "summary": "Compatibility alias to web.read.",
         "support_scope": "canonical_action_with_declared_defaults"
       },
       "summary": "Compatibility alias to web.read.",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "web.search": {
       "binding": {
@@ -25619,21 +25948,21 @@
       "budget": {
         "profile": "external-adapter"
       },
-      "effect": "write",
+      "effect": "execute",
       "id": "web_readability_extract",
       "optional_dependencies": [],
       "required_dependencies": [],
-      "retry": "read_retry",
+      "retry": "observe_before_retry",
       "runtime": {
         "alias_to": "browser.open",
         "implemented": true,
-        "risk": "A0",
+        "risk": "A2",
         "status": "active",
         "summary": "Compatibility alias to web.read.",
         "support_scope": "canonical_action_with_declared_defaults"
       },
       "summary": "Compatibility alias to web.read.",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "wechat.desktop.contact.search_visible": {
       "binding": {
@@ -27129,12 +27458,14 @@
         "target": "pptx.create"
       },
       "budget": {
-        "profile": "external-adapter"
+        "profile": "office-file"
       },
       "effect": "write",
       "id": "wps.presentation.pptx.create",
       "optional_dependencies": [],
-      "required_dependencies": [],
+      "required_dependencies": [
+        "python:pptx"
+      ],
       "retry": "observe_before_retry",
       "runtime": {
         "adapter": "wps_automation_or_pptx",
@@ -27160,7 +27491,7 @@
         "tool_group": "WPS Presentation"
       },
       "summary": "WPS Presentation 工具组动作：pptx.create。底层路由到 pptx.create。",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "wps.spreadsheet.sheet.create": {
       "binding": {
@@ -27246,12 +27577,14 @@
         "target": "docx.create"
       },
       "budget": {
-        "profile": "external-adapter"
+        "profile": "office-file"
       },
       "effect": "write",
       "id": "wps.writer.docx.create",
       "optional_dependencies": [],
-      "required_dependencies": [],
+      "required_dependencies": [
+        "python:docx"
+      ],
       "retry": "observe_before_retry",
       "runtime": {
         "adapter": "wps_automation_or_docx",
@@ -27277,7 +27610,7 @@
         "tool_group": "WPS Writer"
       },
       "summary": "WPS Writer 工具组动作：docx.create。底层路由到 docx.create。",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "wps.writer.pdf.create_from_text": {
       "binding": {
@@ -27285,7 +27618,7 @@
         "target": "pdf.create_from_text"
       },
       "budget": {
-        "profile": "external-adapter"
+        "profile": "office-file"
       },
       "effect": "write",
       "id": "wps.writer.pdf.create_from_text",
@@ -27316,7 +27649,7 @@
         "tool_group": "WPS Writer"
       },
       "summary": "WPS Writer 工具组动作：pdf.create_from_text。底层路由到 pdf.create_from_text。",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "writing.chapter.plan.create": {
       "binding": {
@@ -28087,5 +28420,5 @@
       "version": "1.0.0"
     }
   },
-  "version": "2026.09.27.5"
+  "version": "2026.09.27.6"
 }

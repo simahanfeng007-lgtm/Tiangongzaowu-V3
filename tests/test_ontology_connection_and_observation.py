@@ -57,6 +57,7 @@ def http_mcp(tmp_path, monkeypatch):
     path = tmp_path / "owner-mcp.json"
     path.write_text(json.dumps({"servers": {"office-test": {
         "transport": "streamable_http", "url": origin + "/mcp",
+        "session_mode": "invocation",
         "header_env": {"Authorization": "ONTOLOGY_TEST_AUTH"},
         "applications": ["sqlite"], "environment": {"location": origin, "workspace": "fixture-workspace"}
     }}}))

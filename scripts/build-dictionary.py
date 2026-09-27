@@ -16,6 +16,16 @@ def build(root: Path, *, check: bool = False) -> dict:
     from v3.fact_kernel import compile_manifest
 
     release = load_dictionary(root / "dictionaries")
+    for name, row in release.tools.items():
+        if row["binding"]["kind"] != "alias":
+            continue
+        target = release.tools[row["binding"]["target"]]
+        for field in ("effect", "retry", "required_dependencies", "optional_dependencies", "budget"):
+            if row[field] != target[field]:
+                raise ValueError("dictionary_alias_contract_drift:" + name + ":" + field)
+        for field in ("risk", "implemented", "status"):
+            if row["runtime"].get(field, "active" if field == "status" else None) != target["runtime"].get(field, "active" if field == "status" else None):
+                raise ValueError("dictionary_alias_contract_drift:" + name + ":" + field)
     compiled = compile_manifest(ACTIONS, BodyRuntime, dynamic_actions=set(DELIVERY_ACTIONS),
                                 action_schema_catalog=build_action_schema_catalog(ACTIONS))
     manifest = compiled.to_gateway_dict()

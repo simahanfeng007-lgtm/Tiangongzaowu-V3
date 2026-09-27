@@ -81,6 +81,11 @@ def build():
             "effect": row["effect"], "retry": row["retry"], "summary": row["summary"],
             "required_dependencies": row["required_dependencies"], "adapter_label": runtime.get("adapter"),
             "connection_discovery": [{"action": "mcp.servers.list", "args": {"app_id": app}} for app in associations],
+            "remote_binding_discovery": {"action": "mcp.bindings.list", "args": {"action_id": name}},
+            "remote_execution_conditions": ["owner_application_association", "exact_live_tool_schema_sha256",
+                "original_gateway_authorization", "actual_target_readback", "current_adversarial_decision"],
+            "alias_metadata_verified": binding["kind"] == "alias" and all(row.get(field) == tools[canonical].get(field)
+                for field in ("effect", "retry", "required_dependencies", "optional_dependencies", "budget")),
             "review_scope": "source_definition_and_binding_review",
             "semantic_atomicity_review": "explicit_change_review" if row.get("version") == "2.0.0" else "not_claimed_complete",
             "live_evidence": "separate_candidate_bound_evidence_required",

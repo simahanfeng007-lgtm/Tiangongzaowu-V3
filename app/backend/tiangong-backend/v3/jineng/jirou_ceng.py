@@ -1645,7 +1645,8 @@ def _vision_image_call(path: Path, prompt: str, purpose: str = "general", max_to
         data = loads_json_object(raw, source="vision_provider")
         text = _clean_model_text(_extract_chat_content(data))
         if not text:
-            return {"ok": False, "state": "empty_response", "error": raw[:500], **settings}
+            return {"ok": False, "state": "empty_response", "error": "vision provider returned no visible content",
+                    "provider": settings["provider"], "model": settings["model"]}
         return {
             "ok": True,
             "state": "ok",

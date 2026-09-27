@@ -7,9 +7,9 @@ v1 设计（2026-08-22，"作 omni_body action 接入"方案）：
   绝不能自造命令行。配置文件是唯一的 spawn 授权面。
 - **权限链全复用**：mcp.tool.call 注册为 A3，走网关既有确认链；
   mcp.servers.list / mcp.tools.list 为 A0 只读。
-- **进程生命周期**：每次调用独立 spawn → initialize → 请求 → close。
-  无僵尸进程、无陈旧会话、无并发争用；代价是每次约百毫秒启动，
-  桌面场景可接受。持久会话留作后续。stdout/stderr 各有独立读线程
+- **进程生命周期**：同一宿主任务/身份作用域复用有界会话；配置变更、
+  过期或连接失败使旧引用失效，不重放写动作。无宿主作用域或显式
+  session_mode=invocation 时单次连接。stdout/stderr 各有独立读线程
   （stderr 持续消费防止服务器日志撑爆管道缓冲导致死锁，只保留尾部
   用于诊断）；超时/失败清理时按进程树收割（Windows npx/uvx 的 .cmd
   shim 之下还有真实孙进程）。
@@ -35,6 +35,8 @@ from __future__ import annotations
 
 import json
 import hashlib
+import atexit
+from contextlib import contextmanager
 import os
 import queue
 import shutil
@@ -42,6 +44,7 @@ import signal
 import subprocess
 import threading
 import time
+import uuid
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -62,6 +65,7 @@ MAX_LINE_BYTES = 4 * 1024 * 1024
 # _lines 队列灌成无界内存）。
 _STDERR_TAIL_BYTES = 4096
 _MAX_QUEUED_LINES = 512
+_MAX_QUEUED_BYTES = 8 * 1024 * 1024
 
 # 子进程环境白名单：Windows 进程启动所需的最小集合 + PATH（npx/node/
 # uvx 常见发行方式需要）。绝不整份继承宿主环境（防泄漏宿主凭据变量）。
@@ -139,6 +143,13 @@ def load_server_config(config_path: Path | None = None) -> Dict[str, Dict[str, A
                 "applications": [str(v) for v in raw.get("applications", [])],
                 "environment": {str(k): str(v) for k, v in (raw.get("environment") or {}).items()
                                 if k in {"location", "workspace", "platform", "account_label"}},
+                "session_mode": "invocation" if raw.get("session_mode") == "invocation" else "scoped",
+                "oauth": {k: v for k, v in raw.get("oauth", {}).items()
+                          if k in {"issuer", "client_id", "scopes", "allowed_endpoint_origins"}}
+                          if isinstance(raw.get("oauth"), dict) else {},
+                "oauth_configured": bool(isinstance(raw.get("oauth_credentials"), dict)
+                                         and raw["oauth_credentials"].get("access_token")),
+                "action_bindings": raw.get("action_bindings", {}) if isinstance(raw.get("action_bindings", {}), dict) else {},
             }
         except (McpClientError, ValueError) as exc:
             # One unavailable application must not suppress unrelated services.
@@ -171,8 +182,10 @@ def list_servers() -> List[Dict[str, Any]]:
             "endpoint_origin": urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, "", "", "")),
             "environment": _redact(cfg["environment"], cfg),
             "applications": cfg["applications"],
+            "bound_action_ids": sorted(cfg.get("action_bindings", {})),
             "configuration_error": cfg.get("configuration_error"),
-            "connection_state": "configuration_invalid" if cfg.get("configuration_error") else "disabled" if not cfg["enabled"] else "configuration_incomplete" if missing else "configured_not_connected",
+            "authorization": "oauth_configured_not_verified" if cfg.get("oauth_configured") else "oauth_authorization_required" if cfg.get("oauth") else "configured_credentials",
+            "connection_state": "configuration_invalid" if cfg.get("configuration_error") else "disabled" if not cfg["enabled"] else "configuration_incomplete" if missing else "authorization_required" if cfg.get("oauth") and not cfg.get("oauth_configured") else "configured_not_connected",
             "config_path": str(CONFIG_PATH),
         })
     return rows
@@ -198,10 +211,77 @@ def application_connections(*, app_id: str = "", offset: int = 0, limit: int = 2
             "implemented_definitions": sum(bool(release.tools[n]["runtime"].get("implemented")) for n in app["actions"]),
             "connections": connections, "connection_state": "configured_not_verified" if connectable else "configuration_blocked" if connections else "not_configured",
             "setup_required": [] if connectable else ["resolve_connection_configuration"] if connections else ["owner_configured_mcp_server", "environment_location", "application_association"],
-            "next_action": "mcp.tools.list" if connectable else None})
+            "next_action": "mcp.tools.list" if connectable else "mcp.auth.begin" if any(s["connection_state"] == "authorization_required" for s in connections) else None})
     return {"applications": rows, "total": len(apps), "offset": start,
             "next_offset": start + len(rows) if start + len(rows) < len(apps) else None,
             "dictionary_sha256": release.sha256}
+
+
+def action_bindings(*, action_id=None, offset=0, limit=50):
+    """Project every dictionary requirement and explicit owner binding.
+
+    This is not an implementation claim. A binding must be checked against the
+    live remote contract before use; product action meanings are never guessed.
+    """
+    from capability_dictionary import load_dictionary
+    release=load_dictionary(); servers=load_server_config()
+    names=sorted(n for n in release.tools if not action_id or n==action_id)
+    start=max(0,int(offset));count=max(1,min(100,int(limit)))
+    rows=[]
+    for name in names[start:start+count]:
+        candidates=[]
+        for server,cfg in servers.items():
+            binding=cfg.get("action_bindings",{}).get(name)
+            if isinstance(binding,dict):
+                candidates.append({"server":server,"tool":str(binding.get("tool", "")),
+                    "input_schema_sha256":str(binding.get("input_schema_sha256", "")),
+                    "state":"configured_contract_not_verified"})
+        rows.append({"action":name,"implementation_declared":bool(release.tools[name]["runtime"].get("implemented")),
+            "bindings":candidates,"state":"binding_requires_live_validation" if candidates else "no_owner_binding",
+            "next_action":"mcp.action.call" if candidates else "mcp.servers.list"})
+    return {"actions":rows,"total":len(names),"offset":start,"next_offset":start+len(rows) if start+len(rows)<len(names) else None,
+            "dictionary_sha256":release.sha256,"observation_scope":"configuration_not_execution"}
+
+
+def call_bound_action(server, action_id, arguments, *, scope=None, timeout_ms=DEFAULT_TIMEOUT_MS, capture=None):
+    from capability_dictionary import load_dictionary
+    release=load_dictionary(); row=release.tools.get(action_id)
+    if not row or row["runtime"].get("status", "active")!="active" or row["runtime"].get("risk")=="A5":
+        raise McpClientError("mcp.binding.action_unavailable")
+    cfg=_resolve_server(server)
+    associated={a["app_id"] for a in release.applications["apps"] if action_id in a["actions"]}
+    if not associated.intersection(cfg["applications"]):
+        raise McpClientError("mcp.binding.application_mismatch")
+    binding=cfg.get("action_bindings",{}).get(action_id)
+    if not isinstance(binding,dict) or not binding.get("tool") or not binding.get("input_schema_sha256"):
+        raise McpClientError("mcp.binding.unconfigured")
+    wanted=_configuration_fingerprint(cfg)
+    deadline=time.monotonic()+max(1000,min(timeout_ms,MAX_TIMEOUT_MS))/1000
+    def remaining():
+        value=int((deadline-time.monotonic())*1000)
+        if value<1000:raise McpClientError("mcp.timeout")
+        return value
+    cursor=None;seen=set();matched=None;connection_id=None
+    for _ in range(100):
+        page=list_tools(server,scope=scope,timeout_ms=remaining(),cursor=cursor,
+                        expected_connection=connection_id,capture=capture)
+        if page["connection_fingerprint"]!=wanted: raise McpClientError("mcp.binding.connection_changed")
+        connection_id=page["connection_id"]
+        matched=next((t for t in page["tools"] if t.get("name")==binding["tool"]),None)
+        if matched or not page.get("next_cursor"):break
+        cursor=page["next_cursor"]
+        if cursor in seen:raise McpClientError("mcp.pagination.invalid")
+        seen.add(cursor)
+    if matched is None or not isinstance(matched.get("inputSchema"),dict):
+        raise McpClientError("mcp.binding.tool_unavailable")
+    digest=hashlib.sha256(json.dumps(matched["inputSchema"],sort_keys=True,separators=(",", ":"),ensure_ascii=False).encode()).hexdigest()
+    if digest!=binding["input_schema_sha256"]:
+        raise McpClientError("mcp.binding.contract_changed")
+    result=call_tool(server,binding["tool"],arguments,scope=scope,expected_connection=connection_id,
+                     timeout_ms=remaining(),capture=capture,expected_fingerprint=wanted)
+    return {**result,"requirement_action":action_id,"dictionary_sha256":release.sha256,
+            "input_schema_sha256":digest,"execution_path":"owner_bound_remote_tool",
+            "native_application_execution_not_inferred":True}
 
 
 def _redact(value: Any, cfg: Dict[str, Any]) -> Any:
@@ -210,6 +290,7 @@ def _redact(value: Any, cfg: Dict[str, Any]) -> Any:
                    for v in cfg.get(key, {}).values() if os.environ.get(v))
     secrets.update(v.split(" ", 1)[1] for v in tuple(secrets)
                    if " " in v and v.split(" ", 1)[0].lower() in {"bearer", "basic"})
+    secrets.update(v for v in cfg.get("_redaction_secrets", []) if v)
     if isinstance(value, str):
         for secret in sorted(secrets, key=len, reverse=True):
             value = value.replace(secret, "<credential-redacted>")
@@ -242,6 +323,13 @@ def _resolve_server(server: str) -> Dict[str, Any]:
             if not value:
                 raise McpClientError("mcp.credentials.missing", variable)
             cfg[destination][key] = value
+    if cfg.get("oauth"):
+        from .mcp_oauth import authorization_headers
+        headers, authorization_id, refresh_secret = authorization_headers(CONFIG_PATH, name)
+        cfg["headers"] = {k: v for k, v in cfg["headers"].items() if k.lower() != "authorization"}
+        cfg["headers"].update(headers)
+        cfg["_authorization_id"] = authorization_id
+        cfg["_redaction_secrets"] = [refresh_secret]
     return cfg
 
 
@@ -285,6 +373,8 @@ class _ServerProcess:
         except OSError as exc:
             raise McpClientError("mcp.server.spawn_failed", str(exc)) from exc
         self._lines: "queue.Queue[bytes | None]" = queue.Queue()
+        self._queue_lock = threading.Lock()
+        self._queued_bytes = 0
         self._stderr_tail = b""
         self._stdout_flood = False
         self._reader = threading.Thread(target=self._read_loop, daemon=True)
@@ -298,21 +388,17 @@ class _ServerProcess:
 
     def _read_loop(self) -> None:
         assert self._proc.stdout is not None
-        received_bytes = 0
         try:
             while True:
                 raw = self._proc.stdout.readline(MAX_LINE_BYTES + 1)
                 if not raw:
                     break
-                received_bytes += len(raw)
-                if received_bytes > 2 * MAX_LINE_BYTES:
-                    self._stdout_flood = True
-                    break
-                if self._lines.qsize() >= _MAX_QUEUED_LINES:
-                    # 消费侧上限（512 行无响应即 flood）远小于此；到这里的
-                    # 只可能是失控服务器，停止排队防止内存无界增长。
-                    self._stdout_flood = True
-                    break
+                with self._queue_lock:
+                    if (self._lines.qsize() >= _MAX_QUEUED_LINES
+                            or self._queued_bytes + len(raw) > _MAX_QUEUED_BYTES):
+                        self._stdout_flood = True
+                        break
+                    self._queued_bytes += len(raw)
                 self._lines.put(raw)
                 if len(raw) > MAX_LINE_BYTES:
                     break
@@ -377,10 +463,12 @@ class _ServerProcess:
                 if self._stdout_flood:
                     raise McpClientError(
                         "mcp.protocol.flood",
-                        f"server produced >{_MAX_QUEUED_LINES} queued stdout lines",
+                        "queued stdout exceeds the bounded byte/line budget",
                     )
                 detail = _redact(self._stderr_tail.decode("utf-8", errors="replace").strip()[-400:], self.cfg)
                 raise McpClientError("mcp.server.exited", detail)
+            with self._queue_lock:
+                self._queued_bytes -= len(raw)
             received += 1
             if len(raw) > MAX_LINE_BYTES:
                 raise McpClientError("mcp.response.too_large", "response line exceeds limit")
@@ -601,10 +689,118 @@ def _connect(server: str, timeout_ms: int):
         raise
 
 
-def list_tools(server: str, *, timeout_ms: int = DEFAULT_TIMEOUT_MS, cursor: str | None = None,
-               capture=None) -> Dict[str, Any]:
-    info, proc = _connect(server, timeout_ms)
+# This pool is only transport state inside the existing executor. The Gateway
+# remains the authority and durable task ledger. No model-supplied scope is used.
+_SESSION_LOCK = threading.RLock()
+_SESSIONS: dict[tuple, dict] = {}
+_SESSION_LIMIT = 32
+_SESSION_IDLE_SECONDS = 900
+
+
+def close_sessions(*, scope: str | None = None, server: str | None = None) -> int:
+    closing = []
+    with _SESSION_LOCK:
+        for key, entry in list(_SESSIONS.items()):
+            if (scope is None or key[1] == scope) and (server is None or key[2] == server):
+                if not entry["lock"].acquire(blocking=False):
+                    continue
+                _SESSIONS.pop(key, None)
+                closing.append(entry)
+    for entry in closing:
+        try:
+            if entry["proc"] is not None:
+                entry["proc"].close()
+        finally:
+            entry["lock"].release()
+    return len(closing)
+
+
+@contextmanager
+def connection(server, timeout_ms, *, scope=None, expected_connection=None):
+    """Lease a host-scoped connection; no reconnect or write replay in a call.
+
+    Slow initialization holds only this connection's lock. Other applications
+    remain usable. An expected expired/config-changed connection is rejected.
+    """
+    timeout_ms = max(1000, min(int(timeout_ms), MAX_TIMEOUT_MS))
+    deadline = time.monotonic() + timeout_ms / 1000
+    cfg = _resolve_server(server)
+    fingerprint = _configuration_fingerprint(cfg)
+    if not scope or cfg.get("session_mode") == "invocation":
+        if expected_connection:
+            raise McpClientError("mcp.session.unavailable", "a scoped session is required")
+        proc = _HttpServer(cfg, timeout_ms) if cfg["transport"] == "streamable_http" else _ServerProcess(cfg, timeout_ms)
+        proc.deadline = deadline
+        try:
+            info = proc.handshake()
+            yield info, proc, None
+        finally:
+            proc.close()
+        return
+    key = (str(CONFIG_PATH.resolve()), scope, server)
+    closing = []
     try:
+        with _SESSION_LOCK:
+            for old_key, old in list(_SESSIONS.items()):
+                if time.monotonic() - old["used"] > _SESSION_IDLE_SECONDS and old["lock"].acquire(False):
+                    del _SESSIONS[old_key]
+                    closing.append(old)
+            entry = _SESSIONS.get(key)
+            if entry and entry["fingerprint"] != fingerprint:
+                if not entry["lock"].acquire(False):
+                    raise McpClientError("mcp.session.busy")
+                del _SESSIONS[key]
+                closing.append(entry)
+                entry = None
+            if expected_connection and (entry is None or entry["id"] != expected_connection):
+                raise McpClientError("mcp.session.changed", "observe the current connection before a new operation")
+            if entry is None:
+                if len(_SESSIONS) >= _SESSION_LIMIT:
+                    raise McpClientError("mcp.session.capacity", "close an unused connection")
+                entry = {"proc": None, "info": None, "id": uuid.uuid4().hex,
+                         "fingerprint": fingerprint, "lock": threading.Lock(), "used": time.monotonic()}
+                _SESSIONS[key] = entry
+            lock = entry["lock"]
+            if not lock.acquire(False):
+                raise McpClientError("mcp.session.busy")
+    finally:
+        for old in closing:
+            try:
+                if old["proc"] is not None:
+                    old["proc"].close()
+            finally:
+                old["lock"].release()
+    proc = entry["proc"]
+    try:
+        if time.monotonic() >= deadline:
+            raise McpClientError("mcp.timeout")
+        if proc is None:
+            proc = _HttpServer(cfg, timeout_ms) if cfg["transport"] == "streamable_http" else _ServerProcess(cfg, timeout_ms)
+            entry["proc"] = proc
+            proc.deadline = deadline
+            entry["info"] = proc.handshake()
+        proc.cfg = cfg  # Refresh retains authorization identity, not an old bearer.
+        proc.deadline = deadline
+        proc.timeout_ms = timeout_ms
+        yield entry["info"], proc, entry["id"]
+    except BaseException:
+        with _SESSION_LOCK:
+            if _SESSIONS.get(key) is entry:
+                del _SESSIONS[key]
+        if proc is not None:
+            proc.close()
+        raise
+    finally:
+        entry["used"] = time.monotonic()
+        lock.release()
+
+
+atexit.register(close_sessions)
+
+
+def list_tools(server: str, *, timeout_ms: int = DEFAULT_TIMEOUT_MS, cursor: str | None = None,
+               capture=None, scope=None, expected_connection=None) -> Dict[str, Any]:
+    with connection(server, timeout_ms, scope=scope, expected_connection=expected_connection) as (info, proc, connection_id):
         result = _redact(proc.request("tools/list", {"cursor": cursor} if cursor else {}), proc.cfg)
         evidence = capture(result) if capture else None
         tools = result.get("tools")
@@ -620,6 +816,9 @@ def list_tools(server: str, *, timeout_ms: int = DEFAULT_TIMEOUT_MS, cursor: str
             if not isinstance(tool, dict):
                 continue
             row = dict(tool)
+            if isinstance(row.get("inputSchema"), dict):
+                row["input_schema_sha256"] = hashlib.sha256(json.dumps(row["inputSchema"], sort_keys=True,
+                    separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
             desc = str(row.get("description") or "")
             if len(desc.encode("utf-8")) > 4096:
                 row["description"] = desc[:2048] + "…"
@@ -639,9 +838,9 @@ def list_tools(server: str, *, timeout_ms: int = DEFAULT_TIMEOUT_MS, cursor: str
             "complete": not truncated and not result.get("nextCursor"),
             "evidence": evidence,
             "connection_fingerprint": _configuration_fingerprint(proc.cfg),
+            "connection_id": connection_id,
+            "capabilities": info.get("capabilities", {}),
         }
-    finally:
-        proc.close()
 
 
 def call_tool(
@@ -651,17 +850,52 @@ def call_tool(
     *,
     timeout_ms: int = DEFAULT_TIMEOUT_MS,
     capture=None,
+    scope=None,
+    expected_connection=None,
+    expected_fingerprint=None,
+    task=None,
 ) -> Dict[str, Any]:
     tool_name = str(tool or "").strip()
     if not tool_name:
         raise McpClientError("mcp.tool.required", "args.tool is required")
     if arguments is not None and not isinstance(arguments, dict):
         raise McpClientError("mcp.arguments.invalid", "args.arguments must be an object")
-    info, proc = _connect(server, timeout_ms)
-    try:
+    if task is not None and (type(task) is not dict or set(task) - {"ttl"}
+            or ("ttl" in task and (type(task["ttl"]) is not int or not 1000 <= task["ttl"] <= 86400000))):
+        raise McpClientError("mcp.task.parameters_invalid")
+    with connection(server, timeout_ms, scope=scope, expected_connection=expected_connection) as (info, proc, connection_id):
+        if expected_fingerprint and expected_fingerprint != _configuration_fingerprint(proc.cfg):
+            raise McpClientError("mcp.binding.connection_changed")
+        params = {"name": tool_name, "arguments": dict(arguments or {})}
+        if task is not None:
+            caps = info.get("capabilities", {}).get("tasks", {})
+            if "call" not in caps.get("requests", {}).get("tools", {}):
+                raise McpClientError("mcp.tasks.unsupported")
+            # Task support is tool-specific; never infer it from the name or
+            # ask a server to augment a tool that has not advertised support.
+            cursor, seen, matched = None, set(), None
+            for _ in range(100):
+                page = proc.request("tools/list", {"cursor": cursor} if cursor else {})
+                matched = next((v for v in page.get("tools", []) if isinstance(v, dict) and v.get("name") == tool_name), None)
+                if matched is not None or not page.get("nextCursor"):
+                    break
+                cursor = page["nextCursor"]
+                if not isinstance(cursor, str) or cursor in seen:
+                    raise McpClientError("mcp.pagination.invalid")
+                seen.add(cursor)
+            if not matched or matched.get("execution", {}).get("taskSupport") not in {"optional", "required"}:
+                raise McpClientError("mcp.task.tool_unsupported")
+            params["task"] = task
         try:
-            result = _redact(proc.request("tools/call", {"name": tool_name, "arguments": dict(arguments or {})}), proc.cfg)
+            result = _redact(proc.request("tools/call", params), proc.cfg)
             evidence = capture(result) if capture else None
+            if "task" in result:
+                job = _validate_task(result["task"])
+                return {"server": server, "tool": tool_name, "task": job, "is_error": False,
+                        "execution_state": "pending", "result_available": False,
+                        "connection_id": connection_id, "connection_fingerprint": _configuration_fingerprint(proc.cfg),
+                        "evidence": evidence, "observation_scope": "job_accepted_not_completed",
+                        "next_action": "mcp.tasks.get"}
         except Exception as exc:
             # The call may already have changed the remote application. Neither
             # a transport error nor a failed local evidence write proves rollback.
@@ -693,14 +927,118 @@ def call_tool(
             "content_types_requiring_observation": omitted_modalities,
             "evidence": evidence,
             "connection_fingerprint": _configuration_fingerprint(proc.cfg),
+            "connection_id": connection_id,
             "observation_scope": "server_report_not_independent_target_readback",
         }
-    finally:
-        proc.close()
+
+
+def _validate_task(value, expected_id=None):
+    if (not isinstance(value, dict) or not isinstance(value.get("taskId"), str)
+            or not value["taskId"] or len(value["taskId"]) > 1024
+            or value.get("status") not in {"working", "input_required", "completed", "failed", "cancelled"}
+            or (expected_id is not None and value["taskId"] != expected_id)):
+        raise McpClientError("mcp.task.invalid")
+    return {k: value[k] for k in ("taskId", "status", "createdAt", "lastUpdatedAt", "ttl", "pollInterval")
+            if k in value}
+
+
+def _task_result_projection(result):
+    """Keep the full redacted response in the existing evidence object only.
+
+    Binary content is not a model observation. Large original text/structured
+    content remains retrievable from that object, with explicit truncation.
+    """
+    budget = MAX_OUTPUT_BYTES
+    contents, omitted, truncated = [], set(), False
+    for block in result.get("content", []):
+        if not isinstance(block, dict):
+            continue
+        if block.get("type") != "text":
+            omitted.add(str(block.get("type")))
+            continue
+        raw = str(block.get("text", "")).encode("utf-8")
+        contents.append({"type": "text", "text": raw[:budget].decode("utf-8", errors="ignore")})
+        truncated |= len(raw) > budget
+        budget = max(0, budget - len(raw))
+    projected = {"content": contents, "isError": bool(result.get("isError"))}
+    structured = result.get("structuredContent")
+    if structured is not None:
+        if len(json.dumps(structured, ensure_ascii=False).encode()) <= budget:
+            projected["structuredContent"] = structured
+        else:
+            truncated = True
+    return projected, truncated, sorted(omitted)
+
+
+def task_request(server, operation, *, task_id=None, cursor=None, fingerprint=None,
+                 scope=None, expected_connection=None, timeout_ms=DEFAULT_TIMEOUT_MS, capture=None):
+    if operation not in {"get", "list", "result", "cancel"}:
+        raise McpClientError("mcp.task.operation_invalid")
+    if operation != "list" and (not isinstance(task_id, str) or not task_id or len(task_id) > 1024):
+        raise McpClientError("mcp.task.id_required")
+    with connection(server, timeout_ms, scope=scope, expected_connection=expected_connection) as (info, proc, connection_id):
+        observed_fingerprint = _configuration_fingerprint(proc.cfg)
+        if not fingerprint or fingerprint != observed_fingerprint:
+            raise McpClientError("mcp.task.connection_changed", "use the original connection fingerprint and account")
+        caps = info.get("capabilities", {}).get("tasks")
+        if not isinstance(caps, dict) or (operation in {"list", "cancel"} and operation not in caps):
+            raise McpClientError("mcp.tasks.unsupported")
+        params = ({"cursor": cursor} if cursor else {}) if operation == "list" else {"taskId": task_id}
+        if operation == "result":
+            status = _validate_task(proc.request("tasks/get", {"taskId": task_id}), task_id)
+            if status["status"] not in {"completed", "failed"}:
+                return {"server": server, "task": status, "execution_state": status["status"],
+                        "result_available": False, "connection_fingerprint": observed_fingerprint,
+                        "observation_scope": "task_status_only", "evidence": capture(status) if capture else None}
+        try:
+            raw = proc.request("tasks/" + operation, params)
+            if operation in {"get", "cancel"}:
+                projected = _validate_task(raw, task_id)
+            elif operation == "list":
+                if not isinstance(raw.get("tasks"), list):
+                    raise McpClientError("mcp.task.invalid")
+                for job in raw["tasks"]:
+                    _validate_task(job)
+                if raw.get("nextCursor") is not None and not isinstance(raw["nextCursor"], str):
+                    raise McpClientError("mcp.pagination.invalid")
+            elif raw.get("_meta", {}).get("io.modelcontextprotocol/related-task", {}).get("taskId") != task_id:
+                raise McpClientError("mcp.task.result_mismatch")
+            result = _redact(raw, proc.cfg)
+            evidence = capture(result) if capture else None
+            truncated, omitted = False, []
+            if operation == "result":
+                result, truncated, omitted = _task_result_projection(result)
+            elif operation == "list":
+                jobs = [_validate_task(job) for job in result["tasks"][:100]]
+                truncated = len(raw["tasks"]) > len(jobs)
+                result = {"tasks": jobs, "nextCursor": result.get("nextCursor"), "total_in_page": len(raw["tasks"])}
+            else:
+                result = _redact(projected, proc.cfg)
+        except Exception as exc:
+            if operation == "cancel":
+                raise McpClientError("mcp.outcome.unknown", getattr(exc, "code", type(exc).__name__)) from None
+            raise
+        remote_state = status["status"] if operation == "result" else result.get("status")
+        return {"server": server, "operation": operation, "task_id": task_id,
+                "task": result if operation in {"get", "cancel"} else None,
+                "result": {"remote_task": result} if operation in {"get", "cancel"} else result,
+                "result_available": operation == "result",
+                "is_error": bool(result.get("isError")) or (operation == "result" and status["status"] == "failed"),
+                # A successful status read or cancellation RPC is complete.
+                # The separate remote job may be cancelled/failed/working;
+                # do not turn that object state into a false RPC failure.
+                "execution_state": status["status"] if operation == "result" else "completed",
+                "remote_execution_state": remote_state,
+                "truncated": truncated, "content_types_requiring_observation": omitted,
+                "connection_id": connection_id, "connection_fingerprint": observed_fingerprint,
+                "evidence": evidence, "observation_scope": "server_report_not_independent_target_readback"}
 
 
 def _configuration_fingerprint(cfg):
-    return hashlib.sha256(json.dumps(cfg, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+    public = {k: v for k, v in cfg.items() if k != "_redaction_secrets"}
+    if cfg.get("_authorization_id"):
+        public["headers"] = {k: v for k, v in cfg["headers"].items() if k.lower() != "authorization"}
+    return hashlib.sha256(json.dumps(public, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 
 __all__ = [

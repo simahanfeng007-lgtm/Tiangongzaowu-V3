@@ -21,6 +21,16 @@ slots = provider_identity_env_names(endpoint.provider_identity)
 if not binding.official or not slots:
     raise ValueError('This smoke harness requires an official provider profile; custom endpoint credentials need separate explicit binding.')
 os.environ[slots[0]] = os.environ['ONTOLOGY_ACCEPTANCE_KEY']
+if os.environ.get('TIANGONG_VISION_PROVIDER'):
+    import json
+    vision = duqu_model_endpoint_config(os.environ['TIANGONG_VISION_PROVIDER'])
+    vision_binding = validate_model_endpoint(vision.provider_identity, vision.base_url, resolve_dns=False)
+    vision_slots = provider_identity_env_names(vision.provider_identity)
+    settings = json.loads((profile/'.tiangong/api_keys.json').read_text())
+    vision_key = settings.get('_api_keys',{}).get(vision.provider_identity)
+    if not vision_binding.official or not vision_slots or not vision_key:
+        raise ValueError('Vision validation requires an explicitly configured official provider credential.')
+    os.environ[vision_slots[0]] = vision_key
 from instrumentation import install
 install(out)
 from total_gateway.runtime import GatewayRuntime

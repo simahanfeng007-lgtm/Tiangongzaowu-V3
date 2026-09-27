@@ -17,11 +17,12 @@ import urllib.error
 
 BASE = Path(__file__).resolve().parent
 parser = argparse.ArgumentParser(description=__doc__)
-parser.add_argument('case', choices=['local', 'browser', 'mcp', 'quality', 'document', 'novel'])
+parser.add_argument('case', choices=['local', 'browser', 'mcp', 'quality', 'document', 'novel', 'local-apps', 'media', 'mcp-tasks'])
 parser.add_argument('--attempt', default='1')
 parser.add_argument('--source-root', type=Path, default=BASE.parents[1])
 parser.add_argument('--output-root', type=Path, required=True)
 parser.add_argument('--model-config', type=Path, required=True)
+parser.add_argument('--vision-provider')
 args = parser.parse_args()
 if os.name != 'posix':
     parser.error('This development harness uses POSIX process groups; native Windows acceptance is separate.')
@@ -39,7 +40,21 @@ for name in ['profile/.tiangong/v3','profile/.tiangong-v3','workspace','state','
     (out / name).mkdir(parents=True, exist_ok=True)
 (out / 'profile/.tiangong/api_keys.json').symlink_to(CONFIG)
 workspace = out / 'workspace'
-if args.case == 'local':
+if args.case == 'local-apps':
+    with sqlite3.connect(workspace/'records.sqlite') as db:
+        db.execute('CREATE TABLE records(name TEXT,value INTEGER)')
+        db.executemany('INSERT INTO records VALUES(?,?)', [('row-'+str(i),i) for i in range(235)])
+    (workspace/'bad.csv').write_text('name,value\nnew,10\nbroken,11,extra\n')
+    (workspace/'good.csv').write_text('name,value\nnew,10\n')
+    prompt = '对工作区 records.sqlite 实际使用 sqlite.schema.read，先尝试用 sqlite.table.import_csv 导入 bad.csv 并确认失败后没有部分写入，再以 good.csv 修复该次导入，关联 repair_of。随后用 sqlite.table.export_csv 全量导出 records 表到 all.csv，使用 sqlite.backup.create 备份到 backup.sqlite，并回读核对数据库、CSV 和备份的总行数与 value 总和。用 obsidian.note.create 在 vault/结果.md 记录事实，再通过 note.read 取得版本、note.update 增加失败及恢复记录、link.create 加上引用核对记录；使用 vault.list、search、graph.export 实际检查并导出 links.json。报告 report.md 包含实际结果并回读。只修改 records.sqlite 和新生成文件，不修改两个输入 CSV；复用上述专用接口，不用通用写文件代替它们。'
+elif args.case == 'media':
+    from PIL import Image, ImageDraw
+    picture=Image.new('RGB',(600,260),'white');draw=ImageDraw.Draw(picture)
+    for x in (20,140,260): draw.rectangle((x,40,x+70,110),fill='blue')
+    draw.polygon([(440,40),(390,130),(490,130)],fill='red')
+    picture.save(workspace/'unknown.png')
+    prompt = '请用 image.observe 实际观察工作区 unknown.png。识别蓝色正方形和红色三角形各有几个，将两个整数存为 result.json 的 blue_squares、red_triangles 字段，保存包含观察依据、源文件版本和观察范围的 report.md，并实际重新读取 JSON 和报告。不要用文件名、元数据或自己写像素检测程序代替视觉模型观察；不要修改图片。'
+elif args.case == 'local':
     (workspace / 'input.csv').write_text('city,amount\n杭州,7\n上海,8\n杭州,5\n上海,-2\n杭州,0\n', encoding='utf-8-sig')
     (workspace / 'rules.json').write_text('{"output":"totals.json","report":"report.md","operation":"sum amount per city"}')
     (workspace / 'aggregate.py').write_text("import csv,json\nr={}\nfor row in csv.DictReader(open('input.csv',encoding='utf-8-sig')):r[row['city']]=int(row['amount'])\njson.dump(r,open('totals.json','w'),ensure_ascii=False)\n")
@@ -80,13 +95,18 @@ elif args.case == 'quality':
     (workspace/'test_marker.py').write_text("from pathlib import Path\nPath('must-not-execute.txt').write_text('executed')\n")
     prompt = '仅做静态观察：用 qc.code.delivery_check 检查工作区代码，读取检查结果后写 report.md，报告实际语法检查范围和是否执行了测试。禁止执行 one.py、test_marker.py、pytest 或其他项目代码；不要用代码行数、文件名或缺 README 判定业务是否完成，不需要补写代码或测试。'
 else:
-    from mcp_fixture import start
+    if args.case == 'mcp-tasks':
+        from task_fixture import start
+    else:
+        from mcp_fixture import start
     fixture = start(out)
     cfg={'servers':{'ontology-fixture':{'transport':'streamable_http',
          'url':f'http://127.0.0.1:{fixture.server_port}/mcp','applications':['core.filesystem'],
          'environment':{'location':'controlled local MCP test service','workspace':'test records','account_label':'isolated fixture'}}}}
     (out/'profile/.tiangong/v3/mcp_servers.json').write_text(json.dumps(cfg))
     prompt = '请通过现有 MCP 发现关联 core.filesystem 的测试环境，连接后分页读取实际工具契约。使用 ontology-fixture 创建且只创建一条 label 为 本体连接验收、value 为 41 的记录，再通过服务读取该记录的实际内容与版本，生成中文 report.md。不要猜工具名称、参数或对象 ID，不把本机受控服务说成真实云端厂商应用。'
+    if args.case == 'mcp-tasks':
+        prompt = '请通过 MCP 发现 ontology-fixture 的真实工具和任务能力，保留并在后续动作绑定实际 connection_id。在该受控服务异步创建一条 label 为 本体连接验收、value 为 41、delay_seconds 为 1 的记录，任务受理后记录 taskId 和 connection_fingerprint，通过 tasks.get/result 查询完成结果，再实际调用读取工具回读对象。另建一条 label 为 取消验收、value 为 0、delay_seconds 为 300 的异步任务，实际取消并重新查询确认取消状态；不要等待其执行，不重发任何创建。使用 tasks.list 核对两个任务并关闭本任务会话。写 report.md 并回读，如实区分受理、完成、取消和目标回读，不把受控服务当真实厂商。'
 
 settings = json.loads(CONFIG.read_text())
 provider = settings['_default_provider']
@@ -108,6 +128,10 @@ env.update({'PYTHONDONTWRITEBYTECODE':'1','ONTOLOGY_RUN':str(out),'ONTOLOGY_SOUR
     'TIANGONG_WORLD_STATE_ROOT':str(out/'world'),
     'TIANGONG_OMNI_BODY_ROOT':str(SOURCE/'app/backend/tiangong-backend/_internal/omni_body_skill'),
     'TIANGONG_OMNI_BODY_STATE_ROOT':str(out/'omni-body'),'TIANGONG_OMNI_BODY_WORKSPACE':str(workspace)})
+if args.vision_provider:
+    if args.vision_provider not in settings['_provider_inputs']:
+        raise ValueError('The selected vision provider must be configured in the supplied private profile.')
+    env['TIANGONG_VISION_PROVIDER']=args.vision_provider
 for field in ['TIANGONG_BACKEND_INTERNAL_TOKEN','TIANGONG_LIFE_INTERNAL_TOKEN','TIANGONG_GATEWAY_COMMUNICATION_TOKEN',
               'TIANGONG_GATEWAY_LIFE_INTENT_TOKEN','TIANGONG_GATEWAY_SHADOW_TOKEN','TIANGONG_DESKTOP_TOKEN']:
     env[field] = secrets.token_hex(32)
@@ -120,7 +144,7 @@ record = {'case':args.case,'prompt':prompt,'scope':'MODEL_LIVE_LOCAL','configure
     'configured_model':profile['model_name'],'source_identity':'working_tree_file_hashes',
     'base_commit':subprocess.check_output(['git','rev-parse','HEAD'],cwd=SOURCE,text=True).strip(),
     'source_files_sha256':hashlib.sha256((out/'source-files.json').read_bytes()).hexdigest(),
-    'driver_files_sha256':{n:hashlib.sha256((BASE/n).read_bytes()).hexdigest() for n in ('run.py','gateway_entry.py','instrumentation.py','mcp_fixture.py')},
+    'driver_files_sha256':{n:hashlib.sha256((BASE/n).read_bytes()).hexdigest() for n in ('run.py','gateway_entry.py','instrumentation.py','mcp_fixture.py','task_fixture.py')},
     'input_sha256':{p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in workspace.iterdir() if p.is_file()},
     'initial_managed_fixture_sha256':{p.relative_to(workspace).as_posix():hashlib.sha256(p.read_bytes()).hexdigest()
         for p in (workspace/'managed-novel').rglob('*') if p.is_file()},
@@ -178,7 +202,22 @@ with (out/'gateway.log').open('w') as log:
 record['output_sha256']={p.relative_to(workspace).as_posix():hashlib.sha256(p.read_bytes()).hexdigest()
     for p in workspace.rglob('*') if p.is_file() and not p.is_symlink()}
 try:
-    if args.case=='local':
+    if args.case=='local-apps':
+        import csv
+        def totals(path):
+            with sqlite3.connect(path.as_uri()+'?mode=ro',uri=True) as db:
+                return list(db.execute('SELECT COUNT(*),SUM(value) FROM records').fetchone())
+        with (workspace/'all.csv').open(encoding='utf-8',newline='') as stream:
+            rows=list(csv.DictReader(stream))
+        note=(workspace/'vault/结果.md').read_text()
+        actual={'db':totals(workspace/'records.sqlite'),'backup':totals(workspace/'backup.sqlite'),
+                'csv':[len(rows),sum(int(r['value']) for r in rows)],'note_has_link':'[[' in note,
+                'graph_exists':(workspace/'links.json').is_file(),'report_exists':(workspace/'report.md').is_file()}
+        total=[236,sum(range(235))+10]
+        expected={'db':total,'backup':total,'csv':total,'note_has_link':True,'graph_exists':True,'report_exists':True}
+    elif args.case=='media':
+        actual=json.loads((workspace/'result.json').read_text());expected={'blue_squares':3,'red_triangles':1}
+    elif args.case=='local':
         actual=json.loads((workspace/'totals.json').read_text());expected={'杭州':12,'上海':6}
     elif args.case=='browser':
         matches=[p for p in workspace.rglob('result.json') if p.is_file() and not p.is_symlink()]
@@ -206,9 +245,13 @@ try:
         rows=[json.loads(p.read_text()) for p in (out/'remote-objects').glob('*.json')]
         actual=[{k:v[k] for k in ['label','value','version']} for v in rows]
         expected=[{'label':'本体连接验收','value':41,'version':1}]
+        if args.case=='mcp-tasks':
+            jobs=json.loads((out/'remote-tasks.json').read_text())
+            actual={'records':actual,'tasks':sorted(j['status'] for j in jobs.values())}
+            expected={'records':expected,'tasks':['cancelled','completed']}
     record['independent_check']={'actual':actual,'expected':expected,'passed':actual==expected,
         'original_inputs_unchanged':all(hashlib.sha256((workspace/n).read_bytes()).hexdigest()==d
-            for n,d in record['input_sha256'].items() if n!='aggregate.py')}
+            for n,d in record['input_sha256'].items() if n not in ('aggregate.py','records.sqlite'))}
 except Exception as e: record['independent_check']={'passed':False,'error':type(e).__name__}
 calls=[json.loads(p.read_text()) for p in (out/'model-calls').glob('*/record.json')]
 record['model_metrics']={'calls':len(calls),'failed_calls':sum(c.get('ok') is False for c in calls),

@@ -1068,8 +1068,8 @@
       "category": "notes",
       "adapter": "filesystem_or_plugin",
       "status": "adapter_required",
-      "implemented_actions": 0,
-      "adapter_required_actions": 7,
+      "implemented_actions": 7,
+      "adapter_required_actions": 0,
       "actions": [
         "obsidian.vault.list",
         "obsidian.note.create",
@@ -1810,8 +1810,8 @@
       "category": "database",
       "adapter": "sqlite3",
       "status": "adapter_required",
-      "implemented_actions": 1,
-      "adapter_required_actions": 4,
+      "implemented_actions": 5,
+      "adapter_required_actions": 0,
       "actions": [
         "sqlite.query.run",
         "sqlite.schema.read",
@@ -2643,5 +2643,5 @@
       }
     }
   ],
-  "implemented_actions_total": 117
+  "implemented_actions_total": 128
 }

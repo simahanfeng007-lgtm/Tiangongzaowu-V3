@@ -18,6 +18,7 @@ def digest(value):
 parser=argparse.ArgumentParser()
 parser.add_argument('--attempt', default='1')
 parser.add_argument('--audit-id', default='')
+parser.add_argument('--case', action='append', choices=('local','browser','mcp','quality','document','novel','local-apps','mcp-tasks','media'))
 parser.add_argument('--source-root',type=Path,default=Path(__file__).resolve().parents[2])
 parser.add_argument('--output-root',type=Path,required=True)
 args=parser.parse_args()
@@ -26,7 +27,7 @@ BASE=args.output_root.resolve()
 out=BASE/('audit-'+args.attempt+('-'+args.audit_id if args.audit_id else '')+'.json')
 if out.exists(): raise SystemExit('Refusing to replace prior audit')
 summary={'schema':'tiangong.ontology.live-audit.v1','checked_head':subprocess.check_output(['git','rev-parse','HEAD'],cwd=SOURCE,text=True).strip(),'cases':[]}
-for kind in ('local','browser','mcp','quality','document','novel'):
+for kind in args.case or ('local','browser','mcp','quality','document','novel'):
     p=BASE/'live'/(kind+'-'+args.attempt)
     if kind in ('document','novel') and not p.exists():
         continue
@@ -73,9 +74,48 @@ for kind in ('local','browser','mcp','quality','document','novel'):
         versions.append({'path':artifact.relative_to(p).as_posix(),'sha256':version['sha256'],'size_bytes':version['size_bytes']})
     assert json.loads((p/'shutdown-complete.json').read_text())['runtime_closed'] is True
     assert record['process_exit']==0 and not record.get('forced_stop')
-    assert all(sha(p/'workspace'/n)==h for n,h in record['input_sha256'].items() if n!='aggregate.py')
+    assert all(sha(p/'workspace'/n)==h for n,h in record['input_sha256'].items() if n not in ('aggregate.py','records.sqlite'))
     actual={}
-    if kind=='local':
+    if kind=='local-apps':
+        import csv
+        totals=[]
+        for name in ('records.sqlite','backup.sqlite'):
+            path=p/'workspace'/name
+            with sqlite3.connect(path.as_uri()+'?mode=ro&immutable=1',uri=True) as c:
+                totals.append(list(c.execute('SELECT count(*),sum(value) FROM records').fetchone()))
+        with (p/'workspace/all.csv').open(newline='',encoding='utf-8') as stream:
+            rows=list(csv.DictReader(stream))
+        totals.append([len(rows),sum(int(r['value']) for r in rows)])
+        assert totals==[[236,27505]]*3
+        actions={o['tool_action'] for o in state['observations'] if o.get('ok')}
+        assert {'sqlite.schema.read','sqlite.table.export_csv','sqlite.table.import_csv','sqlite.backup.create',
+            'obsidian.vault.list','obsidian.note.create','obsidian.note.read','obsidian.note.update',
+            'obsidian.link.create','obsidian.graph.export','obsidian.search'} <= actions
+        failed=[o for o in state['observations'] if o.get('tool_action')=='sqlite.table.import_csv' and not o.get('ok')]
+        assert failed
+        repairs=[o for o in state['observations'] if o.get('tool_action')=='sqlite.table.import_csv' and o.get('ok')]
+        assert repairs
+        actual={'independent_database_backup_csv_totals':totals,'all_11_specialized_actions_observed':True,
+            'original_import_failure_retained':True}
+    elif kind=='mcp-tasks':
+        protocol=json.loads((p/'mcp-events.json').read_text())
+        calls=[e['call'] for e in protocol]
+        assert sum(c['method']=='initialize' for c in calls)==1
+        creates=[c for c in calls if c['method']=='tools/call' and c['params']['name']=='create_later']
+        assert len(creates)==2 and all('task' in c['params'] for c in creates)
+        assert {'tasks/get','tasks/list','tasks/result','tasks/cancel'} <= {c['method'] for c in calls}
+        rows=[json.loads(f.read_text()) for f in (p/'remote-objects').glob('*.json')]
+        assert len(rows)==1 and rows[0]['value']==41
+        assert any(c['method']=='tools/call' and c['params']['name']=='read_record' and c['params']['arguments']['id']==rows[0]['id'] for c in calls)
+        jobs=json.loads((p/'remote-tasks.json').read_text())
+        assert sorted(j['status'] for j in jobs.values())==['cancelled','completed']
+        actual={'one_real_created_record':rows[0],'task_statuses':['cancelled','completed'],
+                'initialize_count':1,'two_submissions_no_replay':True}
+    elif kind=='media':
+        assert json.loads((p/'workspace/result.json').read_text())=={'blue_squares':3,'red_triangles':1}
+        assert any(o.get('tool_action')=='image.observe' and o.get('ok') for o in state['observations'])
+        actual={'blue_squares':3,'red_triangles':1,'image_observation_succeeded':True}
+    elif kind=='local':
         totals=json.loads((p/'workspace/totals.json').read_text()); assert totals=={'杭州':12,'上海':6}
         calls=state['tool_calls']; actions=[x['tool_action'] for x in calls]
         assert actions.count('python.run')>=2

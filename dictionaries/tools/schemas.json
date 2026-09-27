@@ -5,6 +5,17 @@
     "file.patch_replace": "code.patch_replace"
   },
   "arguments": {
+    "audio.observe": {
+      "args": {
+        "expected_sha256": "optional source byte SHA256",
+        "question": "specific question about actual content"
+      },
+      "required": [
+        "target",
+        "args.question"
+      ],
+      "target": "configured MCP server or authorized local media file"
+    },
     "browser.chrome.click": {
       "args": {
         "max_chars": "optional integer 1..200000",
@@ -51,6 +62,222 @@
       ],
       "target": "workspace source file path (required)"
     },
+    "core.code.code.patch_replace": {
+      "aliases": [
+        "file.patch_replace",
+        "file.patch",
+        "code.patch"
+      ],
+      "args": {
+        "allow_noop": "optional boolean",
+        "count": "optional non-negative integer",
+        "encoding": "optional string",
+        "find": "non-empty literal or regex string (required)",
+        "regex": "optional boolean",
+        "replace": "replacement string (optional; empty deletes the match)"
+      },
+      "required": [
+        "args.find"
+      ],
+      "target": "workspace-relative (or absolute path when the user enabled absolute-path permission) existing file path (required, never a directory)"
+    },
+    "core.code.code.write": {
+      "args": {
+        "binary": "optional false",
+        "content": "UTF-8 text (required)",
+        "encoding": "optional utf-8",
+        "language": "optional string",
+        "syntax_check": "boolean; fixed composition write profile requires false"
+      },
+      "required": [
+        "args.content"
+      ],
+      "target": "workspace source file path (required)"
+    },
+    "core.code.python.run": {
+      "any_of": [
+        "target",
+        "args.code"
+      ],
+      "args": {
+        "argv": "optional array",
+        "code": "Python source string required when target is empty",
+        "timeout": "optional positive integer"
+      },
+      "note": "Uses the installed Python runtime, independent of shell PATH. target is an existing .py script; argv are script arguments, not interpreter flags. Use file.write/code.write for script source; the script may generate requested files within its granted workspace. Short checks may use args.code.",
+      "target": "optional workspace-relative (or absolute when allowed) existing .py script"
+    },
+    "core.code.shell.run": {
+      "args": {
+        "command": "string or argv array (required)",
+        "timeout": "optional positive integer"
+      },
+      "required": [
+        "args.command"
+      ],
+      "target": "empty; execution cwd is the backend-owned workspace",
+      "windows_note": "Windows cmd.exe semantics; do not assume python/ffmpeg aliases exist on PATH. Prefer python.run for Python and dedicated video actions for encoding. Read system.health for installed adapters."
+    },
+    "core.filesystem.file.append": {
+      "args": {
+        "content": "string (required)",
+        "encoding": "optional string"
+      },
+      "required": [
+        "args.content"
+      ],
+      "target": "workspace-relative (or absolute path when the user enabled absolute-path permission) file path (required)"
+    },
+    "core.filesystem.file.copy": {
+      "args": {
+        "destination": "workspace-relative (or absolute path when the user enabled absolute-path permission) destination path (required)",
+        "overwrite": "optional boolean"
+      },
+      "required": [
+        "args.destination"
+      ],
+      "target": "workspace-relative (or absolute path when the user enabled absolute-path permission) source path (required)"
+    },
+    "core.filesystem.file.hash": {
+      "args": {},
+      "target": "existing workspace file path (required)"
+    },
+    "core.filesystem.file.list": {
+      "args": {
+        "include_hidden": "optional boolean; default false",
+        "max_results": "optional integer 1-10000; default 500",
+        "pattern": "optional non-empty glob string; default *",
+        "recursive": "optional boolean; default false"
+      },
+      "target": "existing workspace directory path (required)"
+    },
+    "core.filesystem.file.mkdir": {
+      "args": {
+        "exist_ok": "optional boolean"
+      },
+      "target": "workspace-relative (or absolute path when the user enabled absolute-path permission) directory path (required)"
+    },
+    "core.filesystem.file.move": {
+      "args": {
+        "destination": "workspace-relative (or absolute path when the user enabled absolute-path permission) destination path (required)",
+        "overwrite": "optional boolean"
+      },
+      "required": [
+        "args.destination"
+      ],
+      "target": "workspace-relative (or absolute path when the user enabled absolute-path permission) source path (required)"
+    },
+    "core.filesystem.file.read": {
+      "args": {
+        "binary": "optional boolean; default false",
+        "encoding": "optional utf-8 or utf8; text files must be UTF-8 without BOM",
+        "max_chars": "optional integer 1-2000000; maximum text characters or binary preview bytes"
+      },
+      "target": "existing workspace file path (required)"
+    },
+    "core.filesystem.file.rename": {
+      "args": {
+        "new_name": "new basename only (required)",
+        "overwrite": "optional boolean"
+      },
+      "required": [
+        "args.new_name"
+      ],
+      "target": "workspace-relative (or absolute path when the user enabled absolute-path permission) source path (required)"
+    },
+    "core.filesystem.file.write": {
+      "any_of": [
+        "args.content",
+        "args.base64"
+      ],
+      "args": {
+        "binary": "optional boolean",
+        "content": "string, or base64 when binary=true",
+        "encoding": "optional string"
+      },
+      "target": "workspace-relative (or absolute path when the user enabled absolute-path permission) file path (required)"
+    },
+    "core.image.image.info": {
+      "args": {},
+      "note": "Returns format, width, height, mode and file evidence after decoding.",
+      "target": "existing PNG/JPEG/image path inside workspace (required)"
+    },
+    "core.office.docx.create": {
+      "any_of": [
+        "args.source",
+        "args.content",
+        "args.title",
+        "args.sections"
+      ],
+      "args": {
+        "content": "optional inline Markdown/plain text",
+        "sections": "optional array of {heading, level, paragraphs, bullets, table}",
+        "source": "optional existing workspace .md or .txt source; preferred for long documents",
+        "subtitle": "optional subtitle",
+        "title": "optional document title for structured mode"
+      },
+      "target": "workspace-relative (or absolute path when the user enabled absolute-path permission) output .docx path (required)"
+    },
+    "core.office.mindmap.create": {
+      "any_of": [
+        "args.source",
+        "args.content",
+        "args.tree"
+      ],
+      "args": {
+        "content": "optional inline indented outline",
+        "opml": "optional boolean; also emit .opml",
+        "source": "optional existing workspace .md or .txt indented outline",
+        "title": "map root title",
+        "tree": "optional nested object/array tree"
+      },
+      "target": "workspace-relative (or absolute path when the user enabled absolute-path permission) output .md path (required)"
+    },
+    "core.office.pptx.create": {
+      "any_of": [
+        "args.source",
+        "args.content",
+        "args.title",
+        "args.slides"
+      ],
+      "args": {
+        "content": "optional inline slide Markdown",
+        "design_spec": "optional workspace .json path or compact design object returned by template.apply",
+        "slides": "optional array of {title, bullets|body, notes, chart, table, image}",
+        "source": "optional existing workspace .md or .txt slide script; split slides with --- or ##",
+        "style": "optional named preset or compact design override object",
+        "subtitle": "optional title slide subtitle",
+        "template_id": "optional shipped design template id; defaults to executive_ppt",
+        "title": "optional title slide title"
+      },
+      "target": "workspace-relative (or absolute path when the user enabled absolute-path permission) output .pptx path (required)"
+    },
+    "core.video.video.info": {
+      "args": {
+        "timeout": "optional positive integer"
+      },
+      "note": "Read metadata using ffprobe when present or the installed imageio_ffmpeg adapter.",
+      "target": "existing video path inside workspace (required)"
+    },
+    "core.video.video.slideshow": {
+      "args": {
+        "audio": "optional false; slideshow produces silent video",
+        "codec": "optional libx264 (default), libx265, or mpeg4",
+        "fps": "alias for frame_rate; values must agree if both given",
+        "frame_rate": "optional positive number up to 240; 24 means 24 frames per second",
+        "images": "non-empty array of existing image paths, in playback order; use the same image format",
+        "output": "optional output path when target is empty",
+        "pix_fmt": "optional yuv420p (default), yuv444p, or rgb24",
+        "seconds_per_image": "optional positive duration per still image; default 2; exclusive with frame_rate/fps",
+        "size": "optional WIDTHxHEIGHT such as 640x360",
+        "timeout": "optional positive integer; capped by media execution profile"
+      },
+      "note": "For a 3-second animation at 24fps provide 72 actual image frames and frame_rate=24. Unknown parameters are rejected rather than ignored.",
+      "required": [
+        "args.images"
+      ],
+      "target": "output .mp4 path inside workspace (or args.output)"
+    },
     "docx.create": {
       "any_of": [
         "args.source",
@@ -66,6 +293,32 @@
         "title": "optional document title for structured mode"
       },
       "target": "workspace-relative (or absolute path when the user enabled absolute-path permission) output .docx path (required)"
+    },
+    "ffmpeg.video.info": {
+      "args": {
+        "timeout": "optional positive integer"
+      },
+      "note": "Read metadata using ffprobe when present or the installed imageio_ffmpeg adapter.",
+      "target": "existing video path inside workspace (required)"
+    },
+    "ffmpeg.video.slideshow": {
+      "args": {
+        "audio": "optional false; slideshow produces silent video",
+        "codec": "optional libx264 (default), libx265, or mpeg4",
+        "fps": "alias for frame_rate; values must agree if both given",
+        "frame_rate": "optional positive number up to 240; 24 means 24 frames per second",
+        "images": "non-empty array of existing image paths, in playback order; use the same image format",
+        "output": "optional output path when target is empty",
+        "pix_fmt": "optional yuv420p (default), yuv444p, or rgb24",
+        "seconds_per_image": "optional positive duration per still image; default 2; exclusive with frame_rate/fps",
+        "size": "optional WIDTHxHEIGHT such as 640x360",
+        "timeout": "optional positive integer; capped by media execution profile"
+      },
+      "note": "For a 3-second animation at 24fps provide 72 actual image frames and frame_rate=24. Unknown parameters are rejected rather than ignored.",
+      "required": [
+        "args.images"
+      ],
+      "target": "output .mp4 path inside workspace (or args.output)"
     },
     "file.append": {
       "args": {
@@ -116,6 +369,25 @@
       ],
       "target": "workspace-relative (or absolute path when the user enabled absolute-path permission) source path (required)"
     },
+    "file.patch_replace": {
+      "aliases": [
+        "file.patch_replace",
+        "file.patch",
+        "code.patch"
+      ],
+      "args": {
+        "allow_noop": "optional boolean",
+        "count": "optional non-negative integer",
+        "encoding": "optional string",
+        "find": "non-empty literal or regex string (required)",
+        "regex": "optional boolean",
+        "replace": "replacement string (optional; empty deletes the match)"
+      },
+      "required": [
+        "args.find"
+      ],
+      "target": "workspace-relative (or absolute path when the user enabled absolute-path permission) existing file path (required, never a directory)"
+    },
     "file.read": {
       "args": {
         "binary": "optional boolean; default false",
@@ -162,12 +434,59 @@
       "note": "Returns format, width, height, mode and file evidence after decoding.",
       "target": "existing PNG/JPEG/image path inside workspace (required)"
     },
+    "image.observe": {
+      "args": {
+        "expected_sha256": "optional source byte SHA256",
+        "question": "specific question about actual content"
+      },
+      "required": [
+        "target",
+        "args.question"
+      ],
+      "target": "configured MCP server or authorized local media file"
+    },
     "life.body.state.query": {
       "args": {
         "recent_limit": "optional integer from 0 to 50",
         "sections": "optional array: identity|health|emotion|drives|lifecycle|autonomy|environment|evolution|memory|recent_actions|body|context|summary"
       },
       "target": "empty; reads this Life's current state"
+    },
+    "mcp.action.call": {
+      "args": {
+        "action_id": "dictionary requirement bound by owner configuration",
+        "arguments": "concrete arguments matching the observed MCP tool schema",
+        "timeout_ms": "optional bounded timeout"
+      },
+      "required": [
+        "target",
+        "args.action_id",
+        "args.arguments"
+      ],
+      "target": "configured MCP server or authorized local media file"
+    },
+    "mcp.auth.begin": {
+      "args": {},
+      "required": [
+        "target"
+      ],
+      "target": "owner-configured MCP server name"
+    },
+    "mcp.auth.status": {
+      "args": {},
+      "required": [
+        "target"
+      ],
+      "target": "owner-configured MCP server name"
+    },
+    "mcp.bindings.list": {
+      "args": {
+        "action_id": "optional actual dictionary action ID",
+        "limit": "optional integer 1..100",
+        "offset": "optional integer"
+      },
+      "required": [],
+      "target": "configured MCP server or authorized local media file"
     },
     "mcp.servers.list": {
       "args": {
@@ -177,9 +496,76 @@
       },
       "target": "unused"
     },
+    "mcp.session.close": {
+      "args": {
+        "connection_id": "optional earlier scoped connection id",
+        "timeout_ms": "optional integer 1000..120000"
+      },
+      "required": [
+        "target"
+      ],
+      "target": "configured MCP server name"
+    },
+    "mcp.tasks.cancel": {
+      "args": {
+        "connection_fingerprint": "original connection fingerprint from mcp.tools.list or mcp.tool.call",
+        "connection_id": "optional earlier scoped connection id",
+        "task_id": "actual remote task ID",
+        "timeout_ms": "optional integer 1000..120000"
+      },
+      "required": [
+        "target",
+        "args.connection_fingerprint",
+        "args.task_id"
+      ],
+      "target": "configured MCP server name"
+    },
+    "mcp.tasks.get": {
+      "args": {
+        "connection_fingerprint": "original connection fingerprint from mcp.tools.list or mcp.tool.call",
+        "connection_id": "optional earlier scoped connection id",
+        "task_id": "actual remote task ID",
+        "timeout_ms": "optional integer 1000..120000"
+      },
+      "required": [
+        "target",
+        "args.connection_fingerprint",
+        "args.task_id"
+      ],
+      "target": "configured MCP server name"
+    },
+    "mcp.tasks.list": {
+      "args": {
+        "connection_fingerprint": "original connection fingerprint from mcp.tools.list or mcp.tool.call",
+        "connection_id": "optional earlier scoped connection id",
+        "cursor": "optional actual remote nextCursor",
+        "timeout_ms": "optional integer 1000..120000"
+      },
+      "required": [
+        "target",
+        "args.connection_fingerprint"
+      ],
+      "target": "configured MCP server name"
+    },
+    "mcp.tasks.result": {
+      "args": {
+        "connection_fingerprint": "original connection fingerprint from mcp.tools.list or mcp.tool.call",
+        "connection_id": "optional earlier scoped connection id",
+        "task_id": "actual remote task ID",
+        "timeout_ms": "optional integer 1000..120000"
+      },
+      "required": [
+        "target",
+        "args.connection_fingerprint",
+        "args.task_id"
+      ],
+      "target": "configured MCP server name"
+    },
     "mcp.tool.call": {
       "args": {
         "arguments": "object matching actual inputSchema",
+        "connection_id": "optional earlier connection id; changed or expired connection fails without replay",
+        "task": "optional object {ttl: integer milliseconds 1000..86400000}; requires server and tool task support",
         "timeout_ms": "optional integer 1000..120000",
         "tool": "exact tool name from mcp.tools.list"
       },
@@ -191,6 +577,7 @@
     },
     "mcp.tools.list": {
       "args": {
+        "connection_id": "optional earlier connection id; changed or expired connection fails without replay",
         "cursor": "optional next_cursor from this server",
         "timeout_ms": "optional integer 1000..120000"
       },
@@ -198,6 +585,41 @@
         "target"
       ],
       "target": "configured MCP server name"
+    },
+    "microsoft.powerpoint.pptx.create": {
+      "any_of": [
+        "args.source",
+        "args.content",
+        "args.title",
+        "args.slides"
+      ],
+      "args": {
+        "content": "optional inline slide Markdown",
+        "design_spec": "optional workspace .json path or compact design object returned by template.apply",
+        "slides": "optional array of {title, bullets|body, notes, chart, table, image}",
+        "source": "optional existing workspace .md or .txt slide script; split slides with --- or ##",
+        "style": "optional named preset or compact design override object",
+        "subtitle": "optional title slide subtitle",
+        "template_id": "optional shipped design template id; defaults to executive_ppt",
+        "title": "optional title slide title"
+      },
+      "target": "workspace-relative (or absolute path when the user enabled absolute-path permission) output .pptx path (required)"
+    },
+    "microsoft.word.docx.create": {
+      "any_of": [
+        "args.source",
+        "args.content",
+        "args.title",
+        "args.sections"
+      ],
+      "args": {
+        "content": "optional inline Markdown/plain text",
+        "sections": "optional array of {heading, level, paragraphs, bullets, table}",
+        "source": "optional existing workspace .md or .txt source; preferred for long documents",
+        "subtitle": "optional subtitle",
+        "title": "optional document title for structured mode"
+      },
+      "target": "workspace-relative (or absolute path when the user enabled absolute-path permission) output .docx path (required)"
     },
     "mindmap.create": {
       "any_of": [
@@ -508,6 +930,95 @@
       ],
       "target": "managed novel project directory (required)"
     },
+    "obsidian.graph.export": {
+      "args": {
+        "limit": "optional bounded integer",
+        "offset": "optional nonnegative integer",
+        "output": "fresh output JSON file"
+      },
+      "required": [
+        "target",
+        "args.output"
+      ],
+      "target": "authorized local database, vault directory or note path"
+    },
+    "obsidian.link.create": {
+      "args": {
+        "expected_sha256": "SHA256 from latest note evidence",
+        "limit": "optional bounded integer",
+        "link": "wiki-link target",
+        "offset": "optional nonnegative integer"
+      },
+      "required": [
+        "target",
+        "args.expected_sha256",
+        "args.link"
+      ],
+      "target": "authorized local database, vault directory or note path"
+    },
+    "obsidian.note.create": {
+      "args": {
+        "content": "Markdown text at most 5 MiB",
+        "limit": "optional bounded integer",
+        "offset": "optional nonnegative integer"
+      },
+      "required": [
+        "target",
+        "args.content"
+      ],
+      "target": "authorized local database, vault directory or note path"
+    },
+    "obsidian.note.read": {
+      "args": {
+        "limit": "optional bounded integer",
+        "offset": "optional nonnegative integer"
+      },
+      "required": [
+        "target"
+      ],
+      "target": "authorized local database, vault directory or note path"
+    },
+    "obsidian.note.update": {
+      "args": {
+        "content": "Markdown text at most 5 MiB",
+        "expected_sha256": "SHA256 from latest note evidence",
+        "limit": "optional bounded integer",
+        "offset": "optional nonnegative integer"
+      },
+      "required": [
+        "target",
+        "args.content",
+        "args.expected_sha256"
+      ],
+      "target": "authorized local database, vault directory or note path"
+    },
+    "obsidian.search": {
+      "args": {
+        "limit": "optional bounded integer",
+        "offset": "optional nonnegative integer",
+        "query": "nonempty literal string"
+      },
+      "required": [
+        "target",
+        "args.query"
+      ],
+      "target": "authorized local database, vault directory or note path"
+    },
+    "obsidian.vault.list": {
+      "args": {
+        "limit": "optional bounded integer",
+        "offset": "optional nonnegative integer"
+      },
+      "required": [
+        "target"
+      ],
+      "target": "authorized local database, vault directory or note path"
+    },
+    "pillow.image.info": {
+      "args": {},
+      "note": "Returns format, width, height, mode and file evidence after decoding.",
+      "target": "existing PNG/JPEG/image path inside workspace (required)"
+    },
     "pptx.create": {
       "any_of": [
         "args.source",
@@ -611,6 +1122,18 @@
       },
       "target": "optional explicit skill_id; normally empty"
     },
+    "sqlite.backup.create": {
+      "args": {
+        "limit": "optional bounded integer",
+        "offset": "optional nonnegative integer",
+        "output": "fresh workspace output file"
+      },
+      "required": [
+        "target",
+        "args.output"
+      ],
+      "target": "authorized local database, vault directory or note path"
+    },
     "sqlite.query": {
       "args": {
         "confirmed": "optional boolean; false is read-only, true does not grant permission",
@@ -627,7 +1150,6 @@
       "target": "workspace database path"
     },
     "sqlite.query.run": {
-      "alias_of": "sqlite.query",
       "args": {
         "confirmed": "optional boolean; false is read-only, true does not grant permission",
         "max_rows": "optional integer 1..10000; default 100",
@@ -641,6 +1163,44 @@
         "args.query"
       ],
       "target": "workspace database path"
+    },
+    "sqlite.schema.read": {
+      "args": {
+        "limit": "optional bounded integer",
+        "offset": "optional nonnegative integer"
+      },
+      "required": [
+        "target"
+      ],
+      "target": "authorized local database, vault directory or note path"
+    },
+    "sqlite.table.export_csv": {
+      "args": {
+        "limit": "optional bounded integer",
+        "offset": "optional nonnegative integer",
+        "output": "fresh workspace output file",
+        "table": "exact SQLite table name"
+      },
+      "required": [
+        "target",
+        "args.table",
+        "args.output"
+      ],
+      "target": "authorized local database, vault directory or note path"
+    },
+    "sqlite.table.import_csv": {
+      "args": {
+        "input": "workspace CSV with header matching existing table",
+        "limit": "optional bounded integer",
+        "offset": "optional nonnegative integer",
+        "table": "exact SQLite table name"
+      },
+      "required": [
+        "target",
+        "args.table",
+        "args.input"
+      ],
+      "target": "authorized local database, vault directory or note path"
     },
     "template.apply": {
       "args": {
@@ -656,6 +1216,19 @@
       },
       "note": "Read metadata using ffprobe when present or the installed imageio_ffmpeg adapter.",
       "target": "existing video path inside workspace (required)"
+    },
+    "video.observe_frames": {
+      "args": {
+        "expected_sha256": "optional source byte SHA256",
+        "question": "specific question about actual content",
+        "times": "explicit array of 1..12 seconds within [0,86400]"
+      },
+      "required": [
+        "target",
+        "args.question",
+        "args.times"
+      ],
+      "target": "configured MCP server or authorized local media file"
     },
     "video.slideshow": {
       "args": {
@@ -675,6 +1248,41 @@
         "args.images"
       ],
       "target": "output .mp4 path inside workspace (or args.output)"
+    },
+    "wps.presentation.pptx.create": {
+      "any_of": [
+        "args.source",
+        "args.content",
+        "args.title",
+        "args.slides"
+      ],
+      "args": {
+        "content": "optional inline slide Markdown",
+        "design_spec": "optional workspace .json path or compact design object returned by template.apply",
+        "slides": "optional array of {title, bullets|body, notes, chart, table, image}",
+        "source": "optional existing workspace .md or .txt slide script; split slides with --- or ##",
+        "style": "optional named preset or compact design override object",
+        "subtitle": "optional title slide subtitle",
+        "template_id": "optional shipped design template id; defaults to executive_ppt",
+        "title": "optional title slide title"
+      },
+      "target": "workspace-relative (or absolute path when the user enabled absolute-path permission) output .pptx path (required)"
+    },
+    "wps.writer.docx.create": {
+      "any_of": [
+        "args.source",
+        "args.content",
+        "args.title",
+        "args.sections"
+      ],
+      "args": {
+        "content": "optional inline Markdown/plain text",
+        "sections": "optional array of {heading, level, paragraphs, bullets, table}",
+        "source": "optional existing workspace .md or .txt source; preferred for long documents",
+        "subtitle": "optional subtitle",
+        "title": "optional document title for structured mode"
+      },
+      "target": "workspace-relative (or absolute path when the user enabled absolute-path permission) output .docx path (required)"
     }
   },
   "results": {
