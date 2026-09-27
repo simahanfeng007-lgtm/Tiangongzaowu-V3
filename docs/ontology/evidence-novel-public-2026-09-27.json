@@ -1,0 +1,249 @@
+{
+  "schema": "tiangong.ontology.batch-evidence.v2",
+  "product_candidate": "fec034c88e3d511317b7916c9d54ca87cfaa0474",
+  "dictionary_version": "2026.09.27.5",
+  "verification_plane": "1.57",
+  "scope": "MODEL_LIVE_LOCAL; MCP is a controlled local service, not a vendor account",
+  "fact_audit_passed": true,
+  "exact_product_files_match": true,
+  "audit_sha256": "faf874a7a1387b985b4e91b51ac1c929cc13a92678e29b58507140bf98d5e1eb",
+  "cases": [
+    {
+      "case": "local",
+      "request_id": "req_91aaa3be402d8103c5aab81c8d9135b1fb21af6e3db06da443bf3d653e1d57c5",
+      "base_commit": "fec034c88e3d511317b7916c9d54ca87cfaa0474",
+      "product_files_compared": 1442,
+      "ledger_events": 89,
+      "ledger_hash_chain_valid": true,
+      "database_unchanged": true,
+      "completion_identity_valid": true,
+      "judge_approved_current_versions": true,
+      "model_generated_compositions": 3,
+      "wire_server_models": [
+        "deepseek-flash"
+      ],
+      "metrics": {
+        "calls": 12,
+        "failed_calls": 0,
+        "unfinished_calls": 0,
+        "unknown_usage_calls": 0,
+        "tokens": {
+          "prompt_tokens": 280342,
+          "completion_tokens": 16411,
+          "total_tokens": 296753,
+          "prompt_cache_hit_tokens": 192384,
+          "prompt_cache_miss_tokens": 87958
+        }
+      },
+      "wall_seconds": 79.982,
+      "driver_original_passed": true,
+      "graceful_shutdown": true,
+      "fact_audit_passed": true,
+      "failed_actions_retained": []
+    },
+    {
+      "case": "browser",
+      "request_id": "req_684c9022fcb3ecf7df37e28d8fac691d4f7e85da9feba298a2a68c6c7552b6b5",
+      "base_commit": "fec034c88e3d511317b7916c9d54ca87cfaa0474",
+      "product_files_compared": 1442,
+      "ledger_events": 98,
+      "ledger_hash_chain_valid": true,
+      "database_unchanged": true,
+      "completion_identity_valid": true,
+      "judge_approved_current_versions": true,
+      "model_generated_compositions": 6,
+      "wire_server_models": [
+        "deepseek-flash"
+      ],
+      "metrics": {
+        "calls": 16,
+        "failed_calls": 0,
+        "unfinished_calls": 0,
+        "unknown_usage_calls": 0,
+        "tokens": {
+          "prompt_tokens": 480708,
+          "completion_tokens": 25265,
+          "total_tokens": 505973,
+          "prompt_cache_hit_tokens": 353920,
+          "prompt_cache_miss_tokens": 126788
+        }
+      },
+      "wall_seconds": 121.442,
+      "driver_original_passed": true,
+      "graceful_shutdown": true,
+      "fact_audit_passed": true,
+      "failed_actions_retained": [
+        {
+          "action": "browser.chrome.click",
+          "ok": false
+        }
+      ]
+    },
+    {
+      "case": "mcp",
+      "request_id": "req_5766357d46f26179968eb3a74eeb4d2afc9872943ab86d65785e7df0e15334f7",
+      "base_commit": "fec034c88e3d511317b7916c9d54ca87cfaa0474",
+      "product_files_compared": 1442,
+      "ledger_events": 68,
+      "ledger_hash_chain_valid": true,
+      "database_unchanged": true,
+      "completion_identity_valid": true,
+      "judge_approved_current_versions": true,
+      "model_generated_compositions": 6,
+      "wire_server_models": [
+        "deepseek-flash"
+      ],
+      "metrics": {
+        "calls": 17,
+        "failed_calls": 0,
+        "unfinished_calls": 0,
+        "unknown_usage_calls": 0,
+        "tokens": {
+          "prompt_tokens": 468242,
+          "completion_tokens": 18764,
+          "total_tokens": 487006,
+          "prompt_cache_hit_tokens": 350208,
+          "prompt_cache_miss_tokens": 118034
+        }
+      },
+      "wall_seconds": 80.841,
+      "driver_original_passed": true,
+      "graceful_shutdown": true,
+      "fact_audit_passed": true,
+      "failed_actions_retained": []
+    },
+    {
+      "case": "quality",
+      "request_id": "req_d743d360850e22509ff3e22be2a11014829a008296dcee1bbb6203494d985444",
+      "base_commit": "fec034c88e3d511317b7916c9d54ca87cfaa0474",
+      "product_files_compared": 1442,
+      "ledger_events": 28,
+      "ledger_hash_chain_valid": true,
+      "database_unchanged": true,
+      "completion_identity_valid": true,
+      "judge_approved_current_versions": true,
+      "model_generated_compositions": 2,
+      "wire_server_models": [
+        "deepseek-flash"
+      ],
+      "metrics": {
+        "calls": 10,
+        "failed_calls": 0,
+        "unfinished_calls": 1,
+        "unknown_usage_calls": 1,
+        "tokens": {
+          "prompt_tokens": 124866,
+          "completion_tokens": 8347,
+          "total_tokens": 133213,
+          "prompt_cache_hit_tokens": 77440,
+          "prompt_cache_miss_tokens": 47426
+        }
+      },
+      "wall_seconds": 40.441,
+      "driver_original_passed": true,
+      "graceful_shutdown": true,
+      "fact_audit_passed": true,
+      "failed_actions_retained": []
+    },
+    {
+      "case": "document",
+      "request_id": "req_e0410286facd0cfe99d37f55e348ffefe872c34b93184baf3e372c61349208b3",
+      "base_commit": "fec034c88e3d511317b7916c9d54ca87cfaa0474",
+      "product_files_compared": 1442,
+      "ledger_events": 41,
+      "ledger_hash_chain_valid": true,
+      "database_unchanged": true,
+      "completion_identity_valid": true,
+      "judge_approved_current_versions": true,
+      "model_generated_compositions": 3,
+      "wire_server_models": [
+        "deepseek-flash"
+      ],
+      "metrics": {
+        "calls": 11,
+        "failed_calls": 0,
+        "unfinished_calls": 1,
+        "unknown_usage_calls": 1,
+        "tokens": {
+          "prompt_tokens": 164608,
+          "completion_tokens": 8158,
+          "total_tokens": 172766,
+          "prompt_cache_hit_tokens": 104192,
+          "prompt_cache_miss_tokens": 60416
+        }
+      },
+      "wall_seconds": 36.37,
+      "driver_original_passed": true,
+      "graceful_shutdown": true,
+      "fact_audit_passed": true,
+      "failed_actions_retained": [
+        {
+          "action": "qc.docx.delivery_check",
+          "ok": false
+        }
+      ]
+    },
+    {
+      "case": "novel",
+      "request_id": "req_cba7cd7a2af08dacbd2ed1b1fb21e6f67c9d89dd62ca6257f5344fcf035dd652",
+      "base_commit": "fec034c88e3d511317b7916c9d54ca87cfaa0474",
+      "product_files_compared": 1442,
+      "ledger_events": 142,
+      "ledger_hash_chain_valid": true,
+      "database_unchanged": true,
+      "completion_identity_valid": true,
+      "judge_approved_current_versions": true,
+      "model_generated_compositions": 8,
+      "wire_server_models": [
+        "deepseek-flash"
+      ],
+      "metrics": {
+        "calls": 16,
+        "failed_calls": 0,
+        "unfinished_calls": 0,
+        "unknown_usage_calls": 0,
+        "tokens": {
+          "prompt_tokens": 620108,
+          "completion_tokens": 23556,
+          "total_tokens": 643664,
+          "prompt_cache_hit_tokens": 465280,
+          "prompt_cache_miss_tokens": 154828
+        }
+      },
+      "wall_seconds": 121.317,
+      "driver_original_passed": true,
+      "graceful_shutdown": true,
+      "fact_audit_passed": true,
+      "failed_actions_retained": []
+    }
+  ],
+  "coverage": {
+    "local": "five input rows, incorrect aggregation actually repaired; totals 12 and 6",
+    "browser": "real Chromium click, total 73, actual JSON download and screenshot; screenshot visually inspected",
+    "mcp": "paged real tool schemas; one record created and independently re-read as value 41/version 1",
+    "quality": "static code observation; execution marker absent",
+    "document": "DOCX body/table content 7+11=18; corrupt file read failure retained",
+    "novel": "latest chapter actually revised using old-byte hash and fresh lease; old bytes preserved; fresh content observed"
+  },
+  "totals": {
+    "calls": 82,
+    "failed_calls": 0,
+    "unfinished_calls": 2,
+    "unknown_usage_calls": 2,
+    "tokens": {
+      "prompt_tokens": 2138874,
+      "completion_tokens": 100501,
+      "total_tokens": 2239375,
+      "prompt_cache_hit_tokens": 1543424,
+      "prompt_cache_miss_tokens": 595450
+    }
+  },
+  "limits": [
+    "Two auxiliary model calls have unfinished/unknown usage; not counted as zero cost.",
+    "Executor and judge are separate contexts of the configured provider, not independent organizations.",
+    "Wire identity reports deepseek-flash; immutable provider revision and billed currency are unavailable.",
+    "All 779 requirements remain; 497 pending backend bindings and real vendor environments are not covered.",
+    "Native Windows installation, real licensed applications, whole-machine recovery and all modalities remain open.",
+    "Current full regression and final CI are reported on PR #114; earlier candidates are not substituted."
+  ]
+}

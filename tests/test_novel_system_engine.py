@@ -126,7 +126,7 @@ class NovelSystemEngineTests(unittest.TestCase):
         self.compile()
         submission = self.submission()
         path = self.engine.leases_dir / (submission["lease_id"] + ".json")
-        lease = json.loads(path.read_text())
+        lease = json.loads(path.read_text(encoding="utf-8"))
         lease["schema"] = "tiangong.novel.chapter-lease.v1"
         path.write_text(json.dumps(lease))
         with self.assertRaises(NovelSystemError) as error:
@@ -160,7 +160,7 @@ class NovelSystemEngineTests(unittest.TestCase):
 
     def test_legacy_transaction_recovery_is_factual_not_quality_approval(self):
         path = self.prepared()
-        transaction = json.loads(path.read_text())
+        transaction = json.loads(path.read_text(encoding="utf-8"))
         transaction["schema"] = "tiangong.novel.chapter-transaction.v1"
         path.write_text(json.dumps(transaction))
         self.assertEqual(self.engine.recover()["recovered_count"], 1)
@@ -168,7 +168,7 @@ class NovelSystemEngineTests(unittest.TestCase):
 
     def test_invalid_recovery_never_writes_canonical_files(self):
         path = self.prepared()
-        transaction = json.loads(path.read_text())
+        transaction = json.loads(path.read_text(encoding="utf-8"))
         for mutate, code in ((lambda t: t["next_state"].update(next_chapter=99), "CORRUPT_PREPARED_STATE"),
                              (lambda t: t.update(content="forged"), "CORRUPT_PREPARED_TRANSACTION"),
                              (lambda t: t.update(prose_relative="../outside.md"), "UNSAFE_PREPARED_TRANSACTION")):
@@ -183,7 +183,7 @@ class NovelSystemEngineTests(unittest.TestCase):
 
     def test_recovery_preserves_concurrent_external_edits(self):
         path = self.prepared()
-        transaction = json.loads(path.read_text())
+        transaction = json.loads(path.read_text(encoding="utf-8"))
         prose = self.engine.root / transaction["prose_relative"]
         prose.write_text("用户修改", encoding="utf-8")
         before = self.engine.state_path.read_bytes()
@@ -203,7 +203,7 @@ class NovelSystemEngineTests(unittest.TestCase):
         self.assertNotEqual(fixed["state_hash"], first["state_hash"])
         self.assertEqual(len(self.engine._ledger()), 1)
         self.assertEqual(Path(fixed["chapter_path"]).read_text(encoding="utf-8"), "星光重新亮起。\n")
-        history = [json.loads(p.read_text()) for p in self.engine.committed_dir.glob("*.json")]
+        history = [json.loads(p.read_text(encoding="utf-8")) for p in self.engine.committed_dir.glob("*.json")]
         self.assertEqual(len(history), 2)
         self.assertTrue(any(t.get("previous_content") == "星光熄灭。\n" for t in history))
         with self.assertRaises(NovelSystemError) as error:
