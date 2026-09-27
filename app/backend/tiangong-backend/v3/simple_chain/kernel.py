@@ -858,6 +858,7 @@ def _simple_chain_regenerative_execute_tool(
             "effect_id": effect_id,
             "logical_effect_id": logical_effect_id,
             "prior_result_summary": prepared.get("prior_result_summary") or {},
+            "execution_evidence": prepared.get("prior_execution_evidence"),
         }
         if update_frontier:
             _simple_chain_regenerative_update_frontier(
@@ -985,9 +986,11 @@ def _simple_chain_regenerative_execute_tool(
         },
     )
     final_effect_state = str((finished or {}).get("effect_state") or "")
-    if outcome != "succeeded" and isinstance(raw, dict) and (finished or {}).get("event_hash"):
+    if isinstance(raw, dict) and (finished or {}).get("event_hash"):
         raw = {**raw, "execution_evidence": {"event_hash": finished["event_hash"],
-               "effect_id": effect_id, "outcome": outcome}}
+               "effect_id": effect_id, "outcome": outcome,
+               **({"repair_relation": finished["repair_relation"]}
+                  if finished.get("repair_relation") else {})}}
     if outcome == "ambiguous" or final_effect_state == "AMBIGUOUS":
         _simple_chain_regenerative_effect_state(run_state, effect_id, state="ambiguous", call_id=call_id)
     else:

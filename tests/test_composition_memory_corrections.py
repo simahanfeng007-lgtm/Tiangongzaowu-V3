@@ -172,12 +172,24 @@ def test_explicit_target_repair_records_receipts_and_later_failure_invalidates_i
     corrected = {**action("file.write", "right.txt", content="corrected"), "repair_of": failure}
     first = invoke(case, corrected, 5)
     assert first["event_hash"]
+    relation = first["repair_relation"]
+    assert relation["repair_of"] == failure
+    assert relation["claim"] == "registered_repair_attempt_not_semantic_completion"
+    events = case.store.list_execution_events(case.request_id, run_id=case.run_id, generation=case.generation)
+    terminal = next(e for e in events if e.event_hash == first["event_hash"])
+    assert terminal.payload["repair_relation"] == relation
+    registration = next(e for e in events if e.event_hash == relation["registration_event_hash"])
+    assert registration.payload["composition_id"] == relation["composition_ref"]["composition_id"]
+    duplicate = invoke(case, corrected, 6)
+    assert duplicate["disposition"] == "already_committed"
+    assert duplicate["prior_execution_evidence"]["event_hash"] == first["event_hash"]
+    assert duplicate["prior_execution_evidence"]["repair_relation"] == relation
     row = svc.lessons.rows()[0][0]
     assert row["status"] == "RECOVERY_OBSERVED"
     assert row["source"]["recovery"]["relation"] == "explicit_repair"
     assert row["source"]["recovery"]["call"]["target"] == "right.txt"
     assert "repair_of" not in row["source"]["recovery"]["call"]
-    execute(svc, case, "new failure", 6, target="right.txt", outcome="failed_final")
+    execute(svc, case, "new failure", 7, target="right.txt", outcome="failed_final")
     assert next(row for row, _ in svc.lessons.rows() if row["source"]["failure"]["event_hash"] == failure)["status"] == "FAILURE_OBSERVED"
 
 

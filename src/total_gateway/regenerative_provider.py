@@ -496,6 +496,13 @@ class RegenerativeExecutionAuthority:
                     if getattr(prior_event, "event_type", "") == "step.committed"
                     else dict(prior_event.payload.get("evidence") or {})
                 ),
+                "prior_execution_evidence": {
+                    "event_hash": prior_event.event_hash,
+                    "effect_id": prior_effect_id,
+                    "outcome": "succeeded",
+                    **({"repair_relation": prior_event.payload["repair_relation"]}
+                       if prior_event.payload.get("repair_relation") else {}),
+                } if prior_disposition == "already_committed" else None,
                 "ledger_seq": event.ledger_seq,
             }
         claim = EffectClaim(
@@ -675,18 +682,29 @@ class RegenerativeExecutionAuthority:
         if existing is not None:
             return {"effect_id": effect_id, "effect_state": record.state,
                     "result_sha256": result.result_sha256, "ledger_seq": existing.ledger_seq,
-                    "event_hash": existing.event_hash}
+                    "event_hash": existing.event_hash,
+                    **({"repair_relation": existing.payload["repair_relation"]}
+                       if existing.payload.get("repair_relation") else {})}
         prepared = next((e for e in reversed(events)
                          if e.event_type == "step.prepared" and e.effect_id == effect_id), None)
         post_basis = None
-        if prepared is not None and prepared.payload.get("replay_basis") is not None:
-            from capability_dictionary import load_dictionary
-            from .execution_replay import replay_basis
+        repair_relation = None
+        if prepared is not None and prepared.payload.get("composition_ref"):
             ref = prepared.payload["composition_ref"]
             registration = next(e for e in events if e.event_type == "composition.registered"
                                 and e.payload["composition_id"] == ref["composition_id"])
             program = json.loads(registration.payload["program_json"])
-            call = next(leaf["invocation"] for leaf in program["leaves"] if leaf["id"] == ref["leaf_id"])
+            leaf = next(leaf for leaf in program["leaves"] if leaf["id"] == ref["leaf_id"])
+            call = leaf["invocation"]
+            if leaf.get("repair_of"):
+                # Registration already bound this reference to an actual
+                # same-run failure. Project that relation, not a new verdict.
+                repair_relation = {"repair_of": leaf["repair_of"], "composition_ref": ref,
+                    "registration_event_hash": registration.event_hash,
+                    "claim": "registered_repair_attempt_not_semantic_completion"}
+        if prepared is not None and prepared.payload.get("replay_basis") is not None:
+            from capability_dictionary import load_dictionary
+            from .execution_replay import replay_basis
             post_basis = replay_basis(call, base_id=prepared.payload["base_logical_effect_id"],
                 events=events, workspace=self._workspace_root, release=load_dictionary(),
                 global_step=prepared.payload["dispatch_step"][0])
@@ -703,6 +721,7 @@ class RegenerativeExecutionAuthority:
                 "result_sha256": result.result_sha256,
                 "result_summary": result_summary,
                 "replay_basis": post_basis,
+                **({"repair_relation": repair_relation} if repair_relation else {}),
             },
             logical_effect_id=logical_effect_id,
             attempt_id=attempt_id,
@@ -721,6 +740,7 @@ class RegenerativeExecutionAuthority:
             "result_sha256": result.result_sha256,
             "ledger_seq": event.ledger_seq,
             "event_hash": event.event_hash,
+            **({"repair_relation": repair_relation} if repair_relation else {}),
         }
 
     def _reconcile_effect(self, payload: Mapping[str, Any]) -> dict[str, Any]:

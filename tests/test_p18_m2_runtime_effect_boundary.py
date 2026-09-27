@@ -96,7 +96,8 @@ class RuntimeEffectBoundaryTests(unittest.TestCase):
             elif operation == "start_effect":
                 response.update({"dispatch_permitted": True, "disposition": "dispatched", "effect_state": "SIDE_EFFECT_STARTED"})
             elif operation == "finish_effect":
-                response.update({"effect_state": "SUCCEEDED", "result_sha256": "6" * 64})
+                response.update({"effect_state": "SUCCEEDED", "result_sha256": "6" * 64,
+                    "event_hash": "7" * 64, "repair_relation": {"repair_of": "8" * 64}})
             elif operation == "update_frontier":
                 frontier = payload["frontier"]
                 response.update({
@@ -121,6 +122,9 @@ class RuntimeEffectBoundaryTests(unittest.TestCase):
                 update_frontier=True,
             )
         self.assertTrue(result["ok"])
+        self.assertEqual(result["execution_evidence"]["event_hash"], "7" * 64)
+        self.assertEqual(result["execution_evidence"]["repair_relation"], {"repair_of": "8" * 64})
+        self.assertEqual(result["execution_evidence"]["outcome"], "succeeded")
         self.assertEqual(owner.calls, 1)
         self.assertLess(trace.index("prepare_effect"), trace.index("start_effect"))
         self.assertLess(trace.index("start_effect"), trace.index("handler"))

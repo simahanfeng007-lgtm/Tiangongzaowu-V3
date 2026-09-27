@@ -95,8 +95,12 @@ for kind in args.case or ('local','browser','mcp','quality','document','novel'):
         assert failed
         repairs=[o for o in state['observations'] if o.get('tool_action')=='sqlite.table.import_csv' and o.get('ok')]
         assert repairs
+        failures={e['event_hash'] for e in events if e['event_type']=='step.failed'}
+        relations=[e['payload']['repair_relation'] for e in events
+            if e['event_type']=='step.committed' and e['payload'].get('repair_relation')]
+        assert relations and any(r['repair_of'] in failures for r in relations)
         actual={'independent_database_backup_csv_totals':totals,'all_11_specialized_actions_observed':True,
-            'original_import_failure_retained':True}
+            'original_import_failure_retained':True,'gateway_committed_repair_relation':relations}
     elif kind=='mcp-tasks':
         protocol=json.loads((p/'mcp-events.json').read_text())
         calls=[e['call'] for e in protocol]
