@@ -12577,6 +12577,7 @@
       "required_dependencies": [],
       "retry": "observe_before_retry",
       "runtime": {
+        "app_id": "git",
         "implemented": true,
         "risk": "A3",
         "status": "active",
@@ -12702,6 +12703,7 @@
       "required_dependencies": [],
       "retry": "observe_before_retry",
       "runtime": {
+        "app_id": "git",
         "implemented": true,
         "risk": "A4",
         "status": "active",
@@ -12724,6 +12726,7 @@
       "required_dependencies": [],
       "retry": "read_retry",
       "runtime": {
+        "app_id": "git",
         "implemented": true,
         "risk": "A0",
         "status": "active",
@@ -12746,6 +12749,7 @@
       "required_dependencies": [],
       "retry": "read_retry",
       "runtime": {
+        "app_id": "git",
         "implemented": true,
         "risk": "A0",
         "status": "active",
@@ -12848,6 +12852,7 @@
       "required_dependencies": [],
       "retry": "read_retry",
       "runtime": {
+        "app_id": "git",
         "implemented": true,
         "risk": "A0",
         "status": "active",
@@ -18149,6 +18154,7 @@
       "required_dependencies": [],
       "retry": "observe_before_retry",
       "runtime": {
+        "app_id": "microsoft.excel",
         "implemented": false,
         "risk": "A2",
         "rollback_status": "not_implemented",
@@ -28420,5 +28426,5 @@
       "version": "1.0.0"
     }
   },
-  "version": "2026.09.27.7"
+  "version": "2026.09.27.8"
 }

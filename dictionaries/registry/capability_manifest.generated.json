@@ -16764,7 +16764,7 @@
       "handler": "dynamic",
       "id": "git.add",
       "implemented": true,
-      "metadata_sha256": "497cf221847cf98b96f4f33913b9439d8634b94e54fb775ecb6981b6c4741069",
+      "metadata_sha256": "9350c3d17c3e0ac930bec501f156a2e256b885e21b5eef21224945da9baf669a",
       "reason": "",
       "result_schema": {
         "action": "git.add",
@@ -16903,7 +16903,7 @@
       "handler": "dynamic",
       "id": "git.commit",
       "implemented": true,
-      "metadata_sha256": "8c46ad30a6f6f2ecdba72b34e2936d8789aa05cec2b1cdf0ce661fc64272a6b5",
+      "metadata_sha256": "6dadfc8be35299be8eab6227938f47c71c1e81654c2dc6165dad02023487502a",
       "reason": "",
       "result_schema": {
         "action": "git.commit",
@@ -16936,7 +16936,7 @@
       "handler": "dynamic",
       "id": "git.diff",
       "implemented": true,
-      "metadata_sha256": "dee34a1bf122305481bb22c08070f197b7de6c6082b2e11d64dc8e9c015d816f",
+      "metadata_sha256": "d3e32bb1c6d1572eec3494e7cefcbeafc05908b505eb0a177fe0c10a35fc6ae3",
       "reason": "",
       "result_schema": {
         "action": "git.diff",
@@ -16969,7 +16969,7 @@
       "handler": "dynamic",
       "id": "git.log",
       "implemented": true,
-      "metadata_sha256": "23a9feb6f72839ebaeb3b57b98950b3f65f1b5b999449273d185deb42b3f0df9",
+      "metadata_sha256": "a8d817fcc6d9c20e50380d63072c6f4d5ebd003f103c559b5823cc0fae9b2437",
       "reason": "",
       "result_schema": {
         "action": "git.log",
@@ -17068,7 +17068,7 @@
       "handler": "dynamic",
       "id": "git.status",
       "implemented": true,
-      "metadata_sha256": "482906822f761513c0a71b3170fa586499a4dc95da3c5605b5404f4d9329bc7c",
+      "metadata_sha256": "349e2747cacd862905d2fdbd941de534a1d0e04cd4e0f69e1e8f14901911b7ca",
       "reason": "",
       "result_schema": {
         "action": "git.status",
@@ -22133,7 +22133,7 @@
       "handler": "",
       "id": "microsoft.excel.native.chart.create",
       "implemented": false,
-      "metadata_sha256": "84dce1f1fb7852633fe6e5bd8b74565cb904a59f1c9bcaaca500ddc82c5237c0",
+      "metadata_sha256": "da5b4cb4ea7d94619ca3b29caf1981c14ad00e845275621e6ad8cd729d10c64a",
       "reason": "declared unavailable",
       "result_schema": {
         "action": "microsoft.excel.native.chart.create",
@@ -33719,12 +33719,12 @@
   },
   "executable": 297,
   "schema": "tiangong.v3.capability_manifest.v1",
-  "source_hash": "66b1fcfab9de32f609479dbe2a271c7a78e023955cef192a5ae7def974048bc1",
+  "source_hash": "8d1521d48ce20a67ea1cf97d789baa336a31fc8ab43946642137818a9c43d061",
   "total": 791,
   "unavailable": 494,
   "validation": {
     "executable_without_route": [],
     "ok": true,
-    "source_hash": "66b1fcfab9de32f609479dbe2a271c7a78e023955cef192a5ae7def974048bc1"
+    "source_hash": "8d1521d48ce20a67ea1cf97d789baa336a31fc8ab43946642137818a9c43d061"
   }
 }

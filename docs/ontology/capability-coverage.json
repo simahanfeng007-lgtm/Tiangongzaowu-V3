@@ -18227,7 +18227,7 @@
         "values": false
       },
       "default_args": {},
-      "definition_sha256": "f2063ef18b1169272e867286fc0e195777fc14880bb394ee02f076b19b34532e",
+      "definition_sha256": "406686e2c64089c8b7e7f0d60f8317046da8b2fc8a27f51796335cda869660a6",
       "disposition": "retain_with_contract",
       "effect": "execute",
       "implementation_declared": true,
@@ -18438,7 +18438,7 @@
         "values": false
       },
       "default_args": {},
-      "definition_sha256": "0f388e528ad928a4635d88fb710ab27935ee473037a4dafd6b571d1f82fe8839",
+      "definition_sha256": "6e676735cc44484bcd8309a4893c9720a34c4e027b0ed9db8b9f766691cf6036",
       "disposition": "retain_with_contract",
       "effect": "execute",
       "implementation_declared": true,
@@ -18496,7 +18496,7 @@
         "values": false
       },
       "default_args": {},
-      "definition_sha256": "8e78c05ff0e043663d932f797fd97551038d393346150d92767cb42002daa9d0",
+      "definition_sha256": "9c3a20b80df5ec1e73c147ef2a4bfffd61ac187a1a050ff07c72fd1825ca3c0b",
       "disposition": "retain_with_contract",
       "effect": "execute",
       "implementation_declared": true,
@@ -18555,7 +18555,7 @@
         "values": false
       },
       "default_args": {},
-      "definition_sha256": "5a3142ceefdf0322b22677a5a2b2ce765df7187b30ca9e2599a0c65f52bab0b4",
+      "definition_sha256": "74981f879866ca3dc6dc4204038b7db61b17cf77d1a475a764e8095294606dcc",
       "disposition": "retain_with_contract",
       "effect": "execute",
       "implementation_declared": true,
@@ -18721,7 +18721,7 @@
         "values": false
       },
       "default_args": {},
-      "definition_sha256": "ac980fdf1d701868dc30654d8b1fbae25a9af2eb9c90cf80949e15792619263b",
+      "definition_sha256": "5b9e4595e508008b887d65ef37f6ac628b0a7b58b4f061a52eda0181a27e154b",
       "disposition": "retain_with_contract",
       "effect": "read",
       "implementation_declared": true,
@@ -26436,7 +26436,7 @@
         "values": false
       },
       "default_args": {},
-      "definition_sha256": "848b8ad0dc53f34fc592b0e61dea0d109bcee2a61a243c9349a4d71b5d8bfcf1",
+      "definition_sha256": "96a7e9c50e321e06ade10b69a7e4a0ffa6aca171e4e53bbb86634d0274b11895",
       "disposition": "retain_pending_connection",
       "effect": "write",
       "implementation_declared": false,
@@ -42404,7 +42404,7 @@
   ],
   "application_count": 100,
   "applications_sha256": "7b166325768e469567f0a5bb57e83a3af07aebcf836e858d7039f1c59afbabcd",
-  "catalog_sha256": "232b50c205795b460751b20032e6e8f62f986121093bf408655beba3f26f147f",
+  "catalog_sha256": "bfd2c13320447adb9ff47a95da9f5bddf53d4f8b2d498c79a18a891b74c52e08",
   "counts": {
     "merge_explicit_alias": 78,
     "retain_disabled": 2,
@@ -42412,7 +42412,7 @@
     "retain_with_contract": 219,
     "retire": 6
   },
-  "dictionary_version": "2026.09.27.7",
+  "dictionary_version": "2026.09.27.8",
   "interpretation": "Complete inventory is not complete semantic audit, real execution coverage or application connection proof.",
   "registered_actions": 791,
   "schema": "tiangong.ontology.coverage.v1",

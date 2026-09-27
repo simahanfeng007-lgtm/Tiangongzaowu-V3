@@ -154,6 +154,27 @@ def test_dictionary_publication_rejects_orphaned_pending_application(dictionary)
         validate(load_dictionary(dictionary))
 
 
+def test_application_discovery_and_health_count_the_same_registered_actions(tmp_path):
+    from omni_body_skill.tools.omni_body_tool import BodyRuntime, BodyRuntimeConfig
+    runtime = BodyRuntime(BodyRuntimeConfig(workspace=str(tmp_path), run_id="app-projection"))
+    registry = runtime.run("system.app_registry", None, {})
+    health = runtime.run("system.health", None, {})
+    assert registry["success"] and health["success"]
+    names = {name for app in registry["apps"] for name in app["actions"]}
+    assert health["app_action_count"] == len(names)
+
+
+@pytest.mark.parametrize("owner", [None, "google.docs"])
+def test_dictionary_publication_rejects_application_projection_drift(dictionary, owner):
+    import runpy
+    validate = runpy.run_path(str(ROOT / "scripts/build-dictionary.py"))["validate_application_connections"]
+    update_json(dictionary / "tools/catalog.json",
+                lambda doc: doc["tools"]["git.status"]["runtime"].update(app_id=owner))
+    load_dictionary.cache_clear()
+    with pytest.raises(ValueError, match="dictionary_application_projection_mismatch:git.status"):
+        validate(load_dictionary(dictionary))
+
+
 def test_declared_effect_survives_projection_and_controls_gateway_floor(dictionary):
     from v3.fact_kernel import compile_manifest
     from total_gateway.action_registry import compile_action_registry

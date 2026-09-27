@@ -9,7 +9,10 @@ import sys
 
 
 def validate_application_connections(release) -> None:
-    associated = {name for app in release.applications["apps"] for name in app["actions"]}
+    associated = {}
+    for app in release.applications["apps"]:
+        for name in app["actions"]:
+            associated.setdefault(name, set()).add(app["app_id"])
     for name, row in release.tools.items():
         runtime = row["runtime"]
         if (runtime.get("status", "active") == "active"
@@ -17,6 +20,9 @@ def validate_application_connections(release) -> None:
                 and row["budget"]["profile"] == "external-adapter"
                 and name not in associated):
             raise ValueError("dictionary_pending_application_missing:" + name)
+    for name, owners in associated.items():
+        if release.tools[name]["runtime"].get("app_id") not in owners:
+            raise ValueError("dictionary_application_projection_mismatch:" + name)
 
 
 def build(root: Path, *, check: bool = False) -> dict:

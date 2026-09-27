@@ -8784,6 +8784,7 @@
       "tool_group": "Gemini API"
     },
     "git.add": {
+      "app_id": "git",
       "effect": "execute",
       "execution_binding": {
         "kind": "delivery",
@@ -8864,6 +8865,7 @@
       "summary": "Clone a public GitHub HTTPS repository into a new local directory through a governed network-read capability; generic shell/python remain network-denied."
     },
     "git.commit": {
+      "app_id": "git",
       "effect": "execute",
       "execution_binding": {
         "kind": "delivery",
@@ -8875,6 +8877,7 @@
       "summary": "Run git commit inside the workspace when git is installed; Runtime rejects A5 operations."
     },
     "git.diff": {
+      "app_id": "git",
       "effect": "execute",
       "execution_binding": {
         "kind": "delivery",
@@ -8886,6 +8889,7 @@
       "summary": "Run git diff safely in workspace if git is installed."
     },
     "git.log": {
+      "app_id": "git",
       "effect": "execute",
       "execution_binding": {
         "kind": "delivery",
@@ -8955,6 +8959,7 @@
       "tool_group": "Git"
     },
     "git.status": {
+      "app_id": "git",
       "effect": "read",
       "execution_binding": {
         "kind": "delivery",
@@ -12644,6 +12649,7 @@
       "summary": "Create structured meeting minutes with decisions, action items, owners, deadlines, risks, and follow-up."
     },
     "microsoft.excel.native.chart.create": {
+      "app_id": "microsoft.excel",
       "effect": "write",
       "execution_binding": {
         "kind": "delivery",
