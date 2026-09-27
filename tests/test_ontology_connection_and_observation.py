@@ -177,7 +177,8 @@ def test_declared_readiness_never_claims_authorization_or_live_connection():
     assert all(not release.readiness(r["id"])["ready"] for r in disabled)
 
 
-def test_real_browser_javascript_click_and_render_are_observed(runtime, tmp_path):
+@pytest.mark.parametrize("_cold_start", range(3))
+def test_real_browser_javascript_click_and_render_are_observed(runtime, tmp_path, _cold_start):
     pytest.importorskip("playwright.sync_api")
     from PIL import Image
     page = tmp_path / "interactive.html"
@@ -187,7 +188,7 @@ def test_real_browser_javascript_click_and_render_are_observed(runtime, tmp_path
     result = runtime.run("browser.chrome.click", page.name, {"selector": "#next", "width": 320, "height": 200})
     if not result["success"] and "No working Chromium executable" in result.get("message", ""):
         pytest.skip("native Chromium runtime not available")
-    assert result["success"], result
+    assert result["success"], result.get("message") or json.dumps(result, ensure_ascii=False)
     actual = result["result"]
     assert "second-page:73" in actual["body_preview"] and "first-page:41" not in actual["body_preview"]
     assert actual["session_scope"] == "isolated_action"

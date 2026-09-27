@@ -185,6 +185,9 @@ class GatewayRequestHandler(BaseHTTPRequestHandler):
         self.wfile.write(response.body)
 
     def _desktop_error(self, error: DesktopApiError) -> None:
+        # Rejections may precede reading the body. Never parse those remaining
+        # bytes as another request on a persistent connection.
+        self.close_connection = True
         self._send_json(
             error.status,
             {
@@ -809,10 +812,7 @@ class GatewayRequestHandler(BaseHTTPRequestHandler):
         if route is None:
             return False
         if router is None:
-            self._send_json(
-                503,
-                {"status": "UNAVAILABLE", "reason_code": "desktop_api.not_configured"},
-            )
+            self._desktop_error(DesktopApiError(503, "desktop_api.not_configured"))
             return True
         if not router.authorize(str(self.headers.get("X-Tiangong-Token") or "")):
             self._desktop_error(DesktopApiError(401, "desktop_api.unauthorized"))

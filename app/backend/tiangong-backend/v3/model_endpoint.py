@@ -18,9 +18,23 @@ from enum import Enum
 import hashlib
 import json
 from typing import Any, Mapping
+from urllib.parse import urlsplit, urlunsplit
 
 
 MODEL_ENDPOINT_SCHEMA = "tiangong.v3.model_endpoint_config.v1"
+
+
+def append_model_endpoint_path(base_url: str, suffix: str) -> str:
+    """Join an API base or pasted endpoint without repeating its API path."""
+    parts = urlsplit(base_url)
+    path = parts.path.rstrip('/')
+    suffix = suffix.strip('/')
+    if not path.endswith('/' + suffix):
+        if suffix == 'v1/messages' and path.endswith('/v1'):
+            path += '/messages'
+        else:
+            path += '/' + suffix
+    return urlunsplit((parts.scheme, parts.netloc, path, parts.query, parts.fragment))
 
 
 class ProtocolFamily(str, Enum):

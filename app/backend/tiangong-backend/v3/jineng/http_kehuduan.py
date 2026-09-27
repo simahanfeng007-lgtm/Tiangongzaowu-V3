@@ -1347,6 +1347,29 @@ class HttpKehuduan:
             provider_tool_results=provider_tool_results,
         )
 
+    def probe_connection(self) -> dict[str, Any]:
+        """Probe the saved endpoint with the same credential reader and client."""
+        from .model_transport_registry import probe_endpoint
+
+        try:
+            endpoint = duqu_model_endpoint_config()
+            if not endpoint.base_url or not endpoint.model_name:
+                return {"ok": False, "error": "provider_endpoint_or_model_missing"}
+            api_key = duqu_endpoint_api_miyao(endpoint.provider_identity, endpoint.base_url)
+            if not api_key:
+                return {"ok": False, "error": "provider_api_key_missing"}
+        except (ValueError, TypeError):
+            return {"ok": False, "error": "model_endpoint_invalid"}
+        result = probe_endpoint(self._kehuduan, endpoint, api_key)
+        _jilu_l4_youhua_zhuizong(
+            {"provider": endpoint.optimization_family, "provider_identity": endpoint.provider_identity,
+             "model": endpoint.model_name, "purpose": "connection_probe"},
+            api_status="ok" if result["ok"] else result.get("error", "probe_failed"),
+            http_status=result.get("http_status"), latency_ms=result["latency_ms"], retry_count=0,
+            usage=result.get("usage"),
+        )
+        return result
+
     def guanbi(self):
         self._kehuduan.close()
 

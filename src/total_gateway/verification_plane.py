@@ -36,6 +36,7 @@ from __future__ import annotations
 # 1.64 recovers one truncated judge turn under the same authority and deadline.
 # 1.65 carries the bounded recovery budget through the actual HTTP call scope.
 # 1.67 binds explicit application ownership metadata in the action authority.
-VERIFICATION_PLANE_VERSION = "1.67"
+# 1.68 unifies connection probes with configured credentials and execution transport.
+VERIFICATION_PLANE_VERSION = "1.68"
 
 __all__ = ["VERIFICATION_PLANE_VERSION"]

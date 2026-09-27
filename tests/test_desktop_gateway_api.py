@@ -94,6 +94,18 @@ class _UpstreamHandler(BaseHTTPRequestHandler):
 
 
 class DesktopGatewayApiTests(unittest.TestCase):
+    def test_connection_probe_uses_authenticated_backend_route(self) -> None:
+        denied, _ = self.request("POST", "/api/v1/llm/probe", {}, token="", origin=None)
+        self.assertEqual(denied.status, 401)
+        self.assertEqual(denied.getheader("Connection"), "close")
+        self.assertEqual(self.upstream.calls, [])
+        response, payload = self.request("POST", "/api/v1/llm/probe", {})
+        self.assertEqual(response.status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(self.upstream.calls[-1]["path"], "/api/v1/llm/probe")
+        self.assertEqual(self.upstream.calls[-1]["token"], BACKEND_TOKEN)
+        self.assertEqual(self.upstream.calls[-1]["payload"], {})
+
     def test_failed_execution_exposes_original_error_code_and_recovery_action(self) -> None:
         snapshots = [SimpleNamespace(machine="request", run_id="run_test", generation=3)]
         cases = (
@@ -355,6 +367,7 @@ class DesktopGatewayApiTests(unittest.TestCase):
             headers={"Content-Type": "text/plain"},
         )
         self.assertEqual(response.status, 415)
+        self.assertEqual(response.getheader("Connection"), "close")
         self.assertEqual(payload["reason_code"], "desktop_api.content_type.invalid")
         self.assertEqual(len(self.upstream.calls), before)
 

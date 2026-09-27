@@ -100,15 +100,13 @@ class StageDDesktopProbeStaticTests(unittest.TestCase):
         start = text.index("async function probeProviderApiConnection()")
         end = text.index("\nfunction ", start + 20) if "\nfunction " in text[start + 20:] else len(text)
         body = text[start:end]
-        self.assertIn('protocolFamily === "openai_responses"', body)
-        self.assertIn('protocolFamily === "anthropic_messages"', body)
-        self.assertIn('protocolFamily === "openai_chat_completions"', body)
-        self.assertIn('suffix = "responses"', body)
-        self.assertIn('suffix = "v1/messages"', body)
-        self.assertIn('suffix = "chat/completions"', body)
-        self.assertIn('native_tools_supported: false', body)
-        self.assertIn('store: false', body)
-        self.assertNotIn('suffix = "models"', body)
+        self.assertIn('backendControlJsonRequest("POST", "/api/v1/llm/probe", {}, 30000)', body)
+        self.assertNotIn('apiKey', body)
+        self.assertNotIn('safeStorage', body)
+        registry = (BACKEND / "v3/jineng/model_transport_registry.py").read_text(encoding="utf-8")
+        self.assertIn('transport = get_model_transport(endpoint.protocol_family)', registry)
+        self.assertIn('"streaming_supported": False', registry)
+        self.assertIn('"native_tools_supported": False', registry)
 
     def test_renderer_exposes_one_service_field_and_protocol_field(self) -> None:
         text = (ROOT / "app" / "frontend-v2" / "renderer" / "plugins" / "settings-panel.mjs").read_text(encoding="utf-8")

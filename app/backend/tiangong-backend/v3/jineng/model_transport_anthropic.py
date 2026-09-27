@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from typing import Any, Mapping
 
-from ..model_endpoint import ModelEndpointConfig, ProtocolFamily
+from ..model_endpoint import ModelEndpointConfig, ProtocolFamily, append_model_endpoint_path
 from ..model_protocol_contract import ProviderContinuationState, ProviderTurnEnvelope, ToolCallBinding, stable_hash
 from .model_context_cache import apply_append_context
 from .model_transport_contract import (
@@ -24,7 +24,7 @@ class AnthropicMessagesTransport:
     protocol_family = ProtocolFamily.ANTHROPIC_MESSAGES.value
 
     def build_url(self, endpoint: ModelEndpointConfig) -> str:
-        return f"{endpoint.base_url.rstrip('/')}/v1/messages"
+        return append_model_endpoint_path(endpoint.base_url, "v1/messages")
 
     def build_headers(self, endpoint: ModelEndpointConfig, api_key: str) -> dict[str, str]:
         overrides = endpoint.endpoint_overrides or {}

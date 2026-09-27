@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from typing import Any, Mapping
 
-from ..model_endpoint import ModelEndpointConfig, ProtocolFamily
+from ..model_endpoint import ModelEndpointConfig, ProtocolFamily, append_model_endpoint_path
 from ..model_protocol_contract import ProviderContinuationState, ProviderTurnEnvelope, ToolCallBinding, stable_hash
 from .model_context_cache import apply_append_context
 from .model_transport_contract import (
@@ -23,7 +23,7 @@ class OpenAIChatTransport:
     protocol_family = ProtocolFamily.OPENAI_CHAT_COMPLETIONS.value
 
     def build_url(self, endpoint: ModelEndpointConfig) -> str:
-        return f"{endpoint.base_url.rstrip('/')}/chat/completions"
+        return append_model_endpoint_path(endpoint.base_url, "chat/completions")
 
     def build_headers(self, endpoint: ModelEndpointConfig, api_key: str) -> dict[str, str]:
         return {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}

@@ -2,6 +2,8 @@
 
 ## 2026-09-27 剩余能力实施（当前）
 
+新增源码 API 连接问题排查与修复，见[连接修复记录](../ontology/SOURCE_API_REPAIR_2026-09-27.md)。当前验证平面 1.68；当前候选跨平台 CI 和真实任务证据另验，main 合并仍暂停。
+
 上一批 PR #114 头部 `048c663` 已通过其检查，但用户要求先补齐剩余问题，尚未合并 main。当前按[剩余计划](../ontology/REMAINING_IMPLEMENTATION.md)继续实施，会话、OAuth、长作业、本地能力和媒体观察的具体状态见[本批记录](../ontology/REMAINING_IMPLEMENTATION_RESULT.md)。新候选不沿用旧 CI 通过；整体方案及未接后端仍开放。
 
 ## 2026-09-27 本体能力统一实施（上一批）
