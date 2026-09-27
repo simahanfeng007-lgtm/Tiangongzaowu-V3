@@ -695,6 +695,7 @@ _SESSION_LOCK = threading.RLock()
 _SESSIONS: dict[tuple, dict] = {}
 _SESSION_LIMIT = 32
 _SESSION_IDLE_SECONDS = 900
+_CLEANUP_REGISTERED = False
 
 
 def close_sessions(*, scope: str | None = None, server: str | None = None) -> int:
@@ -722,6 +723,7 @@ def connection(server, timeout_ms, *, scope=None, expected_connection=None):
     Slow initialization holds only this connection's lock. Other applications
     remain usable. An expected expired/config-changed connection is rejected.
     """
+    global _CLEANUP_REGISTERED
     timeout_ms = max(1000, min(int(timeout_ms), MAX_TIMEOUT_MS))
     deadline = time.monotonic() + timeout_ms / 1000
     cfg = _resolve_server(server)
@@ -741,6 +743,9 @@ def connection(server, timeout_ms, *, scope=None, expected_connection=None):
     closing = []
     try:
         with _SESSION_LOCK:
+            if not _CLEANUP_REGISTERED:
+                atexit.register(close_sessions)
+                _CLEANUP_REGISTERED = True
             for old_key, old in list(_SESSIONS.items()):
                 if time.monotonic() - old["used"] > _SESSION_IDLE_SECONDS and old["lock"].acquire(False):
                     del _SESSIONS[old_key]
@@ -793,9 +798,6 @@ def connection(server, timeout_ms, *, scope=None, expected_connection=None):
     finally:
         entry["used"] = time.monotonic()
         lock.release()
-
-
-atexit.register(close_sessions)
 
 
 def list_tools(server: str, *, timeout_ms: int = DEFAULT_TIMEOUT_MS, cursor: str | None = None,

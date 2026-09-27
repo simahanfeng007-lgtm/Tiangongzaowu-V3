@@ -23,7 +23,7 @@
   "src/bundled_skills/novel-creation/references/emotion-engine.md": "bab2921239f9e1c9321008497a4c3e08a4d87f36102f9f21aa18ccb62583dca7",
   "src/bundled_skills/novel-creation/references/quality-rules.md": "5bbaa4ff3ddf48d1befcd3ad9e17dab6db5c1e256135464051e5937187eb1b1d",
   "src/bundled_skills/novel-creation/references/workflow.md": "65f8cf9a8747853b9909ded294b3c5676ab2eae61a4a7340318973ab44d19d3c",
-  "src/omni_body_skill/tools/mcp_client.py": "cbc0b4f65a7955f7a21b29153861cb379a34cfcbd45f70219ecee1fa8191344b",
+  "src/omni_body_skill/tools/mcp_client.py": "8d42af070cb59909484df42885a755b54ad2a3f8f6138d23dd5755e570a3977b",
   "src/omni_body_skill/tools/mcp_oauth.py": "b5bebc6c698d577cbf121b2af9307c70d1b3802baae34eaa8a21a9414f9233db",
   "src/omni_body_skill/tools/local_apps.py": "1c211033a56f90c5c306efc1147eb18f829500b1c2f42dc15ae421a199bbbb18",
   "src/omni_body_skill/tools/media_observation.py": "b4f011bee4ffd14726be1e3c8ab8c22bb527d66e8559b899cdaae12b6858e074",

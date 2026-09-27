@@ -26021,7 +26021,6 @@
       "runtime_literal_references": [
         "src/omni_body_skill/tools/mcp_client.py:241",
         "src/omni_body_skill/tools/pro_apps_v34.py:1119",
-        "src/omni_body_skill/tools/pro_apps_v34.py:217",
         "src/omni_body_skill/tools/pro_apps_v34.py:77"
       ],
       "semantic_atomicity_review": "explicit_change_review",
@@ -26164,7 +26163,7 @@
       "retry": "observe_before_retry",
       "review_scope": "source_definition_and_binding_review",
       "runtime_literal_references": [
-        "src/omni_body_skill/tools/mcp_client.py:898",
+        "src/omni_body_skill/tools/mcp_client.py:900",
         "src/omni_body_skill/tools/pro_apps_v34.py:82"
       ],
       "semantic_atomicity_review": "not_claimed_complete",
@@ -26307,7 +26306,6 @@
       "review_scope": "source_definition_and_binding_review",
       "runtime_literal_references": [
         "src/omni_body_skill/tools/pro_apps_v34.py:1151",
-        "src/omni_body_skill/tools/pro_apps_v34.py:217",
         "src/omni_body_skill/tools/pro_apps_v34.py:79"
       ],
       "semantic_atomicity_review": "explicit_change_review",
@@ -26357,7 +26355,6 @@
       "runtime_literal_references": [
         "src/omni_body_skill/tools/mcp_client.py:214",
         "src/omni_body_skill/tools/pro_apps_v34.py:1131",
-        "src/omni_body_skill/tools/pro_apps_v34.py:217",
         "src/omni_body_skill/tools/pro_apps_v34.py:78"
       ],
       "semantic_atomicity_review": "explicit_change_review",
@@ -36405,7 +36402,6 @@
       "retry": "observe_before_retry",
       "review_scope": "source_definition_and_binding_review",
       "runtime_literal_references": [
-        "src/omni_body_skill/tools/pro_apps_v34.py:208",
         "src/omni_body_skill/tools/pro_apps_v34.py:275",
         "src/omni_body_skill/tools/pro_apps_v34.py:75"
       ],
