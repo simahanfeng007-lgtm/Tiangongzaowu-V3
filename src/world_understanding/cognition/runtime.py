@@ -14,6 +14,7 @@ from pathlib import Path
 import sys
 
 from contracts.canonical import canonical_sha256
+from contracts.native_json import native_json_sha256
 from contracts.cognition_evidence import CognitionEvidence, CognitionSourceRef, derive_cognition_evidence_id
 from contracts.cognition_statement import CognitionValue
 from contracts.world_understanding._base import WorldRecordRef
@@ -41,10 +42,10 @@ def observation_binding(invocation, result, raw_result=None):
     action = invocation["action"]
     target = str(invocation.get("target") or "")
     binding = {"schema": "tiangong.native-observation-binding.v1", "action": action,
-        "target": target[:4096], "input_sha256": canonical_sha256(invocation),
+        "target": target[:4096], "input_sha256": native_json_sha256(invocation),
         "condition_sha256": execution_condition(),
         "action_sha256": canonical_sha256(load_dictionary().tools[action]),
-        "result_sha256": canonical_sha256(result)}
+        "result_sha256": native_json_sha256(result)}
     if action in {"file.hash", "file.read"} and result.get("ok") is True and isinstance(raw_result, dict):
         # Read native result wrappers only. File contents are never parsed.
         pending = [raw_result]

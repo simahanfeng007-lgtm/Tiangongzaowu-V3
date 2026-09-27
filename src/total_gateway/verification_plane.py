@@ -32,7 +32,7 @@ from __future__ import annotations
 # 1.56 makes novel content judgments advisory and validates recovery before writes.
 # 1.57 aligns public novel preflight with the v2 observation/repair contract.
 # 1.58 preserves Windows transaction lock bytes while maintaining process exclusion.
-# 1.62 closes backup handles and flushes new artifacts portably before publication.
-VERIFICATION_PLANE_VERSION = "1.62"
+# 1.63 binds finite native numeric arguments without widening signed contracts.
+VERIFICATION_PLANE_VERSION = "1.63"
 
 __all__ = ["VERIFICATION_PLANE_VERSION"]

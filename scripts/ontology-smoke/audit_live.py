@@ -18,7 +18,7 @@ def digest(value):
 parser=argparse.ArgumentParser()
 parser.add_argument('--attempt', default='1')
 parser.add_argument('--audit-id', default='')
-parser.add_argument('--case', action='append', choices=('local','browser','mcp','quality','document','novel','local-apps','mcp-tasks','media'))
+parser.add_argument('--case', action='append', choices=('local','browser','mcp','quality','document','novel','local-apps','mcp-tasks','media','video'))
 parser.add_argument('--source-root',type=Path,default=Path(__file__).resolve().parents[2])
 parser.add_argument('--output-root',type=Path,required=True)
 args=parser.parse_args()
@@ -115,6 +115,13 @@ for kind in args.case or ('local','browser','mcp','quality','document','novel'):
         assert sorted(j['status'] for j in jobs.values())==['cancelled','completed']
         actual={'one_real_created_record':rows[0],'task_statuses':['cancelled','completed'],
                 'initialize_count':1,'two_submissions_no_replay':True}
+    elif kind=='video':
+        assert json.loads((p/'workspace/result.json').read_text())=={'blue_squares':3,'red_triangles':1}
+        observed=[o for o in state['observations'] if o.get('tool_action')=='video.observe_frames' and o.get('ok')]
+        assert observed
+        assert record['independent_check']['original_inputs_unchanged']
+        actual={'blue_squares':3,'red_triangles':1,'sampled_video_observation_succeeded':True,
+                'scope':'two selected frames, not full video or audio'}
     elif kind=='media':
         assert json.loads((p/'workspace/result.json').read_text())=={'blue_squares':3,'red_triangles':1}
         assert any(o.get('tool_action')=='image.observe' and o.get('ok') for o in state['observations'])

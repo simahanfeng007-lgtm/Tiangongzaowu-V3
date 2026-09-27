@@ -7,7 +7,7 @@ Guards (M6 §7/§8) — enforced with AST/contract scans:
 - exactly ONE store schema authority constant
 - CompletionDecision construction lives ONLY in completion_gate.py
 - no standalone repair runtime/daemon entry point
-- the single Verification Plane version source exists and is "1.62"
+- the single Verification Plane version source exists and is "1.63"
 
 Freeze guard (M6 §23/§24): the freeze manifest records the authority
 surface hashes; any change fails with VERIFICATION_PLANE_FREEZE_CHANGED
@@ -149,12 +149,12 @@ class ArchitectureGuardTests(unittest.TestCase):
             VERIFICATION_PLANE_VERSION,
         )
 
-        self.assertEqual(VERIFICATION_PLANE_VERSION, "1.62")
+        self.assertEqual(VERIFICATION_PLANE_VERSION, "1.63")
         # the literal must appear in exactly ONE src module
         holders = [
             path.relative_to(ROOT)
             for path in _iter_py_files()
-            if '"1.62"' in (
+            if '"1.63"' in (
                 path.read_text(encoding="utf-8")
             )
             and path.name == "verification_plane.py"
@@ -241,6 +241,7 @@ class VerificationPlaneFreezeGuardTests(unittest.TestCase):
         "src/total_gateway/composition_lessons.py",
         "src/life_service/composition_memory.py",
         "src/world_understanding/cognition/runtime.py",
+        "src/contracts/native_json.py",
         "src/world_understanding/context_output/runtime_facts.py",
         "src/world_understanding/inquiry/observation.py",
         "app/backend/tiangong-backend/v3/world_dictionary_binding.py",

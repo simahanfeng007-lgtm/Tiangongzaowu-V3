@@ -17,7 +17,7 @@ import urllib.error
 
 BASE = Path(__file__).resolve().parent
 parser = argparse.ArgumentParser(description=__doc__)
-parser.add_argument('case', choices=['local', 'browser', 'mcp', 'quality', 'document', 'novel', 'local-apps', 'media', 'mcp-tasks'])
+parser.add_argument('case', choices=['local', 'browser', 'mcp', 'quality', 'document', 'novel', 'local-apps', 'media', 'mcp-tasks', 'video'])
 parser.add_argument('--attempt', default='1')
 parser.add_argument('--source-root', type=Path, default=BASE.parents[1])
 parser.add_argument('--output-root', type=Path, required=True)
@@ -47,6 +47,15 @@ if args.case == 'local-apps':
     (workspace/'bad.csv').write_text('name,value\nnew,10\nbroken,11,extra\n')
     (workspace/'good.csv').write_text('name,value\nnew,10\n')
     prompt = '对工作区 records.sqlite 实际使用 sqlite.schema.read，先尝试用 sqlite.table.import_csv 导入 bad.csv 并确认失败后没有部分写入，再以 good.csv 修复该次导入，关联 repair_of。随后用 sqlite.table.export_csv 全量导出 records 表到 all.csv，使用 sqlite.backup.create 备份到 backup.sqlite，并回读核对数据库、CSV 和备份的总行数与 value 总和。用 obsidian.note.create 在 vault/结果.md 记录事实，再通过 note.read 取得版本、note.update 增加失败及恢复记录、link.create 加上引用核对记录；使用 vault.list、search、graph.export 实际检查并导出 links.json。报告 report.md 包含实际结果并回读。只修改 records.sqlite 和新生成文件，不修改两个输入 CSV；复用上述专用接口，不用通用写文件代替它们。'
+elif args.case == 'video':
+    from PIL import Image, ImageDraw
+    picture=Image.new('RGB',(600,260),'white');draw=ImageDraw.Draw(picture)
+    for x in (20,140,260): draw.rectangle((x,40,x+70,110),fill='blue')
+    draw.polygon([(440,40),(390,130),(490,130)],fill='red')
+    png=workspace/'fixture.png';picture.save(png)
+    subprocess.run(['ffmpeg','-nostdin','-v','error','-loop','1','-i',str(png),'-t','2','-c:v','mpeg4',str(workspace/'unknown.mp4')],check=True,timeout=30)
+    png.unlink()
+    prompt = '请用 video.observe_frames 实际观察工作区 unknown.mp4 的第 0 秒和第 0.5 秒两个画面。核对这两个采样画面内蓝色正方形与红色三角形的数量是否相同；若一致，将单个采样画面的两个整数存为 result.json 的 blue_squares、red_triangles 字段。保存 report.md，明确实际采样时点、源文件版本、两个画面是否一致，并说明未观察音轨和未采样时段。实际回读 JSON 和报告。不要用文件名、元数据或自己写像素检测程序代替视觉模型观察，不修改原视频。'
 elif args.case == 'media':
     from PIL import Image, ImageDraw
     picture=Image.new('RGB',(600,260),'white');draw=ImageDraw.Draw(picture)
@@ -215,7 +224,7 @@ try:
                 'graph_exists':(workspace/'links.json').is_file(),'report_exists':(workspace/'report.md').is_file()}
         total=[236,sum(range(235))+10]
         expected={'db':total,'backup':total,'csv':total,'note_has_link':True,'graph_exists':True,'report_exists':True}
-    elif args.case=='media':
+    elif args.case in ('media','video'):
         actual=json.loads((workspace/'result.json').read_text());expected={'blue_squares':3,'red_triangles':1}
     elif args.case=='local':
         actual=json.loads((workspace/'totals.json').read_text());expected={'杭州':12,'上海':6}

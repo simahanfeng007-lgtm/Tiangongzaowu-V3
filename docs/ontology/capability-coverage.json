@@ -9037,9 +9037,9 @@
         "src/omni_body_skill/tool_contracts.py:272",
         "src/omni_body_skill/tool_contracts.py:273",
         "src/omni_body_skill/tool_contracts.py:71",
-        "src/omni_body_skill/tools/omni_capability.py:125",
-        "src/omni_body_skill/tools/omni_capability.py:140",
-        "src/omni_body_skill/tools/omni_capability.py:26"
+        "src/omni_body_skill/tools/omni_capability.py:126",
+        "src/omni_body_skill/tools/omni_capability.py:141",
+        "src/omni_body_skill/tools/omni_capability.py:27"
       ],
       "semantic_atomicity_review": "not_claimed_complete",
       "summary": "Patch file by replacing literal or regex text with rollback snapshot."
@@ -9157,10 +9157,10 @@
         "src/omni_body_skill/tool_contracts.py:1658",
         "src/omni_body_skill/tool_contracts.py:273",
         "src/omni_body_skill/tool_contracts.py:73",
-        "src/omni_body_skill/tools/omni_capability.py:124",
-        "src/omni_body_skill/tools/omni_capability.py:130",
-        "src/omni_body_skill/tools/omni_capability.py:138",
-        "src/omni_body_skill/tools/omni_capability.py:25"
+        "src/omni_body_skill/tools/omni_capability.py:125",
+        "src/omni_body_skill/tools/omni_capability.py:131",
+        "src/omni_body_skill/tools/omni_capability.py:139",
+        "src/omni_body_skill/tools/omni_capability.py:26"
       ],
       "semantic_atomicity_review": "not_claimed_complete",
       "summary": "Write source code and optionally run syntax checks."
@@ -16864,7 +16864,7 @@
         "src/omni_body_skill/tool_contracts.py:1175",
         "src/omni_body_skill/tool_contracts.py:239",
         "src/omni_body_skill/tool_contracts.py:77",
-        "src/omni_body_skill/tools/omni_capability.py:34"
+        "src/omni_body_skill/tools/omni_capability.py:35"
       ],
       "semantic_atomicity_review": "not_claimed_complete",
       "summary": "Calculate SHA-256 for a file."
@@ -16926,7 +16926,7 @@
         "src/omni_body_skill/tool_contracts.py:1174",
         "src/omni_body_skill/tool_contracts.py:221",
         "src/omni_body_skill/tool_contracts.py:78",
-        "src/omni_body_skill/tools/omni_capability.py:34"
+        "src/omni_body_skill/tools/omni_capability.py:35"
       ],
       "semantic_atomicity_review": "not_claimed_complete",
       "summary": "List files/directories under a target directory."
@@ -16987,8 +16987,8 @@
         "src/omni_body_skill/tool_contracts.py:79",
         "src/omni_body_skill/tool_contracts.py:951",
         "src/omni_body_skill/tool_contracts.py:952",
-        "src/omni_body_skill/tools/omni_capability.py:126",
-        "src/omni_body_skill/tools/omni_capability.py:27"
+        "src/omni_body_skill/tools/omni_capability.py:127",
+        "src/omni_body_skill/tools/omni_capability.py:28"
       ],
       "semantic_atomicity_review": "not_claimed_complete",
       "summary": "Create a directory."
@@ -17158,7 +17158,7 @@
         "src/omni_body_skill/tool_contracts.py:81",
         "src/omni_body_skill/tool_contracts.py:959",
         "src/omni_body_skill/tools/omni_body_tool.py:1844",
-        "src/omni_body_skill/tools/omni_capability.py:34"
+        "src/omni_body_skill/tools/omni_capability.py:35"
       ],
       "semantic_atomicity_review": "not_claimed_complete",
       "summary": "Read text or base64-encoded binary file preview."
@@ -17329,9 +17329,9 @@
         "src/omni_body_skill/tool_contracts.py:1658",
         "src/omni_body_skill/tool_contracts.py:273",
         "src/omni_body_skill/tool_contracts.py:84",
-        "src/omni_body_skill/tools/omni_capability.py:123",
-        "src/omni_body_skill/tools/omni_capability.py:130",
-        "src/omni_body_skill/tools/omni_capability.py:24"
+        "src/omni_body_skill/tools/omni_capability.py:124",
+        "src/omni_body_skill/tools/omni_capability.py:131",
+        "src/omni_body_skill/tools/omni_capability.py:25"
       ],
       "semantic_atomicity_review": "not_claimed_complete",
       "summary": "Write text/base64 file with rollback snapshot."
@@ -33027,9 +33027,9 @@
         "src/omni_body_skill/tool_contracts.py:717",
         "src/omni_body_skill/tools/omni_body_tool.py:1380",
         "src/omni_body_skill/tools/omni_body_tool.py:2241",
-        "src/omni_body_skill/tools/omni_capability.py:110",
-        "src/omni_body_skill/tools/omni_capability.py:61",
-        "src/omni_body_skill/tools/omni_capability.py:92"
+        "src/omni_body_skill/tools/omni_capability.py:111",
+        "src/omni_body_skill/tools/omni_capability.py:62",
+        "src/omni_body_skill/tools/omni_capability.py:93"
       ],
       "semantic_atomicity_review": "not_claimed_complete",
       "summary": "Run Python code or a Python script in workspace; requires allow_python=True."
