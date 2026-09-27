@@ -24,7 +24,8 @@ EXPECTED_READERS = READERS | {"core.filesystem." + action for action in READERS}
 WRITERS = frozenset({"file.write", "code.write", "code.patch_replace", "file.mkdir"})
 EXPECTED_WRITER_RISKS = {
     "file.write": "A3", "code.write": "A3", "code.patch_replace": "A3", "file.mkdir": "A2",
-    "core.filesystem.file.write": "A3", "core.filesystem.file.mkdir": "A3",
+    # The explicit mkdir alias now has the same A2 contract as file.mkdir.
+    "core.filesystem.file.write": "A3", "core.filesystem.file.mkdir": "A2",
     "core.code.code.write": "A3", "core.code.code.patch_replace": "A3", "file.patch_replace": "A3",
 }
 EXPECTED_PYTHON = frozenset({"python.run", "core.code.python.run"})

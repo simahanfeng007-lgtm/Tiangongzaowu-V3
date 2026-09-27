@@ -89,7 +89,7 @@ def test_reasoning_judge_has_time_to_finish_without_exceeding_parent_budget(monk
     monkeypatch.setattr(reviewer, "_infer", infer)
     result = reviewer.judge(state, observations(), "候选", remaining_seconds=remaining)
     assert result["review"]["decision"] == "complete"
-    assert len(budgets) == 1 and 40 <= budgets[0] <= min(60, remaining - 5)
+    assert len(budgets) == 1 and 40 <= budgets[0] <= remaining - 5
 
 
 def test_large_evidence_gets_larger_reasoning_budget_and_retains_truncation_failure(monkeypatch):
@@ -103,10 +103,31 @@ def test_large_evidence_gets_larger_reasoning_budget_and_retains_truncation_fail
                                     usage={"completion_tokens": 16384})
     monkeypatch.setattr(reviewer, "_infer", infer)
     result = reviewer.judge(state, observations(), "candidate", remaining_seconds=120)
-    assert budgets == [(16384, 90)]
+    assert len(budgets) == 1 and budgets[0][0] == 16384
+    assert 110 < budgets[0][1] <= 115
     assert result["review"]["coverage_gaps"] == ["judge_output_truncated"]
     assert result["review"]["model_calls"][0]["usage"]["completion_tokens"] == 16384
     assert not reviewer.approved(state, observations(), "candidate")
+
+
+def test_evidence_retrieval_uses_unspent_parent_time_after_long_reasoning(monkeypatch):
+    reviewer, state = session(Client()), run_state()
+    clock = [100.0]
+    monkeypatch.setattr(review.time, "monotonic", lambda: clock[0])
+    budgets = []
+    candidate = "a" * 20000
+    def infer(endpoint, system, packet, *, seconds, cancel_check):
+        budgets.append(seconds)
+        if len(budgets) == 1:
+            clock[0] += 91
+            return verdict("continue", evidence_requests=[{
+                "ref": packet["candidate_ref"], "start": 12000, "length": 8000}])
+        return verdict()
+    monkeypatch.setattr(reviewer, "_infer", infer)
+    result = reviewer.judge(state, observations(), candidate, remaining_seconds=200)
+    assert budgets == [195, 104]
+    assert result["review"]["decision"] == "complete"
+    assert reviewer.approved(state, observations(), candidate)
 
 
 @pytest.mark.parametrize("bad", ["extra_authority", "contradiction", "duplicate", "forged_ref", "invented_requirement"])

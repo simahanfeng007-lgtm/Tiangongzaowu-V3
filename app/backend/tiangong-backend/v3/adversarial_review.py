@@ -537,8 +537,12 @@ class CompletionSession(ReviewSession):
                 output = None
                 try:
                     output = self._infer(endpoint, COMPLETION_SYSTEM, packet,
-                        seconds=min(90.0 if _judge_output_budget(packet) > 8192 else 60.0,
-                                    available - 5), cancel_check=cancel_check)
+                        # Evidence retrieval shares the parent's remaining
+                        # deadline. A progressing reasoning call must not be
+                        # cut short by an unrelated fixed 60/90 second cap.
+                        # Cancellation, transport inactivity and output limits
+                        # still apply; each next call gets only unspent time.
+                        seconds=available - 5, cancel_check=cancel_check)
                     provider_failure = model_turn_failure(output)
                     if provider_failure:
                         call["provider_failure"] = provider_failure
