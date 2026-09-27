@@ -1,11 +1,19 @@
 {
  "schema": "tiangong.p17.obligation-scan.v1",
  "summary": {
-  "total_hits": 3,
-  "explicit_feature_uses": 3,
+  "total_hits": 5,
+  "explicit_feature_uses": 5,
   "needs_review": 0
  },
  "hits": [
+  {
+   "kind": "pass_only_definition",
+   "label": "log_message",
+   "line": 213,
+   "classification": "explicit_feature_use",
+   "text": "def log_message(self, *args): pass",
+   "path": "app/backend/tiangong-backend/omni_body_skill/tools/mcp_oauth.py"
+  },
   {
    "kind": "pass_only_definition",
    "label": "log_message",
@@ -28,6 +36,14 @@
    "line": 312,
    "text": "except NotImplementedError:",
    "classification": "explicit_feature_use"
+  },
+  {
+   "kind": "pass_only_definition",
+   "label": "log_message",
+   "line": 213,
+   "classification": "explicit_feature_use",
+   "text": "def log_message(self, *args): pass",
+   "path": "src/omni_body_skill/tools/mcp_oauth.py"
   }
  ],
  "honesty": "Marker-class scan over the authoritative trees at build time. A 'needs_review' hit is a question, not a verdict; an explicit_feature_use is code whose job is to detect placeholders. This scan is one input to P17-B, never a substitute for the clause-level traceability matrix."

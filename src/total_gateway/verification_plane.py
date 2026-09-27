@@ -33,6 +33,7 @@ from __future__ import annotations
 # 1.57 aligns public novel preflight with the v2 observation/repair contract.
 # 1.58 preserves Windows transaction lock bytes while maintaining process exclusion.
 # 1.63 binds finite native numeric arguments without widening signed contracts.
-VERIFICATION_PLANE_VERSION = "1.63"
+# 1.64 recovers one truncated judge turn under the same authority and deadline.
+VERIFICATION_PLANE_VERSION = "1.64"
 
 __all__ = ["VERIFICATION_PLANE_VERSION"]

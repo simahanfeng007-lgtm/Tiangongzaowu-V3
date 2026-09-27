@@ -261,7 +261,11 @@ MAX_COMPLETION_ATTEMPTS = 6
 def _judge_output_budget(packet):
     """Allow reasoning over large evidence without removing the parent bound."""
     from .context_compactor import estimate_tokens
-    return 16384 if estimate_tokens(_json(packet)) > 12000 else 8192
+    base = 16384 if estimate_tokens(_json(packet)) > 12000 else 8192
+    # This field is host-generated after an incomplete provider turn. It does
+    # not contain a model verdict or authorize any executor/tool retry.
+    recovery = packet.get("output_limit_recovery") or {}
+    return max(base, min(32768, int(recovery.get("max_output_tokens") or base)))
 COMPLETION_SYSTEM = """You are the adversarial agent responsible for deciding whether the user's
 entire task is complete. The executor's answer is only a candidate. Challenge its completion claim
 against the original task, latest user guidance, actual observations and the candidate final delivery.
@@ -284,6 +288,8 @@ Ranges use Unicode character offsets (start >= 0, 1 <= length <= 12000). Request
 evidence by observation ref, the full evidence index by evidence_index_ref, or the candidate
 by candidate_ref. These are host reads of retained data, not new tool executions or permissions.
 Ask for omitted/truncated evidence before proposing a new check that could duplicate it.
+When only retained pages are missing, request those pages with a brief reason and coverage gap;
+do not repeat long provisional findings about data that has not yet been supplied.
 supplied_coverage gives exact ranges already present in this packet (including evidence_pages).
 An original excerpt can remain marked truncated after its missing pages were supplied. Consult
 missing_ranges before requesting pages; do not request an already supplied range or empty index.
@@ -521,6 +527,7 @@ class CompletionSession(ReviewSession):
             endpoint = roles["judge"]
             fallback_used = False
             protocol_retry_used = False
+            output_retry_used = False
             retrieval_reminder_used = False
             packet["evidence_pages"] = []
             for retrieval_round in range(16):
@@ -531,7 +538,8 @@ class CompletionSession(ReviewSession):
                 state["model_call_count"] = int(state.get("model_call_count") or 0) + 1
                 if state["model_call_count"] > 32:
                     raise ValueError("judge_budget_exhausted")
-                call = {"role": "judge", "model": public_model(endpoint), "status": "started"}
+                call = {"role": "judge", "model": public_model(endpoint), "status": "started",
+                        "max_output_tokens": _judge_output_budget(packet), "input_sha256": _sha(packet)}
                 record["model_calls"].append(call)
                 call_started = time.monotonic()
                 output = None
@@ -557,6 +565,23 @@ class CompletionSession(ReviewSession):
                     call["status"] = "unavailable"
                     call["elapsed_ms"] = round((time.monotonic() - call_started) * 1000)
                     call["usage"] = dict(getattr(output, "usage", None) or {})
+                    if call.get("provider_failure") == "output_truncated":
+                        # Never parse or deliver even a complete-looking prefix.
+                        # A single retry uses the SAME judge and immutable data,
+                        # shares the original deadline, and cannot replay tools.
+                        # A second truncation remains a real unavailable result;
+                        # do not switch judges to seek an approval.
+                        if (not output_retry_used and not self._busy.locked()
+                                and not (cancel_check and cancel_check())
+                                and remaining_seconds - (time.monotonic() - started) >= 40):
+                            output_retry_used = True
+                            packet["output_limit_recovery"] = {
+                                "previous_max_output_tokens": call["max_output_tokens"],
+                                "max_output_tokens": min(32768, call["max_output_tokens"] * 2),
+                                "instruction": "Your previous response reached its output limit and had no valid verdict. Review the same unchanged goal, candidate and retained evidence. No tools were rerun. Return concise required JSON; request only missing material pages, or decide from supplied evidence. Do not assume a previous approval or reduce the user's requirements."}
+                            record["output_limit_retries"] = 1
+                            continue
+                        raise
                     # An invalid JSON verdict (for example complete plus a
                     # request for more evidence) has no authority. Let the same
                     # pinned judge correct its protocol once, without changing

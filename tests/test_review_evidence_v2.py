@@ -139,6 +139,23 @@ def test_failed_judge_falls_back_once_with_explicit_record(endpoint):
     assert [c['status'] for c in result['model_calls']] == ['unavailable', 'completed']
 
 
+def test_repeated_output_truncation_never_switches_to_fallback(endpoint, monkeypatch):
+    from v3.model_protocol_contract import ProviderTurnEnvelope
+    other = replace(endpoint, provider_identity='other', model_name='different')
+    roles = model_roles.select_roles([endpoint, other])
+    reviewer = review.CompletionSession(Client(), endpoint_resolver=lambda: endpoint, roles_resolver=lambda: roles)
+    calls = []
+    def infer(selected, system, packet, **kwargs):
+        calls.append(selected.provider_identity)
+        return ProviderTurnEnvelope(verdict(), stop_semantics='output_truncated')
+    monkeypatch.setattr(reviewer, '_infer', infer)
+    state = run_state()
+    record = reviewer.judge(state, [], 'candidate', remaining_seconds=120)['review']
+    assert calls == ['other', 'other']
+    assert record['decision'] == 'unavailable' and not record.get('degraded_to_fallback')
+    assert not reviewer.approved(state, [], 'candidate')
+
+
 def test_inconsistent_verdict_can_request_evidence_after_one_protocol_repair():
     state = run_state()
     candidate = 'candidate'
