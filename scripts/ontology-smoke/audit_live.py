@@ -26,7 +26,8 @@ SOURCE=args.source_root.resolve()
 BASE=args.output_root.resolve()
 out=BASE/('audit-'+args.attempt+('-'+args.audit_id if args.audit_id else '')+'.json')
 if out.exists(): raise SystemExit('Refusing to replace prior audit')
-summary={'schema':'tiangong.ontology.live-audit.v1','checked_head':subprocess.check_output(['git','rev-parse','HEAD'],cwd=SOURCE,text=True).strip(),'cases':[]}
+summary={'schema':'tiangong.ontology.live-audit.v1','checked_head':subprocess.check_output(['git','rev-parse','HEAD'],cwd=SOURCE,text=True).strip(),
+    'audit_script_sha256':sha(Path(__file__).resolve()),'cases':[]}
 for kind in args.case or ('local','browser','mcp','quality','document','novel'):
     p=BASE/'live'/(kind+'-'+args.attempt)
     if kind in ('document','novel') and not p.exists():
@@ -177,7 +178,37 @@ for kind in args.case or ('local','browser','mcp','quality','document','novel'):
         assert chapters[0].read_bytes()=='星光熄灭。\n'.encode()
         assert ledger[0]['sha256']==sha(chapters[0]) and ledger[0]['content_quality']=='unassessed'
         history=[json.loads(f.read_text()) for f in (project/'.novel-system/transactions/committed').glob('*.json')]
-        assert len(history)==2 and any(t.get('previous_content')=='星光亮起。\n' for t in history)
+        # An actual judge repair can add revisions. Reconcile every successful
+        # submit with a retained transaction and its predecessor, not a quota.
+        transactions={t['lease_id']:t for t in history}
+        assert len(transactions)==len(history)
+        submissions=[o for o in state['observations']
+            if o.get('tool_action')=='novel.chapter.submit' and o.get('ok')]
+        assert submissions
+        submitted_leases={o['tool_args']['args']['lease_id'] for o in submissions}
+        seeds=[t for lease,t in transactions.items() if lease not in submitted_leases]
+        assert len(history)==len(submitted_leases)+1 and len(seeds)==1
+        previous=seeds[0]
+        assert previous['previous_record'] is None and previous['content']=='星光亮起。\n'
+        seen=set()
+        for submission in submissions:
+            arguments=submission['tool_args']['args'];lease=arguments['lease_id']
+            transaction=transactions[lease];receipt=submission['tool_result']['result']
+            content=arguments['content']
+            if not content.endswith('\n'):content+='\n'
+            assert transaction['status']=='committed' and transaction['content']==content
+            assert len(transaction['next_ledger'])==1
+            current=transaction['next_ledger'][0]
+            assert current['sha256']==hashlib.sha256(content.encode()).hexdigest()==receipt['chapter_sha256']
+            assert receipt['committed'] is True and receipt['revision_of']==current['revision_of']
+            if lease in seen:
+                continue  # Reobserving an idempotent receipt does not create a revision.
+            assert transaction['previous_record']==previous['next_ledger'][0]
+            assert transaction['previous_content']==previous['content']
+            assert current['revision_of']==previous['next_ledger'][0]['sha256']
+            assert current['pre_state_hash']==previous['next_state']['state_hash']
+            previous=transaction;seen.add(lease)
+        assert ledger==previous['next_ledger'] and previous['content']==chapters[0].read_text()
         calls=state['tool_calls']
         assert any(c.get('tool_action')=='novel.chapter.submit' and c.get('ok') for c in calls)
         readbacks=[o for o in state['observations'] if o.get('tool_action')=='file.read'
@@ -185,7 +216,8 @@ for kind in args.case or ('local','browser','mcp','quality','document','novel'):
         contents=[o['tool_result']['result']['content'] for o in readbacks]
         assert '星光亮起。\n' in contents and contents[-1]=='星光熄灭。\n'
         actual={'before_repair':'星光亮起。\n','after_repair':'星光熄灭。\n',
-            'retained_transactions':len(history),'ledger_count':len(ledger),'sha256':sha(chapters[0])}
+            'retained_transactions':len(history),'verified_submit_receipts':len(submissions),
+            'transaction_predecessors_verified':True,'ledger_count':len(ledger),'sha256':sha(chapters[0])}
     else:
         assert not (p/'workspace/must-not-execute.txt').exists()
         assert (p/'workspace/report.md').is_file()
