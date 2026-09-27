@@ -161,11 +161,11 @@ class PptDesignPipelineTests(unittest.TestCase):
             self.assertTrue(metadata["placeholder_free"])
 
             qc = self.delivery._qc_ppt(_WorkspaceRuntime(workspace), output, {})["result"]
-            self.assertTrue(qc["hard_gate_passed"], qc["issues"])
-            self.assertTrue(qc["acceptance"], qc)
+            self.assertEqual(qc["content_quality"], "unassessed")
+            self.assertNotIn("acceptance", qc)
             self.assertEqual(qc["visual_coverage"], 1.0)
 
-    def test_legacy_default_placeholder_deck_is_a_hard_failure(self) -> None:
+    def test_default_placeholder_deck_reports_structure_without_a_style_gate(self) -> None:
         from pptx import Presentation
 
         with tempfile.TemporaryDirectory() as temporary:
@@ -179,13 +179,12 @@ class PptDesignPipelineTests(unittest.TestCase):
             prs.save(output)
 
             qc = self.delivery._qc_ppt(_WorkspaceRuntime(workspace), output, {})["result"]
-            codes = {item["code"] for item in qc["issues"]}
-            self.assertFalse(qc["acceptance"])
-            self.assertFalse(qc["hard_gate_passed"])
-            self.assertIn("no_meaningful_visuals", codes)
-            self.assertIn("default_placeholder_layout", codes)
-            self.assertIn("legacy_aspect_ratio", codes)
-            self.assertLessEqual(qc["score"], 59)
+            self.assertEqual(qc["content_quality"], "unassessed")
+            self.assertNotIn("acceptance", qc)
+            self.assertNotIn("score", qc)
+            self.assertEqual(qc["inspection"]["placeholder_count"], 10)
+            self.assertEqual(qc["native_visual_count"], 0)
+            self.assertAlmostEqual(qc["aspect_ratio"], 4/3, places=3)
 
     def test_structured_chart_and_table_are_native_evidence_not_fake_numbers(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -217,7 +216,7 @@ class PptDesignPipelineTests(unittest.TestCase):
             self.assertEqual(inspection["slide_count"], 3)
             self.assertGreaterEqual(inspection["native_visual_count"], 2)
             qc = self.delivery._qc_ppt(_WorkspaceRuntime(workspace), output, {"min_slides": 3})["result"]
-            self.assertTrue(qc["acceptance"], qc)
+            self.assertNotIn("acceptance", qc)
             self.assertEqual(qc["native_visual_count"], 2)
 
 

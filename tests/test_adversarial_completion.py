@@ -23,7 +23,7 @@ def session(client):
         provider_identity="fixture", model_name="fixture", protocol_family="test", config_fingerprint="test"))
 
 
-@pytest.mark.parametrize("mode", [None, "typo", "judge"])
+@pytest.mark.parametrize("mode", [None, "typo", "judge", "off", "shadow", "advisory"])
 def test_default_and_invalid_configuration_require_agent(mode, monkeypatch):
     if mode is None:
         monkeypatch.delenv("TIANGONG_ADVERSARIAL_REVIEW", raising=False)

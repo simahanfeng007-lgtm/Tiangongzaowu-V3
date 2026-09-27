@@ -59,11 +59,12 @@ def session(client):
 
 @pytest.fixture(autouse=True)
 def enabled(monkeypatch):
-    monkeypatch.setenv("TIANGONG_ADVERSARIAL_REVIEW", "advisory")
+    # Historical advice parsing only; production configuration cannot select it.
+    monkeypatch.setattr(review, "review_mode", lambda: "advisory")
 
 
-def test_explicit_off_makes_no_call_and_no_state(monkeypatch):
-    monkeypatch.setenv("TIANGONG_ADVERSARIAL_REVIEW", "off")
+def test_historical_off_fixture_makes_no_call_and_no_state(monkeypatch):
+    monkeypatch.setattr(review, "review_mode", lambda: "off")
     client, state = Client(), run_state()
     assert session(client).review(state, observations(), "done", remaining_seconds=120) is None
     assert not client.calls and "adversarial_review" not in state
@@ -71,7 +72,7 @@ def test_explicit_off_makes_no_call_and_no_state(monkeypatch):
 
 @pytest.mark.parametrize("mode", ["shadow", "advisory"])
 def test_advice_is_bound_to_observations_and_existing_state(mode, monkeypatch):
-    monkeypatch.setenv("TIANGONG_ADVERSARIAL_REVIEW", mode)
+    monkeypatch.setattr(review, "review_mode", lambda: mode)
     client, state, evidence = Client(), run_state(), observations()
     original = deepcopy(evidence)
     result = session(client).review(state, evidence, "done", remaining_seconds=120)

@@ -3,7 +3,7 @@ Tiangong Omni Body v3.2 Delivery Kernel
 ======================================
 
 This module keeps the system a tool, not an agent. It provides deterministic
-quality gates, template operations, preview extraction, packaging, and basic
+content observations, template operations, preview extraction, packaging, and basic
 repair-plan generation. The model must still choose actions and iterate.
 """
 from __future__ import annotations
@@ -62,16 +62,13 @@ DELIVERY_ACTIONS: Dict[str, Dict[str, Any]] = {
     "template.list": {"risk": "A0", "implemented": True, "summary": "List delivery templates and rubrics shipped with the package."},
     "template.apply": {"risk": "A2", "implemented": True, "summary": "Apply a template skeleton and create a structured draft markdown/json file."},
     "preview.generate": {"risk": "A0", "implemented": True, "summary": "Generate lightweight preview/summary evidence for docx/pptx/xlsx/image/video/text deliverables."},
-    "rubric.evaluate": {"risk": "A0", "implemented": True, "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality."},
 
-    "qc.docx.delivery_check": {"risk": "A0", "implemented": True, "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality. Explicit managed-long-document manifests still receive structural checks."},
-    "qc.ppt.delivery_check": {"risk": "A0", "implemented": True, "summary": "Check executive-grade PPT deliverables for storyline, slide density, title quality, structure, evidence, and CTA."},
-    "qc.sheet.delivery_check": {"risk": "A0", "implemented": True, "summary": "Check spreadsheets for headers, empty cells, duplicate rows, numeric consistency, formulas, and delivery readiness."},
-    "qc.code.delivery_check": {"risk": "A0", "implemented": True, "summary": "Check code deliverables for syntax, tests, README, structure, security smells, and maintainability evidence."},
-    "qc.research.evidence_check": {"risk": "A0", "implemented": True, "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality."},
-    "qc.video.delivery_check": {"risk": "A0", "implemented": True, "summary": "Check short-video deliverables for playability, duration, aspect ratio, audio/subtitle evidence, hook/CTA metadata, and package readiness."},
-    "qc.image.delivery_check": {"risk": "A0", "implemented": True, "summary": "Check image/poster deliverables for dimensions, readability, text overflow risk, contrast proxy, and export readiness."},
-    "qc.writing.ai_tone_check": {"risk": "A0", "implemented": True, "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality."},
+    "qc.docx.delivery_check": {"risk": "A0", "implemented": True, "summary": "Observe actual document text and explicit managed manifest structure; no keyword, length-based completion or quality score."},
+    "qc.ppt.delivery_check": {"risk": "A0", "implemented": True, "summary": "Observe real PPT text and structure. Only explicit min_slides is checked; layout and content quality belong to the adversarial judge. No keyword, aspect-ratio or quality score gate."},
+    "qc.sheet.delivery_check": {"risk": "A0", "implemented": True, "summary": "Observe up to 1000 rows of CSV or first worksheet; report truncation, duplicates and blanks as facts. No formula evaluation or quality verdict."},
+    "qc.code.delivery_check": {"risk": "A0", "implemented": True, "summary": "Read source inventory and Python syntax without executing project code or commands. Use quality.run_tests through its execution authority for tests. Content quality unassessed."},
+    "qc.video.delivery_check": {"risk": "A0", "implemented": True, "summary": "Read ffprobe metadata and explicit duration constraints; does not observe audiovisual content, prove playability or score hooks and CTA."},
+    "qc.image.delivery_check": {"risk": "A0", "implemented": True, "summary": "Decode image and report dimensions, format and luminance statistics. No visual meaning, text readability or quality verdict."},
 
     "writing.outline.create": {"risk": "A2", "implemented": True, "summary": "Create a structured outline markdown for proposal, deck, research, novel, or video script workflows."},
     "research.evidence_table.create": {"risk": "A2", "implemented": True, "summary": "Create a structured research evidence table CSV/Markdown from supplied sources."},
@@ -138,7 +135,6 @@ RUBRIC_WEIGHTS = {
 }
 
 
-
 def handle_delivery_action(runtime: Any, op_id: str, action: str, target: str | None, args: Dict[str, Any]) -> Dict[str, Any]:
     if action in globals().get("NOVEL_SYSTEM_ACTIONS", {}):
         if globals().get("handle_novel_system_action") is None:
@@ -168,8 +164,6 @@ def handle_delivery_action(runtime: Any, op_id: str, action: str, target: str | 
         return _template_apply(runtime, target, args)
     if action == "preview.generate":
         return _preview_generate(runtime, target, args)
-    if action == "rubric.evaluate":
-        return _rubric_evaluate(runtime, target, args)
     if action == "qc.docx.delivery_check":
         return _qc_docx(runtime, target, args)
     if action == "qc.ppt.delivery_check":
@@ -178,14 +172,10 @@ def handle_delivery_action(runtime: Any, op_id: str, action: str, target: str | 
         return _qc_sheet(runtime, target, args)
     if action == "qc.code.delivery_check":
         return _qc_code(runtime, target, args)
-    if action == "qc.research.evidence_check":
-        return _qc_research(runtime, target, args)
     if action == "qc.video.delivery_check":
         return _qc_video(runtime, target, args)
     if action == "qc.image.delivery_check":
         return _qc_image(runtime, target, args)
-    if action == "qc.writing.ai_tone_check":
-        return _qc_writing(runtime, target, args)
     if action == "writing.outline.create":
         return _writing_outline_create(runtime, target, args)
     if action == "research.evidence_table.create":
@@ -210,85 +200,67 @@ def _write_json(path: Path, data: Any) -> None:
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def _text_prefix(parts, max_chars: int) -> str:
+    chunks = []
+    remaining = max_chars
+    for part in parts:
+        value = ("\n" if chunks else "") + str(part)
+        chunks.append(value[:remaining])
+        remaining -= min(len(value), remaining)
+        if remaining <= 0:
+            break
+    return "".join(chunks)
+
+
 def _read_text_any(path: Path, max_chars: int = 300_000) -> str:
+    """Read an actual, bounded text prefix; failed parsing is never empty success."""
     suffix = path.suffix.lower()
     if suffix in {".md", ".txt", ".json", ".csv", ".py", ".js", ".ts", ".html", ".xml", ".opml"}:
-        return path.read_text(encoding="utf-8", errors="ignore")[:max_chars]
+        with path.open(encoding="utf-8-sig", errors="strict") as stream:
+            return stream.read(max_chars)
     if suffix == ".docx":
-        return _extract_docx_text(path)[:max_chars]
-    if suffix == ".pptx":
-        return _extract_pptx_text(path)[:max_chars]
-    if suffix == ".xlsx":
-        return _extract_xlsx_text(path)[:max_chars]
-    if suffix == ".pdf":
-        try:
-            import pypdf  # type: ignore
-            reader = pypdf.PdfReader(str(path))
-            return "\n".join((page.extract_text() or "") for page in reader.pages)[:max_chars]
-        except Exception:
-            return ""
-    return ""
-
-
-def _zip_xml_text(path: Path, patterns: Tuple[str, ...]) -> str:
-    out: List[str] = []
-    try:
-        with zipfile.ZipFile(path) as zf:
-            for name in zf.namelist():
-                if any(name.startswith(p) for p in patterns) and name.endswith(".xml"):
-                    raw = zf.read(name).decode("utf-8", errors="ignore")
-                    text = re.sub(r"<[^>]+>", " ", raw)
-                    text = re.sub(r"\s+", " ", text).strip()
-                    if text:
-                        out.append(text)
-    except Exception:
-        pass
-    return "\n".join(out)
-
-
-def _extract_docx_text(path: Path) -> str:
-    try:
-        import docx  # type: ignore
+        import docx
         doc = docx.Document(str(path))
-        parts = [p.text for p in doc.paragraphs if p.text.strip()]
-        for table in doc.tables:
-            for row in table.rows:
-                parts.append(" | ".join(cell.text for cell in row.cells))
-        return "\n".join(parts)
-    except Exception:
-        return _zip_xml_text(path, ("word/",))
-
-
-def _extract_pptx_text(path: Path) -> str:
-    try:
-        from pptx import Presentation  # type: ignore
-        prs = Presentation(str(path))
-        lines: List[str] = []
-        for idx, slide in enumerate(prs.slides, start=1):
-            lines.append(f"[slide {idx}]")
-            for shape in slide.shapes:
-                if hasattr(shape, "text") and str(shape.text).strip():
-                    lines.append(str(shape.text).strip())
-        return "\n".join(lines)
-    except Exception:
-        return _zip_xml_text(path, ("ppt/slides/",))
-
-
-def _extract_xlsx_text(path: Path) -> str:
-    rows: List[str] = []
-    try:
-        import openpyxl  # type: ignore
-        wb = openpyxl.load_workbook(str(path), read_only=True, data_only=False)
+        def parts():
+            yield from (p.text for p in doc.paragraphs)
+            for table in doc.tables:
+                for row in table.rows:
+                    yield " | ".join(cell.text for cell in row.cells)
+        return _text_prefix(parts(), max_chars)
+    if suffix == ".pptx":
+        from pptx import Presentation
+        presentation = Presentation(str(path))
+        def parts():
+            for number, slide in enumerate(presentation.slides, 1):
+                yield f"[slide {number}]"
+                for shape in slide.shapes:
+                    if hasattr(shape, "text"):
+                        yield shape.text
+        return _text_prefix(parts(), max_chars)
+    if suffix == ".xlsx":
+        import openpyxl
+        workbook = openpyxl.load_workbook(str(path), read_only=True, data_only=False)
         try:
-            for ws in wb.worksheets:
-                rows.append(f"[sheet {ws.title}]")
-                for r in ws.iter_rows(max_row=50, values_only=True):
-                    rows.append(" | ".join("" if c is None else str(c) for c in r))
+            def parts():
+                for sheet in workbook.worksheets:
+                    yield f"[sheet {sheet.title}]"
+                    for row in sheet.iter_rows(values_only=True):
+                        yield " | ".join("" if value is None else str(value) for value in row)
+            return _text_prefix(parts(), max_chars)
         finally:
-            wb.close()
-        return "\n".join(rows)
-    except Exception:
-        return _zip_xml_text(path, ("xl/worksheets/",))
+            workbook.close()
+    if suffix == ".pdf":
+        from pypdf import PdfReader
+        reader = PdfReader(str(path))
+        return _text_prefix((page.extract_text() or "" for page in reader.pages), max_chars)
+    raise ValueError("preview.text_format_unsupported:" + suffix)
+
+
+def _text_scope(path: Path) -> str:
+    return {".docx": "body_paragraphs_and_tables_only; headers_footnotes_images_layout_not_observed",
+            ".pptx": "slide_shape_text_only; notes_charts_images_layout_not_observed",
+            ".xlsx": "cell_values_and_formulas_only; formulas_not_recalculated; charts_layout_not_observed",
+            ".pdf": "extractable_page_text_only; no_OCR_or_render"}.get(path.suffix.lower(), "UTF-8_text_prefix")
 
 
 def _sentence_stats(text: str) -> Dict[str, Any]:
@@ -299,34 +271,6 @@ def _sentence_stats(text: str) -> Dict[str, Any]:
         "avg_sentence_chars": round(sum(lengths) / max(1, len(lengths)), 1),
         "long_sentence_count": sum(1 for n in lengths if n > 90),
     }
-
-
-def _score_from_issues(max_score: int, issues: List[Dict[str, Any]], warnings: List[Dict[str, Any]] | None = None) -> int:
-    score = max_score
-    has_critical = False
-    for issue in issues:
-        sev = issue.get("severity", "medium")
-        has_critical = has_critical or sev == "critical"
-        score -= {"critical": 20, "high": 12, "medium": 7, "low": 3}.get(sev, 5)
-    for warning in warnings or []:
-        score -= 2 if warning.get("severity", "low") == "low" else 4
-    # A corrupt/unreadable artifact or a critical correctness defect must never
-    # cross the delivery threshold merely because the rubric starts at 100.
-    if has_critical:
-        score = min(score, 59)
-    return max(0, min(max_score, score))
-
-
-def _grade(score: int) -> str:
-    if score >= 90:
-        return "world_class_ready"
-    if score >= 80:
-        return "delivery_ready"
-    if score >= 70:
-        return "acceptable_with_minor_repair"
-    if score >= 60:
-        return "needs_repair"
-    return "not_ready"
 
 
 def _issue(code: str, message: str, severity: str = "medium", repair: str = "") -> Dict[str, Any]:
@@ -429,49 +373,46 @@ def _template_skeleton(template_id: str, v: Dict[str, Any]) -> str:
 
 def _preview_generate(runtime: Any, target: str | None, args: Dict[str, Any]) -> Dict[str, Any]:
     path = _resolve(runtime, target, must_exist=True)
-    text = _read_text_any(path, max_chars=int(args.get("max_chars", 12000)))
-    preview = {
-        "path": _rel(runtime, path),
-        "suffix": path.suffix.lower(),
-        "bytes": path.stat().st_size,
-        "text_chars": len(text),
-        "text_preview": text[:1500],
-        "line_count": text.count("\n") + 1 if text else 0,
-    }
-    if path.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}:
-        try:
-            from PIL import Image  # type: ignore
-            with Image.open(path) as im:
-                preview.update({"width": im.width, "height": im.height, "mode": im.mode, "format": im.format})
-        except Exception as exc:
-            preview["image_error"] = str(exc)
+    suffix = path.suffix.lower()
+    if suffix in {".mp4", ".mov", ".mkv", ".webm", ".avi"}:
+        return _qc_video(runtime, target, {})
+    preview = {"path": _rel(runtime, path), "suffix": suffix, "bytes": path.stat().st_size}
+    if suffix in {".png", ".jpg", ".jpeg", ".webp"}:
+        from PIL import Image
+        with Image.open(path) as image:
+            image.load()
+            preview.update(width=image.width, height=image.height, mode=image.mode, format=image.format,
+                           visual_content="not_observed", observation_scope="decoded_image_properties_only")
+    else:
+        maximum = args.get("max_chars", 12000)
+        if type(maximum) is not int or not 1 <= maximum <= 300000:
+            raise ValueError("preview.max_chars_must_be_integer_1_to_300000")
+        text = _read_text_any(path, max_chars=maximum + 1)
+        truncated = len(text) > maximum
+        observed = text[:maximum]
+        excerpt = observed[:1500]
+        preview.update(text_chars=len(observed), text_preview=excerpt,
+                       total_extracted_text_chars=None if truncated else len(observed),
+                       line_count=observed.count("\n") + 1 if observed else 0,
+                       line_count_in_observed_range=observed.count("\n") + 1 if observed else 0,
+                       observed_char_range=[0, len(observed)], preview_char_range=[0, len(excerpt)],
+                       text_truncated=truncated, preview_truncated=truncated or len(excerpt) < len(observed),
+                       observation_scope=_text_scope(path), rendered=False)
     return {"success": True, "result": preview, "evidence": {"path": _rel(runtime, path), "exists": True, "bytes": path.stat().st_size}}
-
-
-def _semantic_assessment(runtime: Any, target: str | None, args: Dict[str, Any], assessment_type: str) -> Dict[str, Any]:
-    """Read real input metadata; leave content quality judgment to the model."""
-    path = _resolve(runtime, target, must_exist=True) if target else None
-    content = str(args.get("content") or args.get("brief") or "")
-    evidence = {"path": _rel(runtime, path) if path else "content", "exists": bool(path),
-                "bytes": path.stat().st_size if path else len(content.encode("utf-8"))}
-    return {"success": True, "result": {"type": assessment_type, "assessment_mode": "model_required",
-            "score": None, "grade": "not_assessed", "acceptance": None, "issues": [], "warnings": []},
-            "evidence": evidence}
-
-
-def _rubric_evaluate(runtime: Any, target: str | None, args: Dict[str, Any]) -> Dict[str, Any]:
-    return _semantic_assessment(runtime, target, args, "content_rubric")
-
-
-def _cn_signal(key: str, text: str) -> bool:
-    return False
 
 
 def _qc_docx(runtime: Any, target: str | None, args: Dict[str, Any]) -> Dict[str, Any]:
     path = _resolve(runtime, target, must_exist=True)
     if str(args.get("document_type") or args.get("mode") or "").lower() in {"long_document", "managed_long_document", "longform"}:
-        return _qc_managed_long_document(runtime, path, _read_text_any(path), args)
-    return _semantic_assessment(runtime, target, args, "docx_business_delivery")
+        text = _read_text_any(path, max_chars=300001)
+        observed = _qc_managed_long_document(runtime, path, text[:300000], args)
+        observed["result"].update(text_truncated=len(text) > 300000,
+            observed_char_range=[0, min(len(text), 300000)], count_scope="observed_char_range",
+            observation_scope=_text_scope(path), rendered=False)
+        return observed
+    observed = _preview_generate(runtime, target, args)
+    observed["result"].update(assessment_mode="content_observation_only", content_quality="unassessed")
+    return observed
 
 
 def _qc_managed_long_document(runtime: Any, path: Path, text: str, args: Dict[str, Any]) -> Dict[str, Any]:
@@ -493,9 +434,9 @@ def _qc_managed_long_document(runtime: Any, path: Path, text: str, args: Dict[st
             issues.append(_issue("project_manifest_invalid", f"项目 manifest 不可解析：{exc}", "critical", "修复 manifest 后重新质检。"))
 
     target_words = manifest.get("target_words")
-    if not isinstance(target_words, int) or isinstance(target_words, bool) or target_words < 5_000:
-        issues.append(_issue("target_words_invalid", "manifest.target_words 必须是至少 5000 的整数。", "critical", "写入真实目标字数。"))
-        target_words = 5_000
+    if not isinstance(target_words, int) or isinstance(target_words, bool) or target_words < 1:
+        issues.append(_issue("target_words_invalid", "manifest.target_words 必须是正整数。", "critical", "写入真实目标字数。"))
+        target_words = None
     chapter_files = manifest.get("chapter_files")
     if not isinstance(chapter_files, list) or not chapter_files or not all(isinstance(item, str) and item.strip() for item in chapter_files):
         issues.append(_issue("chapter_files_invalid", "manifest.chapter_files 必须是非空相对路径数组。", "critical", "列出全部章节源文件。"))
@@ -526,158 +467,44 @@ def _qc_managed_long_document(runtime: Any, path: Path, text: str, args: Dict[st
             issues.append(_issue("missing_chapter_files", f"缺少 {len(missing)} 个章节源文件。", "critical", "先补齐章节再汇编。"))
 
     compact_chars = len(re.sub(r"\s+", "", text))
-    minimum_chars = max(5_000, int(target_words * 0.75))
-    if compact_chars < minimum_chars:
-        issues.append(_issue("document_incomplete", f"正文有效字符 {compact_chars}，低于目标完成门 {minimum_chars}。", "critical", "补齐全部计划章节并重新生成 DOCX。"))
-    heading_count = len(re.findall(r"(?m)^(?:第\s*[0-9一二三四五六七八九十百千万]+\s*[章节篇部]|[^\n]{1,80}\n[-=]{3,})", text))
-    if len(chapter_files) >= 2 and heading_count < 2:
-        warnings.append(_issue("weak_section_structure", "正文中可识别的章节结构偏少。", "medium", "保留清晰章节标题后重新生成。"))
-    paragraphs = [re.sub(r"\s+", "", item) for item in re.split(r"\n+", text) if len(re.sub(r"\s+", "", item)) >= 40]
-    duplicate_ratio = (len(paragraphs) - len(set(paragraphs))) / max(1, len(paragraphs))
-    if duplicate_ratio > 0.08:
-        issues.append(_issue("duplicate_paragraphs", f"长段落重复率 {duplicate_ratio:.1%}。", "high", "删除重复章节或段落后重新汇编。"))
+    structural_valid = not issues
+    report = {"type": "managed_long_document_delivery", "assessment_mode": "content_observation_only",
+        "content_quality": "unassessed", "target_words": target_words,
+        "effective_chars": compact_chars, "count_unit": "non_whitespace_characters_not_words",
+        "chapter_file_count": len(chapter_files), "missing_chapter_files": missing,
+        "manifest_valid": structural_valid, "issues": issues,
+        "completion_authority": "adversarial_judge"}
+    return {"success": True, "result": report, "evidence": {"path": _rel(runtime, path),
+        "manifest": _rel(runtime, manifest_path) if manifest_path else "",
+        "exists": path.exists(), "bytes": path.stat().st_size}}
 
-    score = _score_from_issues(100, issues, warnings)
-    hard_gate = not any(item.get("severity") == "critical" for item in issues)
-    acceptance = hard_gate and score >= 80
-    report = {
-        "type": "managed_long_document_delivery",
-        "score": score,
-        "grade": _grade(score),
-        "target_words": target_words,
-        "effective_chars": compact_chars,
-        "minimum_chars": minimum_chars,
-        "chapter_file_count": len(chapter_files),
-        "missing_chapter_files": missing,
-        "hard_gate_passed": hard_gate,
-        "issues": issues,
-        "warnings": warnings,
-        "acceptance": acceptance,
-    }
-    return {
-        "success": True,
-        "result": report,
-        "evidence": {
-            "path": _rel(runtime, path),
-            "manifest": _rel(runtime, manifest_path) if manifest_path else "",
-            "exists": path.exists(),
-            "bytes": path.stat().st_size,
-            "score": score,
-            "acceptance": acceptance,
-        },
-    }
 
 
 def _qc_ppt(runtime: Any, target: str | None, args: Dict[str, Any]) -> Dict[str, Any]:
     path = _resolve(runtime, target, must_exist=True)
-    issues: List[Dict[str, Any]] = []
-    warnings: List[Dict[str, Any]] = []
     inspection = _ppt_inspection(path)
     slides = list(inspection.get("slides") or [])
-    if not slides:
-        issues.append(_issue("ppt_unreadable", "无法读取 PPT 或没有幻灯片。", "critical", "重新生成 pptx 并检查文件可打开。"))
-    if len(slides) < int(args.get("min_slides", 5)):
-        issues.append(_issue("too_few_slides", "幻灯片数量不足，难以形成完整商业汇报。", "medium", "补充背景、核心结论、证据、路径、决策请求。"))
-
-    conclusion_titles = dense = weak_titles = low_content = placeholder_slides = visual_slides = 0
-    placeholder_layout_slides = 0
-    signatures: List[str] = []
-    for slide in slides:
-        title = str(slide.get("title", "")).strip()
-        body = str(slide.get("content_text") or slide.get("text", ""))
-        content_only = body[len(title):].strip() if title and body.startswith(title) else body.strip()
-        weak_titles += int(len(title) < 6)
-        dense += int(len(body) > 650 or body.count("\n") > 12)
-        low_content += int(len(re.sub(r"\s+", "", content_only)) < 24 and int(slide.get("visual_count") or 0) == 0)
-        visual_slides += int(int(slide.get("visual_count") or 0) > 0)
-        placeholder_layout_slides += int(int(slide.get("placeholder_count") or 0) > 0)
-        signature = re.sub(r"\d+", "#", re.sub(r"\s+", "", body.lower()))
-        signature = re.sub(r"[^a-z\u3400-\u9fff#]", "", signature)
-        if signature:
-            signatures.append(signature)
-
-    duplicate_ratio = (len(signatures) - len(set(signatures))) / max(1, len(signatures))
-    if weak_titles:
-        warnings.append(_issue("weak_titles", f"有 {weak_titles} 页标题过短或不明确。", "low", "补充标题中的判断/结论。"))
-    if dense:
-        issues.append(_issue("dense_slides", f"有 {dense} 页信息密度过高。", "medium", "拆页、压缩文字、用图表替代段落。"))
-    if slides and low_content > max(1, len(slides) // 2):
-        issues.append(_issue("mostly_empty_slides", f"有 {low_content}/{len(slides)} 页有效内容过少。", "critical", "补充真实结论、证据、数据或删除空泛页面。"))
-    if duplicate_ratio >= 0.60 and len(slides) >= 6:
-        issues.append(_issue("highly_repetitive_slides", f"页面结构化文本重复率为 {duplicate_ratio:.0%}。", "critical", "重写重复页面并建立不同证据与叙事角色。"))
-    elif duplicate_ratio >= 0.30:
-        issues.append(_issue("repetitive_slides", f"页面结构化文本重复率为 {duplicate_ratio:.0%}。", "high", "合并重复页面或增加差异化证据。"))
-
-    visual_coverage = visual_slides / max(1, len(slides))
-    native_visual_count = int(inspection.get("native_visual_count") or 0)
-    if len(slides) >= 3 and visual_slides == 0:
-        issues.append(_issue("no_meaningful_visuals", "整套演示稿没有图表、图片、表格或语义化视觉组件。", "critical", "应用设计模板，并把关键观点转成图表、证据表、路径图或信息卡片。"))
-    elif len(slides) >= 5 and visual_coverage < float(args.get("min_visual_coverage", 0.4)):
-        issues.append(_issue("weak_visual_coverage", f"有效视觉覆盖率仅 {visual_coverage:.0%}。", "high", "至少让40%的页面具有服务于结论的视觉表达。"))
-    if len(slides) >= 8 and native_visual_count == 0:
-        issues.append(_issue("no_native_evidence_visuals", "长演示稿没有图片、图表或表格证据。", "high", "在有真实数据或素材的页面加入至少一类原生证据视觉；不要编造数据。"))
-    if slides and placeholder_layout_slides / len(slides) >= 0.6:
-        severity = "critical" if visual_slides == 0 else "high"
-        issues.append(_issue("default_placeholder_layout", f"{placeholder_layout_slides}/{len(slides)} 页仍依赖默认占位符版式。", severity, "改用无默认占位符的设计系统版式。"))
-    if slides and not bool(inspection.get("is_widescreen")):
-        issues.append(_issue("legacy_aspect_ratio", f"页面比例为 {inspection.get('aspect_ratio') or 'unknown'}，不是16:9宽屏。", "critical", "改为16:9宽屏后重新排版，不能只拉伸页面。"))
-    if slides and not bool(inspection.get("has_explicit_fonts")):
-        issues.append(_issue("missing_explicit_fonts", "没有检测到明确字体设置，结果会依赖Office默认主题。", "high", "显式设置标题和正文字体并验证中文字体回退。"))
-    if not any(word in "\n".join(str(slide.get("text", "")) for slide in slides) for word in ["行动", "决策", "下一步", "建议", "CTA"]):
-        issues.append(_issue("missing_cta", "缺少行动建议或决策请求。", "high", "末页补充明确决策请求/下一步。"))
-
-    hard_gate_passed = not any(item.get("severity") == "critical" for item in issues)
-    score = _score_from_issues(100, issues, warnings)
-    if len(slides) >= 8 and native_visual_count == 0 and hard_gate_passed:
-        score = min(score, 89)
-    acceptance = hard_gate_passed and score >= 80
-    report = {
-        "type": "executive_ppt_delivery", "score": score, "grade": _grade(score), "slides": len(slides),
-        "conclusion_title_count": None, "dense_slide_count": dense, "low_content_slide_count": low_content,
-        "placeholder_slide_count": None, "layout_placeholder_slide_count": placeholder_layout_slides,
-        "duplicate_ratio": round(duplicate_ratio, 4), "visual_slide_count": visual_slides,
-        "visual_coverage": round(visual_coverage, 4), "native_visual_count": native_visual_count,
-        "designed_visual_count": int(inspection.get("designed_visual_count") or 0), "aspect_ratio": inspection.get("aspect_ratio"),
-        "is_widescreen": bool(inspection.get("is_widescreen")), "has_explicit_fonts": bool(inspection.get("has_explicit_fonts")),
-        "font_names": list(inspection.get("font_names") or []), "hard_gate_passed": hard_gate_passed,
-        "issues": issues, "warnings": warnings, "acceptance": acceptance,
-    }
-    return {"success": True, "result": report, "evidence": {"path": _rel(runtime, path), "exists": path.exists(), "bytes": path.stat().st_size, "score": score, "grade": report["grade"], "acceptance": acceptance}}
+    visual_count = sum(int(slide.get("visual_count") or 0) > 0 for slide in slides)
+    checks = []
+    if "min_slides" in args:
+        checks.append({"field": "slide_count", "minimum": int(args["min_slides"]),
+                       "actual": len(slides), "satisfied": len(slides) >= int(args["min_slides"])})
+    report = {"type": "executive_ppt_delivery", "assessment_mode": "content_observation_only",
+        "content_quality": "unassessed", "completion_authority": "adversarial_judge",
+        "slides": len(slides), "inspection": inspection,
+        "visual_coverage": visual_count / max(1, len(slides)),
+        "native_visual_count": int(inspection.get("native_visual_count") or 0),
+        "aspect_ratio": inspection.get("aspect_ratio"), "font_names": inspection.get("font_names", []),
+        "constraint_checks": checks, "layout_observation": "structure_only_not_rendered",
+        "issues": [], "warnings": []}
+    return {"success": True, "result": report, "evidence": {"path": _rel(runtime, path),
+            "exists": True, "bytes": path.stat().st_size}}
 
 
 def _ppt_inspection(path: Path) -> Dict[str, Any]:
-    try:
-        from .ppt_design import inspect_presentation  # type: ignore
-
-        return inspect_presentation(path)
-    except Exception:
-        slides: List[Dict[str, Any]] = []
-    try:
-        from pptx import Presentation  # type: ignore
-
-        prs = Presentation(str(path)); fonts: set[str] = set(); placeholders = native_visuals = 0
-        for slide in prs.slides:
-            texts: List[str] = []; visual_count = slide_placeholders = 0
-            for shape in slide.shapes:
-                text = str(getattr(shape, "text", "") or "").strip()
-                if text: texts.append(text)
-                if getattr(shape, "has_chart", False) or getattr(shape, "has_table", False) or int(getattr(shape, "shape_type", 0) or 0) == 13: visual_count += 1
-                if bool(getattr(shape, "is_placeholder", False)): placeholders += 1; slide_placeholders += 1
-                if bool(getattr(shape, "has_text_frame", False)):
-                    for paragraph in shape.text_frame.paragraphs:
-                        for run in paragraph.runs:
-                            if run.font.name: fonts.add(str(run.font.name))
-            native_visuals += visual_count; text = "\n".join(texts)
-            slides.append({"title": texts[0] if texts else "", "text": text, "content_text": text, "visual_count": visual_count, "native_visual_count": visual_count, "designed_visual_count": 0, "placeholder_count": slide_placeholders})
-        ratio = round(int(prs.slide_width) / int(prs.slide_height), 4) if int(prs.slide_height) else 0.0
-        return {"slides": slides, "slide_count": len(slides), "aspect_ratio": ratio, "is_widescreen": 1.70 <= ratio <= 1.82, "placeholder_count": placeholders, "native_visual_count": native_visuals, "designed_visual_count": 0, "font_names": sorted(fonts), "has_explicit_fonts": bool(fonts)}
-    except Exception:
-        text = _extract_pptx_text(path)
-        for chunk in re.split(r"\[slide \d+\]", text):
-            lines = [item.strip() for item in chunk.splitlines() if item.strip()]
-            if lines:
-                joined = "\n".join(lines); slides.append({"title": lines[0], "text": joined, "content_text": joined, "visual_count": 0, "native_visual_count": 0, "designed_visual_count": 0, "placeholder_count": 0})
-        return {"slides": slides, "slide_count": len(slides), "aspect_ratio": 0.0, "is_widescreen": False, "placeholder_count": 0, "native_visual_count": 0, "designed_visual_count": 0, "font_names": [], "has_explicit_fonts": False}
+    # Missing parser and corrupt containers are failures, never empty success.
+    from .ppt_design import inspect_presentation
+    return inspect_presentation(path)
 
 
 def _ppt_slides(path: Path) -> List[Dict[str, Any]]:
@@ -686,100 +513,75 @@ def _ppt_slides(path: Path) -> List[Dict[str, Any]]:
 
 def _qc_sheet(runtime: Any, target: str | None, args: Dict[str, Any]) -> Dict[str, Any]:
     path = _resolve(runtime, target, must_exist=True)
-    issues: List[Dict[str, Any]] = []
-    warnings: List[Dict[str, Any]] = []
     rows = _read_sheet_rows(path)
-    if not rows:
-        issues.append(_issue("empty_sheet", "表格为空或不可读。", "critical", "重新生成表格并确保至少有表头和数据。"))
-    else:
-        header = rows[0]
-        if any(str(h).strip() == "" for h in header):
-            issues.append(_issue("blank_header", "表头存在空列。", "high", "补齐字段名。"))
-        blank_cells = sum(1 for r in rows[1:] for c in r if str(c).strip() == "")
-        if blank_cells > max(5, len(rows) * len(header) * 0.2):
-            warnings.append(_issue("many_blank_cells", "空值比例偏高。", "low", "标注缺失原因或补齐数据。"))
-        seen = set(); dup = 0
-        for r in rows[1:]:
-            key = tuple(str(c) for c in r)
-            if key in seen: dup += 1
-            seen.add(key)
-        if dup:
-            warnings.append(_issue("duplicate_rows", f"发现 {dup} 条重复行。", "low", "去重或说明重复原因。"))
-    score = _score_from_issues(100, issues, warnings)
-    return {"success": True, "result": {"type": "sheet_delivery", "score": score, "grade": _grade(score), "rows": len(rows), "cols": len(rows[0]) if rows else 0, "issues": issues, "warnings": warnings, "acceptance": score >= 80}, "evidence": {"path": _rel(runtime, path), "exists": True, "bytes": path.stat().st_size, "score": score}}
+    truncated = len(rows) > 1000
+    rows = rows[:1000]
+    seen = set()
+    duplicates = 0
+    for row in rows[1:]:
+        key = tuple(str(v) for v in row)
+        duplicates += key in seen
+        seen.add(key)
+    return {"success": True, "result": {"type": "sheet_delivery",
+        "assessment_mode": "content_observation_only", "content_quality": "unassessed",
+        "rows": len(rows), "cols": max((len(r) for r in rows), default=0), "truncated": truncated,
+        "row_scope": "first_worksheet_or_csv_first_1000_rows", "preview": [[v if v is None or isinstance(v, (str, int, float, bool)) else str(v) for v in row] for row in rows[:20]],
+        "preview_truncated": len(rows) > 20, "duplicate_rows_in_observed_range": duplicates,
+        "blank_cells_in_observed_range": sum(v is None or str(v).strip() == "" for r in rows for v in r),
+        "formula_evaluation": "not_performed", "completion_authority": "adversarial_judge"},
+        "evidence": {"path": _rel(runtime, path), "exists": True, "bytes": path.stat().st_size}}
 
 
 def _read_sheet_rows(path: Path) -> List[List[Any]]:
+    from itertools import islice
     if path.suffix.lower() == ".csv":
-        with path.open("r", encoding="utf-8", errors="ignore", newline="") as f:
-            return list(csv.reader(f))[:1000]
+        with path.open("r", encoding="utf-8-sig", errors="strict", newline="") as f:
+            return list(islice(csv.reader(f), 1001))
+    import openpyxl
+    wb = openpyxl.load_workbook(str(path), read_only=True, data_only=False)
     try:
-        import openpyxl  # type: ignore
-        wb = openpyxl.load_workbook(str(path), read_only=True, data_only=False)
-        try:
-            ws = wb.active
-            return [[c for c in r] for r in ws.iter_rows(max_row=1000, values_only=True)]
-        finally:
-            wb.close()
-    except Exception:
-        return []
+        return [list(row) for row in wb.active.iter_rows(max_row=1001, values_only=True)]
+    finally:
+        wb.close()
 
 
 def _qc_code(runtime: Any, target: str | None, args: Dict[str, Any]) -> Dict[str, Any]:
-    root=_resolve(runtime,target or ".",must_exist=True)
-    code_suffixes={".py",".js",".mjs",".cjs",".ts",".tsx",".jsx",".java",".go",".rs",".cpp",".cc",".c",".h",".cs",".php",".rb",".swift",".kt"}
-    project_type=str(args.get("project_type") or args.get("mode") or "").strip().lower()
-    miniapp_mode=project_type in {"wechat_miniapp","wechat_miniprogram","miniapp","miniprogram"}
-    if miniapp_mode: code_suffixes.update({".json",".wxml",".wxss"})
-    candidates=[root] if root.is_file() else [p for p in root.rglob("*") if p.is_file() and ".omni_" not in p.parts and "__pycache__" not in p.parts]
-    files=[p for p in candidates if p.suffix.lower() in code_suffixes]
-    issues:List[Dict[str,Any]]=[]; warnings:List[Dict[str,Any]]=[]; syntax_errors=[]
-    if not files: issues.append(_issue("no_code_files","目标中没有真实代码文件。","critical","提供源代码目录或生成真实代码文件。"))
-    total_lines=0
+    root = _resolve(runtime, target or ".", must_exist=True)
+    suffixes = {".py", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".java", ".go", ".rs", ".cpp", ".cc", ".c", ".h", ".cs", ".php", ".rb", ".swift", ".kt"}
+    miniapp_mode = str(args.get("project_type") or args.get("mode") or "").lower() in {"wechat_miniapp", "wechat_miniprogram", "miniapp", "miniprogram"}
+    if miniapp_mode:
+        suffixes.update({".json", ".wxml", ".wxss"})
+    candidates = [root] if root.is_file() else sorted(p for p in root.rglob("*")
+        if p.is_file() and not p.is_symlink() and "__pycache__" not in p.parts
+        and not any(part.startswith(".omni_") for part in p.parts))
+    files = [p for p in candidates if p.suffix.lower() in suffixes]
+    syntax_errors, unreadable = [], []
+    total_lines = 0
     for p in files[:500]:
-        txt=p.read_text(encoding="utf-8",errors="ignore"); total_lines += len([line for line in txt.splitlines() if line.strip() and not line.lstrip().startswith(("#","//"))])
-        if p.suffix.lower()==".py":
-            try: ast.parse(txt)
-            except SyntaxError as exc: syntax_errors.append({"file":_rel(runtime,p),"line":exc.lineno,"message":exc.msg})
-    if syntax_errors: issues.append(_issue("syntax_errors",f"发现 {len(syntax_errors)} 个 Python 语法错误。","critical","先修复语法错误。"))
-    if miniapp_mode and root.is_dir(): issues.extend(_miniapp_project_issues(runtime,root,candidates))
-    if files and total_lines < int(args.get("min_effective_lines",5)): issues.append(_issue("insufficient_code",f"有效代码行仅 {total_lines}。","critical","补充可运行实现，而不是占位文件。"))
-    test_files=[p for p in candidates if "test" in p.name.lower() or "tests" in p.parts]
-    if not test_files: issues.append(_issue("missing_tests","缺少测试文件或测试目录。","critical","补充测试并真实执行。"))
-    test_exec={"executed":False,"returncode":None,"stdout":"","stderr":""}
-    if test_files and root.is_dir():
-        command=args.get("test_command")
-        if miniapp_mode and not command:
-            issues.append(_issue("miniapp_test_command_required","小程序工程必须提供可执行的离线测试命令。","critical","提供 node 测试脚本或项目自带测试命令。"))
-            command=[]
-        elif not command:
-            # Delayed import: omni_body_tool imports this module at load time.
-            # In frozen builds sys.executable is the backend exe, never reuse it.
-            try:
-                from .omni_body_tool import _resolve_python_interpreter
-                command=[_resolve_python_interpreter(),"-m","pytest","-q"]
-            except Exception as exc:
-                issues.append(_issue("tests_not_executable",f"测试无法执行：{exc}","critical","修复测试环境和命令。"))
-                command=[]
-        if isinstance(command,str): command=command.split()
-        if command:
-            try:
-                cp=subprocess.run(list(command),cwd=str(root),capture_output=True,text=True,timeout=int(args.get("timeout",180)))
-                test_exec={"executed":True,"returncode":cp.returncode,"stdout":cp.stdout[-8000:],"stderr":cp.stderr[-8000:]}
-                if cp.returncode != 0: issues.append(_issue("tests_failed",f"测试返回码为 {cp.returncode}。","critical","修复失败测试后重新运行。"))
-            except subprocess.TimeoutExpired: issues.append(_issue("tests_timeout","测试执行超时。","critical","定位卡死测试或调整合理超时。")); test_exec["executed"]=True; test_exec["returncode"]=-1
-            except Exception as exc: issues.append(_issue("tests_not_executable",f"测试无法执行：{exc}","critical","修复测试环境和命令。"))
-    readme=(root/"README.md") if root.is_dir() else (root.parent/"README.md")
-    if not readme.exists(): warnings.append(_issue("missing_readme","缺少 README.md。","low","补充安装、运行、测试和边界说明。"))
-    smells=[]
-    for p in files[:200]:
-        txt=p.read_text(encoding="utf-8",errors="ignore")
-        for pat in ["eval(","exec(","shell=True","pickle.loads"]:
-            if pat in txt: smells.append({"file":_rel(runtime,p),"pattern":pat})
-    if smells: issues.append(_issue("security_smells",f"发现 {len(smells)} 个敏感模式。","medium","逐项确认并限制。"))
-    hard=not any(x.get("severity")=="critical" for x in issues); score=_score_from_issues(100,issues,warnings); acceptance=hard and score>=80
-    report={"type":"code_project_delivery","score":score,"grade":_grade(score),"files_checked":len(files),"total_lines":total_lines,"syntax_errors":syntax_errors,"test_files":[_rel(runtime,p) for p in test_files[:50]],"test_execution":test_exec,"security_smells":smells[:50],"hard_gate_passed":hard,"issues":issues,"warnings":warnings,"acceptance":acceptance}
-    return {"success":True,"result":report,"evidence":{"path":_rel(runtime,root),"exists":True,"bytes":0,"score":score,"acceptance":acceptance}}
+        try:
+            checked = _resolve(runtime, str(p), must_exist=True)
+            if checked.stat().st_size > 2 * 1024 * 1024:
+                unreadable.append({"file": _rel(runtime, p), "reason": "over_2_MiB"})
+                continue
+            text = checked.read_text(encoding="utf-8-sig", errors="strict")
+            total_lines += len(text.splitlines())
+            if p.suffix.lower() == ".py":
+                try:
+                    ast.parse(text)
+                except SyntaxError as exc:
+                    syntax_errors.append({"file": _rel(runtime, p), "line": exc.lineno, "message": exc.msg})
+        except (OSError, UnicodeError) as exc:
+            unreadable.append({"file": _rel(runtime, p), "reason": type(exc).__name__})
+    issues = _miniapp_project_issues(runtime, root, candidates) if miniapp_mode and root.is_dir() else []
+    report = {"type": "code_project_delivery", "assessment_mode": "content_observation_only",
+        "content_quality": "unassessed", "completion_authority": "adversarial_judge",
+        "files_checked": min(len(files), 500), "files_total": len(files), "truncated": len(files) > 500,
+        "total_lines": total_lines, "syntax_errors": syntax_errors, "unreadable_files": unreadable,
+        "syntax_scope": "Python AST only", "issues": issues,
+        "test_files": [_rel(runtime, p) for p in candidates if "test" in p.name.lower()][:50],
+        "test_execution": {"executed": False, "required_action": "quality.run_tests",
+            "reason": "A read-only observation does not execute project code or supplied commands."}}
+    return {"success": True, "result": report, "evidence": {"path": _rel(runtime, root), "exists": True}}
 
 
 def _miniapp_project_issues(runtime: Any, root: Path, candidates: List[Path]) -> List[Dict[str, Any]]:
@@ -816,30 +618,21 @@ def _miniapp_project_issues(runtime: Any, root: Path, candidates: List[Path]) ->
     return issues
 
 
-def _qc_research(runtime: Any, target: str | None, args: Dict[str, Any]) -> Dict[str, Any]:
-    return _semantic_assessment(runtime, target, args, "research_review_delivery")
-
-
 def _qc_video(runtime: Any, target: str | None, args: Dict[str, Any]) -> Dict[str, Any]:
     path = _resolve(runtime, target, must_exist=True)
-    issues: List[Dict[str, Any]] = []
-    warnings: List[Dict[str, Any]] = []
     info = _ffprobe(runtime, path)
     if not info:
-        issues.append(_issue("video_unreadable", "视频不可读或 ffprobe 不可用。", "critical", "重新导出 MP4 并验证可播放。"))
-    duration = float(info.get("duration", 0) or 0)
-    width = int(info.get("width", 0) or 0); height = int(info.get("height", 0) or 0)
-    if duration and duration > float(args.get("max_duration", 180)):
-        issues.append(_issue("too_long", f"短视频时长 {duration:.1f}s 超过目标。", "medium", "压缩节奏或裁剪冗余段落。"))
-    if width and height and height < width:
-        warnings.append(_issue("not_vertical", "视频不是竖屏，移动端沉浸感不足。", "low", "按 9:16 重新构图或导出。"))
-    meta_text = str(args.get("script") or args.get("brief") or "")
-    if not any(x in meta_text for x in ["钩子", "前3秒", "hook", "开头"]):
-        issues.append(_issue("missing_hook_spec", "缺少前3秒钩子说明。", "high", "补充开头钩子、视觉冲击点和第一句字幕。"))
-    if not any(x in meta_text for x in ["CTA", "行动", "联系", "点击", "私信"]):
-        warnings.append(_issue("missing_cta_spec", "缺少 CTA 设计。", "low", "在结尾2-4秒加入明确行动提示。"))
-    score = _score_from_issues(100, issues, warnings)
-    return {"success": True, "result": {"type": "short_video_delivery", "score": score, "grade": _grade(score), "video_info": info, "issues": issues, "warnings": warnings, "acceptance": score >= 80}, "evidence": {"path": _rel(runtime, path), "exists": True, "bytes": path.stat().st_size, "score": score}}
+        return {"success": False, "message": "Video metadata unavailable; no content or playability assessment was performed."}
+    checks = []
+    if "max_duration" in args:
+        actual = float(info.get("duration") or 0)
+        checks.append({"field": "duration", "maximum": float(args["max_duration"]), "actual": actual,
+                       "satisfied": actual <= float(args["max_duration"])})
+    return {"success": True, "result": {"type": "short_video_delivery", "video_info": info,
+        "assessment_mode": "metadata_observation_only", "content_quality": "unassessed",
+        "audio_content": "not_observed", "video_content": "not_observed", "playback": "not_verified",
+        "constraint_checks": checks, "completion_authority": "adversarial_judge"},
+        "evidence": {"path": _rel(runtime, path), "exists": True, "bytes": path.stat().st_size}}
 
 
 def _ffprobe(runtime: Any, path: Path) -> Dict[str, Any]:
@@ -867,27 +660,20 @@ def _ffprobe(runtime: Any, path: Path) -> Dict[str, Any]:
 
 def _qc_image(runtime: Any, target: str | None, args: Dict[str, Any]) -> Dict[str, Any]:
     path = _resolve(runtime, target, must_exist=True)
-    issues: List[Dict[str, Any]] = []
-    warnings: List[Dict[str, Any]] = []
-    info: Dict[str, Any] = {}
-    try:
-        from PIL import Image, ImageStat  # type: ignore
-        with Image.open(path) as im:
-            info = {"width": im.width, "height": im.height, "mode": im.mode, "format": im.format}
-            if im.width < int(args.get("min_width", 1080)) or im.height < int(args.get("min_height", 1080)):
-                warnings.append(_issue("low_resolution", "图片分辨率偏低。", "low", "导出更高分辨率版本。"))
-            gray = im.convert("L")
-            stat = ImageStat.Stat(gray)
-            if stat.stddev and stat.stddev[0] < 25:
-                warnings.append(_issue("low_contrast_proxy", "整体对比度偏低，文字可读性可能受影响。", "low", "增强标题区对比度或增加遮罩。"))
-    except Exception as exc:
-        issues.append(_issue("image_unreadable", f"图片不可读：{exc}", "critical", "重新导出 PNG/JPG。"))
-    score = _score_from_issues(100, issues, warnings)
-    return {"success": True, "result": {"type": "image_delivery", "score": score, "grade": _grade(score), "image_info": info, "issues": issues, "warnings": warnings, "acceptance": score >= 80}, "evidence": {"path": _rel(runtime, path), "exists": True, "bytes": path.stat().st_size, "score": score}}
-
-
-def _qc_writing(runtime: Any, target: str | None, args: Dict[str, Any]) -> Dict[str, Any]:
-    return _semantic_assessment(runtime, target, args, "writing_ai_tone")
+    from PIL import Image, ImageStat
+    with Image.open(path) as im:
+        im.load()
+        stat = ImageStat.Stat(im.convert("L"))
+        info = {"width": im.width, "height": im.height, "mode": im.mode, "format": im.format,
+                "luminance_stddev": stat.stddev[0] if stat.stddev else None}
+    checks = [{"field": field, "minimum": int(args[key]), "actual": info[field],
+               "satisfied": info[field] >= int(args[key])}
+              for key, field in (("min_width", "width"), ("min_height", "height")) if key in args]
+    return {"success": True, "result": {"type": "image_delivery", "image_info": info,
+        "assessment_mode": "decoded_image_properties_only", "content_quality": "unassessed",
+        "visual_content": "not_observed", "constraint_checks": checks,
+        "completion_authority": "adversarial_judge"},
+        "evidence": {"path": _rel(runtime, path), "exists": True, "bytes": path.stat().st_size}}
 
 
 def _ai_tone_issues(text: str) -> List[Dict[str, Any]]:

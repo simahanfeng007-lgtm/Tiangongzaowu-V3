@@ -34,6 +34,7 @@ v1 设计（2026-08-22，"作 omni_body action 接入"方案）：
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import queue
 import shutil
@@ -41,10 +42,14 @@ import signal
 import subprocess
 import threading
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
 from pathlib import Path
 from typing import Any, Dict, List
 
-PROTOCOL_VERSION = "2024-11-05"
+PROTOCOL_VERSION = "2025-11-25"
+SUPPORTED_PROTOCOLS = {PROTOCOL_VERSION, "2025-06-18", "2025-03-26", "2024-11-05"}
 CLIENT_INFO = {"name": "tiangong-omni-body", "version": "3.5"}
 
 CONFIG_PATH = Path.home() / ".tiangong" / "v3" / "mcp_servers.json"
@@ -56,7 +61,7 @@ MAX_LINE_BYTES = 4 * 1024 * 1024
 # stderr 尾部诊断缓冲与 stdout 读线程的生产侧上限（防失控服务器把
 # _lines 队列灌成无界内存）。
 _STDERR_TAIL_BYTES = 4096
-_MAX_QUEUED_LINES = 100_000
+_MAX_QUEUED_LINES = 512
 
 # 子进程环境白名单：Windows 进程启动所需的最小集合 + PATH（npx/node/
 # uvx 常见发行方式需要）。绝不整份继承宿主环境（防泄漏宿主凭据变量）。
@@ -94,23 +99,56 @@ def load_server_config(config_path: Path | None = None) -> Dict[str, Dict[str, A
         raise McpClientError("mcp.config.invalid", "servers must be an object")
     clean: Dict[str, Dict[str, Any]] = {}
     for name, raw in servers.items():
-        if not isinstance(raw, dict):
-            continue
-        command = str(raw.get("command") or "").strip()
-        if not command:
-            continue
-        args = [str(item) for item in raw.get("args") or [] if str(item).strip()]
-        env = {
-            str(key): str(value)
-            for key, value in (raw.get("env") or {}).items()
-            if str(key).strip()
-        } if isinstance(raw.get("env"), dict) else {}
-        clean[str(name).strip()] = {
-            "command": command,
-            "args": args,
-            "env": env,
-            "enabled": raw.get("enabled") is not False,
-        }
+        try:
+            if not isinstance(raw, dict):
+                continue
+            if (any(not isinstance(raw.get(k, {}), dict) for k in ("env", "headers", "env_refs", "header_env", "environment"))
+                    or any(not isinstance(raw.get(k, []), list) for k in ("args", "applications"))):
+                raise McpClientError("mcp.config.invalid", "connection fields have invalid types")
+            transport = str(raw.get("transport") or "stdio")
+            if transport not in {"stdio", "streamable_http"}:
+                raise McpClientError("mcp.config.transport_invalid", str(name))
+            command = str(raw.get("command") or "").strip()
+            url = str(raw.get("url") or "").strip()
+            if transport == "stdio" and not command:
+                continue
+            if transport == "streamable_http":
+                parsed = urllib.parse.urlsplit(url)
+                if (parsed.scheme not in {"http", "https"} or not parsed.hostname
+                        or parsed.username or parsed.password or parsed.fragment):
+                    raise McpClientError("mcp.config.url_invalid", str(name))
+                if parsed.scheme == "http" and parsed.hostname not in {"localhost", "127.0.0.1", "::1"}:
+                    raise McpClientError("mcp.config.https_required", str(name))
+            args = [str(item) for item in raw.get("args") or [] if str(item).strip()]
+            env = {
+                str(key): str(value)
+                for key, value in (raw.get("env") or {}).items()
+                if str(key).strip()
+            } if isinstance(raw.get("env"), dict) else {}
+            clean[str(name).strip()] = {
+                "transport": transport,
+                "command": command,
+                "args": args,
+                "env": env,
+                "enabled": raw.get("enabled") is not False,
+                "url": url,
+                "headers": {str(k): str(v) for k, v in (raw.get("headers") or {}).items()},
+                "env_refs": {str(k): str(v) for k, v in (raw.get("env_refs") or {}).items()},
+                "header_env": {str(k): str(v) for k, v in (raw.get("header_env") or {}).items()},
+                "cwd": str(raw.get("cwd") or Path.home()),
+                "applications": [str(v) for v in raw.get("applications", [])],
+                "environment": {str(k): str(v) for k, v in (raw.get("environment") or {}).items()
+                                if k in {"location", "workspace", "platform", "account_label"}},
+            }
+        except (McpClientError, ValueError) as exc:
+            # One unavailable application must not suppress unrelated services.
+            clean[str(name).strip()] = {
+                "transport": "unavailable", "command": "", "args": [], "env": {}, "enabled": False,
+                "url": "", "headers": {}, "env_refs": {}, "header_env": {}, "cwd": "",
+                "applications": [v for v in raw.get("applications", []) if isinstance(v, str)]
+                    if isinstance(raw, dict) and isinstance(raw.get("applications", []), list) else [],
+                "environment": {}, "configuration_error": getattr(exc, "code", "mcp.config.invalid"),
+            }
     return clean
 
 
@@ -118,15 +156,69 @@ def list_servers() -> List[Dict[str, Any]]:
     """已配置服务器的只读清单（不含 env 值，防凭据泄漏给模型）。"""
     rows = []
     for name, cfg in sorted(load_server_config().items()):
+        missing = sorted({v for key in ("env_refs", "header_env") for v in cfg[key].values()
+                          if not os.environ.get(v)})
+        parsed = urllib.parse.urlsplit(cfg["url"])
         rows.append({
             "server": name,
             "enabled": bool(cfg["enabled"]),
+            "transport": cfg["transport"],
             "command": cfg["command"],
-            "args": cfg["args"],
-            "env_keys": sorted(cfg["env"].keys()),
+            "argument_count": len(cfg["args"]),
+            "env_keys": sorted(set(cfg["env"]) | set(cfg["env_refs"])),
+            "credential_env_names": sorted(set(cfg["env_refs"].values()) | set(cfg["header_env"].values())),
+            "missing_env_names": missing,
+            "endpoint_origin": urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, "", "", "")),
+            "environment": _redact(cfg["environment"], cfg),
+            "applications": cfg["applications"],
+            "configuration_error": cfg.get("configuration_error"),
+            "connection_state": "configuration_invalid" if cfg.get("configuration_error") else "disabled" if not cfg["enabled"] else "configuration_incomplete" if missing else "configured_not_connected",
             "config_path": str(CONFIG_PATH),
         })
     return rows
+
+
+def application_connections(*, app_id: str = "", offset: int = 0, limit: int = 20) -> Dict[str, Any]:
+    """Project the existing application dictionary and owner MCP configuration.
+
+    This is a view, not a second registry or proof that a backend implements an
+    application. Only explicit owner associations select connection candidates.
+    """
+    from capability_dictionary import load_dictionary
+    release = load_dictionary()
+    servers = list_servers()
+    apps = [a for a in release.applications["apps"] if not app_id or a["app_id"] == app_id]
+    start, count = max(0, int(offset)), max(1, min(50, int(limit)))
+    rows = []
+    for app in apps[start:start + count]:
+        connections = [s for s in servers if app["app_id"] in s["applications"]]
+        connectable = any(s["connection_state"] == "configured_not_connected" for s in connections)
+        rows.append({"app_id": app["app_id"], "name": app["name"], "adapter": app.get("adapter"),
+            "declared_actions": len(app["actions"]),
+            "implemented_definitions": sum(bool(release.tools[n]["runtime"].get("implemented")) for n in app["actions"]),
+            "connections": connections, "connection_state": "configured_not_verified" if connectable else "configuration_blocked" if connections else "not_configured",
+            "setup_required": [] if connectable else ["resolve_connection_configuration"] if connections else ["owner_configured_mcp_server", "environment_location", "application_association"],
+            "next_action": "mcp.tools.list" if connectable else None})
+    return {"applications": rows, "total": len(apps), "offset": start,
+            "next_offset": start + len(rows) if start + len(rows) < len(apps) else None,
+            "dictionary_sha256": release.sha256}
+
+
+def _redact(value: Any, cfg: Dict[str, Any]) -> Any:
+    secrets = {str(v) for key in ("env", "headers") for v in cfg.get(key, {}).values() if str(v)}
+    secrets.update(os.environ[v] for key in ("env_refs", "header_env")
+                   for v in cfg.get(key, {}).values() if os.environ.get(v))
+    secrets.update(v.split(" ", 1)[1] for v in tuple(secrets)
+                   if " " in v and v.split(" ", 1)[0].lower() in {"bearer", "basic"})
+    if isinstance(value, str):
+        for secret in sorted(secrets, key=len, reverse=True):
+            value = value.replace(secret, "<credential-redacted>")
+        return value
+    if isinstance(value, list):
+        return [_redact(v, cfg) for v in value]
+    if isinstance(value, dict):
+        return {_redact(k, cfg): _redact(v, cfg) for k, v in value.items()}
+    return value
 
 
 def _resolve_server(server: str) -> Dict[str, Any]:
@@ -140,8 +232,16 @@ def _resolve_server(server: str) -> Dict[str, Any]:
             "mcp.server.unknown",
             f"'{name}' is not configured; known: {sorted(config.keys())}",
         )
+    if cfg.get("configuration_error"):
+        raise McpClientError(cfg["configuration_error"], name)
     if not cfg["enabled"]:
         raise McpClientError("mcp.server.disabled", name)
+    for field, destination in (("env_refs", "env"), ("header_env", "headers")):
+        for key, variable in cfg[field].items():
+            value = os.environ.get(variable)
+            if not value:
+                raise McpClientError("mcp.credentials.missing", variable)
+            cfg[destination][key] = value
     return cfg
 
 
@@ -156,6 +256,8 @@ class _ServerProcess:
 
     def __init__(self, cfg: Dict[str, Any], timeout_ms: int):
         self.timeout_ms = max(1_000, min(int(timeout_ms), MAX_TIMEOUT_MS))
+        self.deadline = time.monotonic() + self.timeout_ms / 1000
+        self.cfg = cfg
         # Windows 下 npx/uvx 实为 .cmd  shim，CreateProcess 只认可执行
         # 本体——先经 PATHEXT 解析成真实路径，否则配置里的 "npx" 会
         # 直接 FileNotFoundError。解析失败即干净报错，不落到进程层。
@@ -174,7 +276,7 @@ class _ServerProcess:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 env=_safe_env(cfg["env"]),
-                cwd=str(Path.home()),
+                cwd=cfg.get("cwd") or str(Path.home()),
                 # 桌面冻结应用内 spawn 控制台进程必须隐窗，否则每次调用
                 # 都会闪一个黑色控制台（与本仓 sandbox_runtime 同款约定）。
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0,
@@ -196,8 +298,16 @@ class _ServerProcess:
 
     def _read_loop(self) -> None:
         assert self._proc.stdout is not None
+        received_bytes = 0
         try:
-            for raw in self._proc.stdout:
+            while True:
+                raw = self._proc.stdout.readline(MAX_LINE_BYTES + 1)
+                if not raw:
+                    break
+                received_bytes += len(raw)
+                if received_bytes > 2 * MAX_LINE_BYTES:
+                    self._stdout_flood = True
+                    break
                 if self._lines.qsize() >= _MAX_QUEUED_LINES:
                     # 消费侧上限（512 行无响应即 flood）远小于此；到这里的
                     # 只可能是失控服务器，停止排队防止内存无界增长。
@@ -224,19 +334,32 @@ class _ServerProcess:
 
     def _send(self, payload: Dict[str, Any]) -> None:
         assert self._proc.stdin is not None
-        data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        data = json.dumps(payload, ensure_ascii=False, allow_nan=False).encode("utf-8")
         if len(data) > MAX_LINE_BYTES:
             raise McpClientError("mcp.request.too_large", str(len(data)))
+        # A server can stop reading stdin before the client starts waiting for
+        # stdout. Bound the write too; a full pipe must not bypass the deadline.
+        sent = queue.Queue(maxsize=1)
+        def write():
+            try:
+                self._proc.stdin.write(data + b"\n")
+                self._proc.stdin.flush()
+                sent.put(None)
+            except (BrokenPipeError, OSError, ValueError) as exc:
+                sent.put(type(exc).__name__)
+        writer = threading.Thread(target=write, daemon=True)
+        writer.start()
         try:
-            self._proc.stdin.write(data + b"\n")
-            self._proc.stdin.flush()
-        except (BrokenPipeError, OSError, ValueError) as exc:
-            # 服务器已退出（stdin 断裂）时转成结构化错误，避免裸
-            # BrokenPipeError 逃出 mcp.* 错误码体系。
-            raise McpClientError("mcp.server.exited", f"stdin broken: {exc}") from None
+            error = sent.get(timeout=max(0, self.deadline - time.monotonic()))
+        except queue.Empty:
+            self._kill_tree()
+            writer.join(timeout=1)
+            raise McpClientError("mcp.timeout", f"{self.timeout_ms}ms") from None
+        if error:
+            raise McpClientError("mcp.server.exited", error)
 
     def _recv_response(self, request_id: int) -> Dict[str, Any]:
-        deadline = time.monotonic() + self.timeout_ms / 1000
+        deadline = self.deadline
         received = 0
         while True:
             remaining = deadline - time.monotonic()
@@ -256,9 +379,11 @@ class _ServerProcess:
                         "mcp.protocol.flood",
                         f"server produced >{_MAX_QUEUED_LINES} queued stdout lines",
                     )
-                detail = self._stderr_tail.decode("utf-8", errors="replace").strip()[-400:]
+                detail = _redact(self._stderr_tail.decode("utf-8", errors="replace").strip()[-400:], self.cfg)
                 raise McpClientError("mcp.server.exited", detail)
             received += 1
+            if len(raw) > MAX_LINE_BYTES:
+                raise McpClientError("mcp.response.too_large", "response line exceeds limit")
             if received > 512:
                 raise McpClientError("mcp.protocol.flood", ">512 lines without response")
             line = raw.strip()
@@ -270,7 +395,7 @@ class _ServerProcess:
                 continue  # 服务器 banner/日志行，跳过
             if not isinstance(message, dict):
                 continue
-            if message.get("id") == request_id:
+            if type(message.get("id")) is int and message["id"] == request_id:
                 return message
 
     def request(self, method: str, params: Dict[str, Any] | None = None) -> Dict[str, Any]:
@@ -280,7 +405,7 @@ class _ServerProcess:
         response = self._recv_response(request_id)
         if isinstance(response.get("error"), dict):
             err = response["error"]
-            raise McpClientError("mcp.rpc.error", f"{err.get('code')}: {err.get('message')}")
+            raise McpClientError("mcp.rpc.error", _redact(f"{err.get('code')}: {err.get('message')}", self.cfg))
         result = response.get("result")
         if not isinstance(result, dict):
             raise McpClientError("mcp.protocol.invalid", "result is not an object")
@@ -295,6 +420,9 @@ class _ServerProcess:
             "capabilities": {},
             "clientInfo": CLIENT_INFO,
         })
+        if info.get("protocolVersion") not in SUPPORTED_PROTOCOLS:
+            raise McpClientError("mcp.protocol.unsupported", str(info.get("protocolVersion")))
+        self.protocol_version = info["protocolVersion"]
         self.notify("notifications/initialized")
         return info
 
@@ -342,11 +470,129 @@ class _ServerProcess:
             pass
 
 
-def _connect(server: str, timeout_ms: int) -> tuple[Dict[str, Any], _ServerProcess]:
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise McpClientError("mcp.http.redirect_denied", "configure the final endpoint explicitly")
+
+
+class _HttpServer:
+    """Owner-configured Streamable HTTP; one bounded session per invocation."""
+
+    handshake = _ServerProcess.handshake
+
+    def __init__(self, cfg: Dict[str, Any], timeout_ms: int):
+        self.cfg = cfg
+        self.timeout_ms = max(1_000, min(int(timeout_ms), MAX_TIMEOUT_MS))
+        self.deadline = time.monotonic() + self.timeout_ms / 1000
+        self._next_id = 0
+        self.session_id = None
+        self.protocol_version = None
+        self.opener = urllib.request.build_opener(_NoRedirect())
+
+    def _headers(self):
+        # Protocol fields cannot be overridden by stored credential headers.
+        headers = {k: v for k, v in self.cfg["headers"].items()
+                   if k.lower() not in {"content-type", "accept", "mcp-session-id", "mcp-protocol-version", "host"}}
+        headers.update({"Content-Type": "application/json", "Accept": "application/json, text/event-stream"})
+        if self.session_id:
+            headers["Mcp-Session-Id"] = self.session_id
+        if self.protocol_version:
+            headers["MCP-Protocol-Version"] = self.protocol_version
+        return headers
+
+    def _post(self, payload):
+        remaining = self.deadline - time.monotonic()
+        if remaining <= 0:
+            raise McpClientError("mcp.timeout")
+        raw = json.dumps(payload, ensure_ascii=False, allow_nan=False).encode()
+        if len(raw) > MAX_LINE_BYTES:
+            raise McpClientError("mcp.request.too_large")
+        request = urllib.request.Request(self.cfg["url"], data=raw, headers=self._headers(), method="POST")
+        try:
+            with self.opener.open(request, timeout=remaining) as response:
+                sid = response.headers.get("Mcp-Session-Id")
+                if sid:
+                    if len(sid) > 1024 or any(ord(c) < 33 or ord(c) > 126 for c in sid):
+                        raise McpClientError("mcp.protocol.invalid", "invalid session id")
+                    if self.session_id and sid != self.session_id:
+                        raise McpClientError("mcp.protocol.invalid", "session changed")
+                    self.session_id = sid
+                if "id" not in payload:
+                    return {}
+                mime = response.headers.get_content_type()
+                if mime == "application/json":
+                    body = b"".join(self._response_chunks(response))
+                    value = json.loads(body)
+                    if not isinstance(value, dict) or type(value.get("id")) is not int or value["id"] != payload["id"]:
+                        raise McpClientError("mcp.protocol.invalid", "response identity mismatch")
+                    return value
+                if mime != "text/event-stream":
+                    raise McpClientError("mcp.protocol.invalid", "expected JSON or SSE")
+                pending = b""
+                for chunk in self._response_chunks(response):
+                    pending = (pending + chunk).replace(b"\r\n", b"\n")
+                    while b"\n\n" in pending:
+                        event, pending = pending.split(b"\n\n", 1)
+                        data = [line[5:].lstrip() for line in event.split(b"\n") if line.startswith(b"data:")]
+                        if data:
+                            value = json.loads(b"\n".join(data))
+                            if isinstance(value, dict) and type(value.get("id")) is int and value["id"] == payload["id"]:
+                                return value
+                raise McpClientError("mcp.outcome.unknown", "stream ended without matching response")
+        except McpClientError:
+            raise
+        except urllib.error.HTTPError as exc:
+            raise McpClientError("mcp.http.status", str(exc.code)) from None
+        except (TimeoutError, OSError, ValueError) as exc:
+            raise McpClientError("mcp.transport.failed", type(exc).__name__) from None
+
+    def _response_chunks(self, response):
+        size = 0
+        while True:
+            remaining = self.deadline - time.monotonic()
+            if remaining <= 0:
+                raise McpClientError("mcp.timeout", f"{self.timeout_ms}ms")
+            # urllib exposes an HTTPResponse buffered socket. read1 performs
+            # one underlying read, so a peer dripping bytes cannot reset the
+            # whole deadline while read(n)/readline waits for a complete body.
+            sock = getattr(getattr(getattr(response, "fp", None), "raw", None), "_sock", None)
+            if sock is not None:
+                sock.settimeout(remaining)
+            chunk = response.read1(min(65536, MAX_LINE_BYTES + 1 - size))
+            if not chunk:
+                return
+            size += len(chunk)
+            if size > MAX_LINE_BYTES:
+                raise McpClientError("mcp.response.too_large")
+            yield chunk
+
+    def request(self, method, params=None):
+        self._next_id += 1
+        response = self._post({"jsonrpc": "2.0", "id": self._next_id, "method": method, "params": params or {}})
+        if isinstance(response.get("error"), dict):
+            raise McpClientError("mcp.rpc.error", str(response["error"].get("code")))
+        if not isinstance(response.get("result"), dict):
+            raise McpClientError("mcp.protocol.invalid", "result is not an object")
+        return response["result"]
+
+    def notify(self, method):
+        self._post({"jsonrpc": "2.0", "method": method})
+
+    def close(self):
+        if self.session_id:
+            try:
+                request = urllib.request.Request(self.cfg["url"], headers=self._headers(), method="DELETE")
+                with self.opener.open(request, timeout=1):
+                    pass
+            except Exception:
+                pass  # Session cleanup never changes the observed tool outcome.
+
+
+def _connect(server: str, timeout_ms: int):
     cfg = _resolve_server(server)
     proc: _ServerProcess | None = None
     try:
-        proc = _ServerProcess(cfg, timeout_ms)
+        proc = _HttpServer(cfg, timeout_ms) if cfg["transport"] == "streamable_http" else _ServerProcess(cfg, timeout_ms)
         info = proc.handshake()
         return info, proc
     except Exception:
@@ -355,10 +601,12 @@ def _connect(server: str, timeout_ms: int) -> tuple[Dict[str, Any], _ServerProce
         raise
 
 
-def list_tools(server: str, *, timeout_ms: int = DEFAULT_TIMEOUT_MS) -> Dict[str, Any]:
+def list_tools(server: str, *, timeout_ms: int = DEFAULT_TIMEOUT_MS, cursor: str | None = None,
+               capture=None) -> Dict[str, Any]:
     info, proc = _connect(server, timeout_ms)
     try:
-        result = proc.request("tools/list", {})
+        result = _redact(proc.request("tools/list", {"cursor": cursor} if cursor else {}), proc.cfg)
+        evidence = capture(result) if capture else None
         tools = result.get("tools")
         if not isinstance(tools, list):
             raise McpClientError("mcp.protocol.invalid", "tools is not a list")
@@ -384,9 +632,13 @@ def list_tools(server: str, *, timeout_ms: int = DEFAULT_TIMEOUT_MS) -> Dict[str
             trimmed.append(row)
         return {
             "server": server,
-            "server_info": info.get("serverInfo") or {},
+            "server_info": _redact(info.get("serverInfo") or {}, proc.cfg),
             "tools": trimmed,
             "truncated": truncated,
+            "next_cursor": result.get("nextCursor"),
+            "complete": not truncated and not result.get("nextCursor"),
+            "evidence": evidence,
+            "connection_fingerprint": _configuration_fingerprint(proc.cfg),
         }
     finally:
         proc.close()
@@ -398,15 +650,23 @@ def call_tool(
     arguments: Dict[str, Any] | None = None,
     *,
     timeout_ms: int = DEFAULT_TIMEOUT_MS,
+    capture=None,
 ) -> Dict[str, Any]:
     tool_name = str(tool or "").strip()
     if not tool_name:
         raise McpClientError("mcp.tool.required", "args.tool is required")
-    if not isinstance(arguments or {}, dict):
+    if arguments is not None and not isinstance(arguments, dict):
         raise McpClientError("mcp.arguments.invalid", "args.arguments must be an object")
     info, proc = _connect(server, timeout_ms)
     try:
-        result = proc.request("tools/call", {"name": tool_name, "arguments": dict(arguments or {})})
+        try:
+            result = _redact(proc.request("tools/call", {"name": tool_name, "arguments": dict(arguments or {})}), proc.cfg)
+            evidence = capture(result) if capture else None
+        except Exception as exc:
+            # The call may already have changed the remote application. Neither
+            # a transport error nor a failed local evidence write proves rollback.
+            code = exc.code if isinstance(exc, McpClientError) else type(exc).__name__
+            raise McpClientError("mcp.outcome.unknown", code) from None
         content = result.get("content")
         texts: List[str] = []
         if isinstance(content, list):
@@ -418,18 +678,29 @@ def call_tool(
         truncated = len(encoded) > MAX_OUTPUT_BYTES
         if truncated:
             joined = encoded[:MAX_OUTPUT_BYTES].decode("utf-8", errors="ignore")
+        structured = result.get("structuredContent")
+        structured_bytes = len(json.dumps(structured, ensure_ascii=False).encode()) if structured is not None else 0
+        omitted_modalities = sorted({str(b.get("type")) for b in content or []
+                                     if isinstance(b, dict) and b.get("type") != "text"})
         return {
             "server": server,
             "tool": tool_name,
             "is_error": bool(result.get("isError")),
             "text": joined,
-            "truncated": truncated,
-            "structured": result.get("structuredContent")
-            if isinstance(result.get("structuredContent"), dict)
-            else None,
+            "truncated": truncated or structured_bytes > MAX_OUTPUT_BYTES,
+            "structured": structured if isinstance(structured, dict) and structured_bytes <= MAX_OUTPUT_BYTES else None,
+            "structured_truncated": structured_bytes > MAX_OUTPUT_BYTES,
+            "content_types_requiring_observation": omitted_modalities,
+            "evidence": evidence,
+            "connection_fingerprint": _configuration_fingerprint(proc.cfg),
+            "observation_scope": "server_report_not_independent_target_readback",
         }
     finally:
         proc.close()
+
+
+def _configuration_fingerprint(cfg):
+    return hashlib.sha256(json.dumps(cfg, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 
 __all__ = [

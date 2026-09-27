@@ -944,7 +944,10 @@ def _simple_chain_regenerative_execute_tool(
         raw = {"ok": False, "error": str(exc), "error_code": type(exc).__name__}
     status = str(raw.get("status") or raw.get("zhuangtai") or "").strip().lower() if isinstance(raw, dict) else ""
     result_ok = bool(tool_result_ok(tool_name, raw))
-    ambiguous = handler_exception or bool(isinstance(raw, dict) and raw.get("ambiguous_effect")) or status in {
+    native_result = raw.get("result") if isinstance(raw, dict) else None
+    ambiguous = handler_exception or bool(isinstance(raw, dict) and raw.get("ambiguous_effect")) or bool(
+        isinstance(native_result, dict) and native_result.get("ambiguous_effect")
+    ) or status in {
         "ambiguous", "unknown", "deadline", "timeout", "timed_out"
     }
     outcome = "ambiguous" if ambiguous else "succeeded" if result_ok else "failed_final"

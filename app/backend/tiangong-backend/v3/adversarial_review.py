@@ -1,4 +1,4 @@
-"""Isolated adversarial completion judge, with explicit legacy experiment modes.
+"""Isolated adversarial completion judge and historical advice record support.
 
 The reviewer has no tools. Suggested checks return to the ordinary composition
 loop, where the existing Gateway owns authorization, execution and facts.
@@ -73,8 +73,10 @@ def _sha(value):
 
 
 def review_mode():
-    mode = os.environ.get("TIANGONG_ADVERSARIAL_REVIEW", "judge").strip().lower()
-    return mode if mode in {"off", "shadow", "advisory", "judge"} else "judge"
+    # Ordinary tasks have one completion authority. Old deployment environment
+    # values cannot reactivate semantic gates or deliver an unreviewed answer.
+    # Historical advice records remain readable; experiments are retired.
+    return "judge"
 
 
 def evidence_packet(run_state, observations, candidate_reply):

@@ -5,6 +5,20 @@
     "file.patch_replace": "code.patch_replace"
   },
   "arguments": {
+    "browser.chrome.click": {
+      "args": {
+        "max_chars": "optional integer 1..200000",
+        "output_dir": "optional workspace directory",
+        "selector": "CSS selector for one click",
+        "timeout_ms": "optional integer 1000..60000",
+        "wait_ms": "optional integer 0..10000"
+      },
+      "required": [
+        "target",
+        "args.selector"
+      ],
+      "target": "URL or workspace HTML; fresh isolated browser per action"
+    },
     "code.patch_replace": {
       "aliases": [
         "file.patch_replace",
@@ -154,6 +168,36 @@
         "sections": "optional array: identity|health|emotion|drives|lifecycle|autonomy|environment|evolution|memory|recent_actions|body|context|summary"
       },
       "target": "empty; reads this Life's current state"
+    },
+    "mcp.servers.list": {
+      "args": {
+        "app_id": "optional exact application ID",
+        "limit": "optional integer 1..50",
+        "offset": "optional non-negative integer"
+      },
+      "target": "unused"
+    },
+    "mcp.tool.call": {
+      "args": {
+        "arguments": "object matching actual inputSchema",
+        "timeout_ms": "optional integer 1000..120000",
+        "tool": "exact tool name from mcp.tools.list"
+      },
+      "required": [
+        "target",
+        "args.tool"
+      ],
+      "target": "configured MCP server name"
+    },
+    "mcp.tools.list": {
+      "args": {
+        "cursor": "optional next_cursor from this server",
+        "timeout_ms": "optional integer 1000..120000"
+      },
+      "required": [
+        "target"
+      ],
+      "target": "configured MCP server name"
     },
     "mindmap.create": {
       "any_of": [
@@ -580,6 +624,37 @@
         "skill_id": "optional exact skill id"
       },
       "target": "optional explicit skill_id; normally empty"
+    },
+    "sqlite.query": {
+      "args": {
+        "confirmed": "optional boolean; false is read-only, true does not grant permission",
+        "max_rows": "optional integer 1..10000; default 100",
+        "output_csv": "optional workspace path; complete results only",
+        "params": "optional array or object",
+        "query": "one SQLite statement",
+        "timeout": "optional seconds 1..120"
+      },
+      "required": [
+        "target",
+        "args.query"
+      ],
+      "target": "workspace database path"
+    },
+    "sqlite.query.run": {
+      "alias_of": "sqlite.query",
+      "args": {
+        "confirmed": "optional boolean; false is read-only, true does not grant permission",
+        "max_rows": "optional integer 1..10000; default 100",
+        "output_csv": "optional workspace path; complete results only",
+        "params": "optional array or object",
+        "query": "one SQLite statement",
+        "timeout": "optional seconds 1..120"
+      },
+      "required": [
+        "target",
+        "args.query"
+      ],
+      "target": "workspace database path"
     },
     "template.apply": {
       "args": {
@@ -2218,41 +2293,36 @@
             "result": {
               "additionalProperties": true,
               "properties": {
-                "acceptance": {
-                  "type": "boolean"
-                },
-                "grade": {
-                  "minLength": 1,
-                  "type": "string"
-                },
-                "issues": {
-                  "items": {
-                    "type": "object"
-                  },
-                  "type": "array"
-                },
-                "score": {
-                  "maximum": 100,
-                  "minimum": 0,
-                  "type": "integer"
-                },
                 "type": {
                   "const": "executive_ppt_delivery"
                 },
-                "warnings": {
+                "assessment_mode": {
+                  "const": "content_observation_only"
+                },
+                "content_quality": {
+                  "const": "unassessed"
+                },
+                "slides": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "inspection": {
+                  "type": "object"
+                },
+                "constraint_checks": {
+                  "type": "array",
                   "items": {
                     "type": "object"
-                  },
-                  "type": "array"
+                  }
                 }
               },
               "required": [
                 "type",
-                "score",
-                "grade",
-                "issues",
-                "warnings",
-                "acceptance"
+                "assessment_mode",
+                "content_quality",
+                "slides",
+                "inspection",
+                "constraint_checks"
               ],
               "type": "object"
             },
@@ -3890,14 +3960,6 @@
       }
     },
     "qc.ppt.delivery_check": {
-      "acceptance": {
-        "json_pointer": "/result/result/acceptance",
-        "source_kind": "RESULT_PAYLOAD",
-        "value_schema": {
-          "schema": "tiangong.omni-action-value-schema.v1",
-          "type": "boolean"
-        }
-      },
       "fact_id": {
         "source_kind": "FACT_ID",
         "value_schema": {
@@ -3912,16 +3974,6 @@
         "value_schema": {
           "schema": "tiangong.omni-action-value-schema.v1",
           "type": "object"
-        }
-      },
-      "score": {
-        "json_pointer": "/result/result/score",
-        "source_kind": "RESULT_PAYLOAD",
-        "value_schema": {
-          "maximum": 100,
-          "minimum": 0,
-          "schema": "tiangong.omni-action-value-schema.v1",
-          "type": "integer"
         }
       }
     },

@@ -23,6 +23,7 @@ import sys
 import textwrap
 import time
 import urllib.parse
+import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
@@ -36,15 +37,15 @@ PRO_APP_ACTIONS: Dict[str, Dict[str, Any]] = {
 
     "browser.playwright.script.create": {"risk": "A2", "implemented": True, "summary": "Generate Playwright Python automation script; does not require browser runtime to be installed."},
     "browser.playwright.goto": {"risk": "A2", "implemented": True, "summary": "Use Playwright to open a URL and save HTML/screenshot when available; fails honestly if Playwright/browser missing."},
-    "browser.playwright.screenshot": {"risk": "A2", "implemented": True, "summary": "Use Playwright to capture screenshot when available; can generate bridge script otherwise."},
-    "browser.playwright.extract_text": {"risk": "A0", "implemented": True, "summary": "Use Playwright to extract visible text when available; can use static fetch fallback for simple pages."},
-    "browser.playwright.pdf": {"risk": "A2", "implemented": True, "summary": "Use Playwright Chromium PDF export when available; generate bridge script otherwise."},
+    "browser.playwright.screenshot": {"risk": "A2", "implemented": True, "summary": "Capture a real Chromium screenshot; missing browser is an execution failure."},
+    "browser.playwright.extract_text": {"risk": "A0", "implemented": True, "summary": "Extract text from a real browser DOM with explicit preview truncation and saved full text."},
+    "browser.playwright.pdf": {"risk": "A2", "implemented": True, "summary": "Export PDF through real Chromium; missing browser is an execution failure."},
 
     "microsoft.graph.request_pack.create": {"risk": "A2", "implemented": True, "summary": "Create Microsoft Graph request pack for OneDrive/SharePoint/Excel/DriveItem workflows; does not execute without token."},
     "microsoft.office.com.script.create": {"risk": "A2", "implemented": True, "summary": "Generate Windows Office COM Python bridge script for Word/Excel/PowerPoint automation."},
-    "microsoft.word.native.export_pdf": {"risk": "A2", "implemented": True, "summary": "Export DOCX to PDF via Word COM when available; otherwise returns bridge script package."},
-    "microsoft.excel.native.chart.create": {"risk": "A2", "implemented": True, "summary": "Create chart instruction bridge for Excel COM/openpyxl fallback."},
-    "microsoft.powerpoint.native.export_pdf": {"risk": "A2", "implemented": True, "summary": "Export PPTX to PDF via PowerPoint COM when available; otherwise returns bridge script package."},
+    "microsoft.word.native.export_pdf": {"risk": "A2", "implemented": True, "summary": "Export DOCX using native Windows Word COM with args.execute=true and a fresh args.output PDF, then reopen the result. Missing native environment fails; no generated-script success."},
+    "microsoft.excel.native.chart.create": {"risk": "A2", "implemented": False, "summary": "Native Excel chart requirement retained, backend not implemented. A PDF export script is not a chart operation. Discover a configured Excel MCP backend."},
+    "microsoft.powerpoint.native.export_pdf": {"risk": "A2", "implemented": True, "summary": "Export PPTX using native Windows PowerPoint COM with args.execute=true and a fresh args.output PDF, then reopen the result. Missing native environment fails."},
     "wps.native.script.create": {"risk": "A2", "implemented": True, "summary": "Generate WPS automation bridge notes/scripts for Writer/Spreadsheets/Presentation."},
 
     "adobe.photoshop.uxp.script.create": {"risk": "A2", "implemented": True, "summary": "Generate Photoshop UXP/PSJS script for layer/text/export operations."},
@@ -220,9 +221,9 @@ def handle_pro_app_action(runtime: Any, op_id: str, action: str, target: str | N
     if action == "app.bridge.pack.create":
         return _bridge_pack_create(runtime, target, args)
     if action.startswith("browser.playwright."):
-        return _browser_playwright(runtime, action, target, args)
+        return _browser_playwright(runtime, action, target, args, op_id=op_id)
     if action.startswith("mcp."):
-        return _mcp_action(runtime, action, target, args)
+        return _mcp_action(runtime, action, target, args, op_id=op_id)
     if action == "microsoft.graph.request_pack.create":
         return _request_pack(runtime, target, args, provider="microsoft_graph")
     if action == "microsoft.office.com.script.create":
@@ -338,7 +339,7 @@ def _info(runtime: Any, target: str | None, args: Dict[str, Any]) -> Dict[str, A
             "profile_count": len(APP_PROFILES),
             "action_count": len(PRO_APP_ACTIONS),
             "profiles": list(APP_PROFILES.keys()),
-            "required_model_loop": "skill.route -> skill.get -> model chooses app action -> app.adapter.health/probe -> execute native action or generate bridge pack -> qc/repair/package",
+            "required_model_loop": "observe actual capabilities and environment -> model generates task-local Tools and Skill -> execute registered actions -> read back actual results -> repair from evidence -> submit to the adversarial reviewer; a generated bridge pack is not native execution",
         },
         "evidence": {"path": "v34_professional_apps", "exists": True, "bytes": len(PRO_APP_ACTIONS)},
     }
@@ -579,8 +580,8 @@ def _launch_playwright_chromium(playwright: Any) -> Tuple[Any, str, List[str]]:
     raise RuntimeError("No working Chromium executable. " + " | ".join(errors))
 
 
-def _browser_playwright(runtime: Any, action: str, target: str | None, args: Dict[str, Any]) -> Dict[str, Any]:
-    url = str(args.get("url") or target or "").strip()
+def _browser_playwright(runtime: Any, action: str, target: str | None, args: Dict[str, Any], *, op_id: str | None = None) -> Dict[str, Any]:
+    url = str(args.get("url") or args.get("source") or target or "").strip()
     if action == "browser.playwright.script.create":
         out = str(target or args.get("output") or "bridges/playwright_bridge.py")
         evidence = _write_text(runtime, out, _playwright_script({**args, "url": url or args.get("url")}))
@@ -588,45 +589,113 @@ def _browser_playwright(runtime: Any, action: str, target: str | None, args: Dic
     if not url:
         return {"success": False, "message": f"{action} requires target or args.url"}
     if not _module_available("playwright"):
-        script = _playwright_script({**args, "url": url})
-        script_path = str(args.get("bridge_output") or f"bridges/playwright_{int(time.time())}.py")
-        ev = _write_text(runtime, script_path, script)
-        return {"success": False, "requires_adapter": "playwright_python_and_browsers", "message": "Playwright is not installed in this runtime. Generated bridge script instead.", "bridge_script": ev}
+        return {"success": False, "execution_state": "not_executed", "requires_adapter": "playwright_python_and_browsers",
+                "message": "Playwright is unavailable; no browser action was executed."}
+    interaction_started = False
+    browser = None
     try:
         from playwright.sync_api import sync_playwright  # type: ignore
-        out_dir = _resolve(runtime, str(args.get("output_dir") or "browser_playwright"))
+        parsed = urllib.parse.urlsplit(url)
+        if not parsed.scheme:
+            url = _resolve(runtime, url, must_exist=True).as_uri()
+        elif parsed.scheme == "file":
+            if parsed.netloc not in {"", "localhost"}:
+                raise ValueError("remote file URL is not supported")
+            from urllib.request import url2pathname
+            url = _resolve(runtime, url2pathname(parsed.path), must_exist=True).as_uri()
+        elif parsed.scheme not in {"http", "https", "data"} or parsed.username or parsed.password:
+            raise ValueError("unsupported browser URL")
+        timeout_ms = max(1000, min(60000, int(args.get("timeout_ms") or 30000)))
+        deadline = time.monotonic() + timeout_ms / 1000
+        def remaining():
+            cancel = getattr(getattr(runtime, "config", None), "cancel_check", None)
+            if callable(cancel) and cancel():
+                raise RuntimeError("browser action cancelled")
+            left = int((deadline - time.monotonic()) * 1000)
+            if left <= 0:
+                raise TimeoutError("browser action deadline")
+            return left
+        out_dir = _resolve(runtime, str(args.get("output_dir") or f"browser_playwright/{op_id or uuid.uuid4().hex}"))
+        local_input = None
+        if urllib.parse.urlsplit(url).scheme == "file":
+            from urllib.request import url2pathname
+            local_input = Path(url2pathname(urllib.parse.urlsplit(url).path))
+        outputs = [out_dir / "page.html", out_dir / "text.txt"]
+        if args.get("output"):
+            outputs.append(_resolve(runtime, str(args["output"])))
+        for output in outputs:
+            if local_input and (output == local_input or (output.exists() and os.path.samefile(output, local_input))):
+                raise ValueError("browser output cannot overwrite its source page")
         out_dir.mkdir(parents=True, exist_ok=True)
         with sync_playwright() as p:
             browser, launch_source, launch_errors = _launch_playwright_chromium(p)
-            page = browser.new_page(viewport={"width": int(args.get("width") or 1365), "height": int(args.get("height") or 768)})
-            page.goto(url, wait_until=str(args.get("wait_until") or "networkidle"), timeout=int(args.get("timeout_ms") or 60000))
-            if args.get("wait_ms"):
-                page.wait_for_timeout(int(args.get("wait_ms")))
-            html_path = out_dir / "page.html"
-            text_path = out_dir / "text.txt"
-            html_path.write_text(page.content(), encoding="utf-8")
-            body_text = page.locator("body").inner_text(timeout=10000)
-            text_path.write_text(body_text, encoding="utf-8")
-            result: Dict[str, Any] = {
-                "url": url,
-                "browser_launch_source": launch_source,
-                "browser_launch_fallbacks": launch_errors,
-                "html": runtime._file_evidence(html_path),
-                "text": runtime._file_evidence(text_path),
-                "body_preview": body_text[:2000],
-            }
-            if action in {"browser.playwright.screenshot", "browser.playwright.goto"}:
-                shot_path = out_dir / "screenshot.png"
-                page.screenshot(path=str(shot_path), full_page=bool(args.get("full_page", True)))
-                result["screenshot"] = runtime._file_evidence(shot_path)
-            if action == "browser.playwright.pdf":
-                pdf_path = out_dir / "page.pdf"
-                page.pdf(path=str(pdf_path), print_background=True)
-                result["pdf"] = runtime._file_evidence(pdf_path)
-            browser.close()
+            try:
+                page = browser.new_page(viewport={"width": max(1, min(4096, int(args.get("width") or 1365))),
+                                                   "height": max(1, min(4096, int(args.get("height") or 768)))})
+                # Local subresources obey the same path authority as the page.
+                def route(request_route):
+                    address = urllib.parse.urlsplit(request_route.request.url)
+                    if address.scheme == "file":
+                        try:
+                            from urllib.request import url2pathname
+                            _resolve(runtime, url2pathname(address.path), must_exist=True)
+                        except Exception:
+                            request_route.abort()
+                            return
+                    if address.scheme not in {"http", "https", "file", "data", "blob", "about"}:
+                        request_route.abort()
+                    else:
+                        request_route.continue_()
+                page.route("**/*", route)
+                response = page.goto(url, wait_until=str(args.get("wait_until") or "domcontentloaded"), timeout=remaining())
+                if action == "browser.chrome.click":
+                    selector = args.get("selector")
+                    if not isinstance(selector, str) or not selector.strip():
+                        raise ValueError("browser.chrome.click requires args.selector")
+                    interaction_started = True
+                    page.locator(selector).click(timeout=remaining())
+                wait_ms = max(0, min(10000, int(args.get("wait_ms") or 0)))
+                if wait_ms:
+                    page.wait_for_timeout(min(wait_ms, remaining()))
+                html_path, text_path = out_dir / "page.html", out_dir / "text.txt"
+                html_text = page.content()
+                body_text = page.locator("body").inner_text(timeout=remaining())
+                if max(len(html_text.encode()), len(body_text.encode())) > 4 * 1024 * 1024:
+                    raise ValueError("browser observation exceeds 4 MiB; narrow the page scope")
+                html_path.write_text(html_text, encoding="utf-8")
+                text_path.write_text(body_text, encoding="utf-8")
+                preview_chars = max(1, min(200000, int(args.get("max_chars") or 8000)))
+                links = page.locator("a[href]")
+                result: Dict[str, Any] = {
+                    "url": url, "final_url": page.url, "initial_http_status": response.status if response else None,
+                    "execution_mode": "real_browser", "session_scope": "isolated_action",
+                    "browser_launch_source": launch_source, "browser_launch_fallbacks": launch_errors,
+                    "html": runtime._file_evidence(html_path), "text": runtime._file_evidence(text_path),
+                    "body_preview": body_text[:preview_chars], "body_chars": len(body_text),
+                    "preview_truncated": len(body_text) > preview_chars,
+                    "full_text_available": True,
+                    "links": links.evaluate_all("nodes => nodes.slice(0,200).map(a => ({text:a.innerText,url:a.href}))"),
+                    "links_truncated": links.count() > 200,
+                }
+                if action in {"browser.playwright.screenshot", "browser.playwright.goto", "browser.chrome.click"}:
+                    shot_path = _resolve(runtime, str(args["output"])) if args.get("output") else out_dir / "screenshot.png"
+                    shot_path.parent.mkdir(parents=True, exist_ok=True)
+                    page.screenshot(path=str(shot_path), full_page=bool(args.get("full_page", True)), timeout=remaining())
+                    result["screenshot"] = runtime._file_evidence(shot_path)
+                if action == "browser.playwright.pdf":
+                    pdf_path = _resolve(runtime, str(args["output"])) if args.get("output") else out_dir / "page.pdf"
+                    pdf_path.parent.mkdir(parents=True, exist_ok=True)
+                    remaining()
+                    page.pdf(path=str(pdf_path), print_background=True)
+                    result["pdf"] = runtime._file_evidence(pdf_path)
+                remaining()
+            finally:
+                browser.close()
         return {"success": True, "result": result, "evidence": result.get("screenshot") or result.get("pdf") or result.get("text") or {}}
     except Exception as exc:
-        return {"success": False, "requires_adapter": "working_playwright_browser", "message": str(exc)}
+        return {"success": False, "message": str(exc), "ambiguous_effect": interaction_started,
+                "execution_state": "unknown" if interaction_started else "failed",
+                "reconciliation_required": interaction_started}
 
 
 def _request_pack_text(provider: str, args: Dict[str, Any]) -> Dict[str, str]:
@@ -747,24 +816,46 @@ def _office_com_script(runtime: Any, target: str | None, args: Dict[str, Any]) -
 
 
 def _office_native_action(runtime: Any, action: str, target: str | None, args: Dict[str, Any]) -> Dict[str, Any]:
-    if platform.system().lower() == "windows" and _module_available("win32com") and args.get("execute", False):
-        script = _office_com_text({**args, "input": target or args.get("input"), "output": args.get("output")})
-        tmp = _resolve(runtime, f".omni_temp/office_{int(time.time())}.py")
-        tmp.parent.mkdir(parents=True, exist_ok=True)
-        tmp.write_text(script, encoding="utf-8")
-        # Delayed import: omni_body_tool imports this module chain at load time.
-        # In frozen builds sys.executable is the backend exe, never reuse it.
-        try:
-            from .omni_body_tool import _resolve_python_interpreter
-            interpreter = _resolve_python_interpreter()
-        except Exception:
-            interpreter = None
-        if interpreter is None:
-            return _office_com_script(runtime, str(args.get("bridge_output") or f"bridges/{action.replace('.', '_')}.py"), {**args, "app": "powerpoint" if "powerpoint" in action else "excel" if "excel" in action else "word", "input": target or args.get("input")})
-        res = subprocess.run([interpreter, str(tmp)], cwd=str(runtime.workspace), capture_output=True, text=True, timeout=int(args.get("timeout", 120)))
-        return {"success": res.returncode == 0, "result": {"stdout": res.stdout, "stderr": res.stderr, "returncode": res.returncode}, "evidence": {"path": args.get("output") or "", "exists": bool(args.get("output") and _resolve(runtime, args.get("output")).exists())}}
-    # Professional behavior: return executable bridge, not fake PDF/export.
-    return _office_com_script(runtime, str(args.get("bridge_output") or f"bridges/{action.replace('.', '_')}.py"), {**args, "app": "powerpoint" if "powerpoint" in action else "excel" if "excel" in action else "word", "input": target or args.get("input")})
+    if action == "microsoft.excel.native.chart.create":
+        return {"success": False, "execution_state": "not_executed", "requires_adapter": "excel_native_chart",
+                "message": "Native Excel chart creation is not implemented by the PDF-export bridge."}
+    if platform.system().lower() != "windows" or not _module_available("win32com") or args.get("execute") is not True:
+        return {"success": False, "execution_state": "not_executed",
+                "requires_adapter": "windows_office_com", "message": "Native export requires Windows Office COM and args.execute=true. Use the separate script.create action if a script is desired."}
+    started = False
+    try:
+        from .omni_body_tool import _resolve_python_interpreter
+        interpreter = _resolve_python_interpreter()
+        if not interpreter:
+            raise RuntimeError("Office bridge Python interpreter unavailable")
+        source = _resolve(runtime, target or args.get("input"), must_exist=True)
+        if not args.get("output"):
+            raise ValueError("Native PDF export requires args.output")
+        output = _resolve(runtime, str(args["output"]))
+        if output == source or (output.exists() and os.path.samefile(output, source)):
+            raise ValueError("PDF output cannot overwrite its source")
+        if output.exists():
+            raise ValueError("Use a fresh output path so a stale PDF cannot prove this export")
+        output.parent.mkdir(parents=True, exist_ok=True)
+        app = "powerpoint" if "powerpoint" in action else "word"
+        script = _office_com_text({**args, "app": app, "input": str(source), "output": str(output)})
+        temporary = _resolve(runtime, f".omni_temp/office_{uuid.uuid4().hex}.py")
+        temporary.parent.mkdir(parents=True, exist_ok=True)
+        temporary.write_text(script, encoding="utf-8")
+        started = True
+        response = subprocess.run([interpreter, str(temporary)], cwd=str(runtime.workspace), capture_output=True,
+                                  text=True, timeout=max(1, min(120, int(args.get("timeout") or 120))))
+        if response.returncode:
+            raise RuntimeError(f"Native Office export returned {response.returncode}")
+        from pypdf import PdfReader
+        reader = PdfReader(str(output))
+        pages = len(reader.pages)
+        evidence = runtime._file_evidence(output)
+        return {"success": True, "result": {"execution_mode": "native_office_com",
+                "output": evidence, "pdf_pages": pages, "content_quality": "unassessed"}, "evidence": evidence}
+    except Exception as exc:
+        return {"success": False, "message": str(exc), "execution_state": "unknown" if started else "not_executed",
+                "ambiguous_effect": started, "reconciliation_required": started}
 
 
 def _wps_script_text(args: Dict[str, Any]) -> str:
@@ -949,7 +1040,7 @@ def _docker_action(runtime: Any, action: str, target: str | None, args: Dict[str
     return {"success": res.returncode == 0, "result": {"cmd": cmd[1:], "returncode": res.returncode, "stdout": res.stdout, "stderr": res.stderr}, "evidence": {"path": "docker", "exists": True, "bytes": len(res.stdout)}}
 
 
-def _mcp_action(runtime: Any, action: str, target: str | None, args: Dict[str, Any]) -> Dict[str, Any]:
+def _mcp_action(runtime: Any, action: str, target: str | None, args: Dict[str, Any], *, op_id: str = "observation") -> Dict[str, Any]:
     """MCP 接入（v1）：服务器只能来自用户配置文件，模型不可自造命令。
 
     权限链全复用：mcp.tool.call 注册为 A3，由网关确认链把关——任何
@@ -959,6 +1050,7 @@ def _mcp_action(runtime: Any, action: str, target: str | None, args: Dict[str, A
         DEFAULT_TIMEOUT_MS,
         McpClientError,
         call_tool,
+        application_connections,
         list_servers,
         list_tools,
     )
@@ -970,6 +1062,14 @@ def _mcp_action(runtime: Any, action: str, target: str | None, args: Dict[str, A
             return DEFAULT_TIMEOUT_MS
 
     try:
+        def capture(value):
+            if not callable(getattr(runtime, "_resolve", None)):
+                return None  # Standalone client tests have no product object workspace.
+            import hashlib
+            raw = json.dumps(value, ensure_ascii=False, sort_keys=True, allow_nan=False)
+            digest = hashlib.sha256(raw.encode()).hexdigest()
+            return _write_text(runtime, f"mcp_observations/{digest}.json", raw)
+
         if action == "mcp.servers.list":
             servers = list_servers()
             return {
@@ -977,18 +1077,20 @@ def _mcp_action(runtime: Any, action: str, target: str | None, args: Dict[str, A
                 "result": {
                     "servers": servers,
                     "count": len(servers),
-                    "hint": "服务器在 ~/.tiangong/v3/mcp_servers.json 中由用户配置；模型只能引用 server 名。",
+                    **application_connections(app_id=str(args.get("app_id") or ""),
+                        offset=int(args.get("offset") or 0), limit=int(args.get("limit") or 20)),
+                    "hint": "现有 MCP 配置保存服务、环境位置和 applications 关联。用 mcp.tools.list 连接并读取实际工具；按 next_cursor/next_offset 继续发现。配置存在不等于应用已接通。",
                 },
             }
         if action == "mcp.tools.list":
             server = str(target or args.get("server") or "").strip()
-            result = list_tools(server, timeout_ms=_timeout_ms())
+            result = list_tools(server, timeout_ms=_timeout_ms(), cursor=args.get("cursor"), capture=capture)
             return {"success": True, "result": result}
         if action == "mcp.tool.call":
             server = str(target or args.get("server") or "").strip()
             tool = str(args.get("tool") or args.get("name") or "").strip()
-            arguments = args.get("arguments") or {}
-            result = call_tool(server, tool, arguments, timeout_ms=_timeout_ms())
+            arguments = args.get("arguments", {})
+            result = call_tool(server, tool, arguments, timeout_ms=_timeout_ms(), capture=capture)
             return {
                 "success": not result.get("is_error"),
                 # 两种失败（isError / McpClientError）保持同一形状：
@@ -996,9 +1098,15 @@ def _mcp_action(runtime: Any, action: str, target: str | None, args: Dict[str, A
                 "error": "" if not result.get("is_error") else "mcp.tool.is_error",
                 "result": result,
                 "message": "MCP tool reported isError" if result.get("is_error") else "",
+                # isError describes a tool failure, not a rollback guarantee.
+                "ambiguous_effect": bool(result.get("is_error")),
+                "reconciliation_required": bool(result.get("is_error")),
             }
     except McpClientError as exc:
-        return {"success": False, "error": exc.code, "result": None, "message": str(exc)}
+        return {"success": False, "error": exc.code, "result": None, "message": str(exc),
+                "ambiguous_effect": exc.code == "mcp.outcome.unknown",
+                "execution_state": "unknown" if exc.code == "mcp.outcome.unknown" else "not_executed",
+                "reconciliation_required": exc.code == "mcp.outcome.unknown"}
     return {"success": False, "error": "mcp.action.unknown", "result": None, "message": f"unknown mcp action: {action}"}
 
 
@@ -1007,27 +1115,71 @@ def _sqlite_query(runtime: Any, target: str | None, args: Dict[str, Any]) -> Dic
     query = str(args.get("query") or "").strip()
     if not query:
         return {"success": False, "message": "sqlite.query requires args.query"}
-    is_select = query.lower().startswith(("select", "pragma", "with"))
-    db.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(db))
+    read_only = args.get("confirmed") is not True
+    if not read_only:
+        db.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(db.as_uri() + "?mode=ro", uri=True, timeout=5) if read_only else sqlite3.connect(str(db), timeout=5)
+    deadline = time.monotonic() + max(1, min(120, int(args.get("timeout") or 30)))
+    conn.set_progress_handler(lambda: int(time.monotonic() >= deadline), 10000)
+    def authorize(operation, arg1, arg2, database, trigger):
+        if operation in {sqlite3.SQLITE_ATTACH, sqlite3.SQLITE_DETACH}:
+            return sqlite3.SQLITE_DENY
+        if operation == sqlite3.SQLITE_FUNCTION and str(arg2).lower() == "load_extension":
+            return sqlite3.SQLITE_DENY
+        if operation == sqlite3.SQLITE_PRAGMA and str(arg1).lower() in {"temp_store_directory", "data_store_directory"}:
+            return sqlite3.SQLITE_DENY
+        if read_only:
+            if operation == sqlite3.SQLITE_PRAGMA:
+                return sqlite3.SQLITE_OK if str(arg1).lower() in {"table_info", "table_xinfo", "index_list", "index_info", "foreign_key_list", "database_list", "compile_options"} else sqlite3.SQLITE_DENY
+            if operation not in {sqlite3.SQLITE_SELECT, sqlite3.SQLITE_READ, sqlite3.SQLITE_FUNCTION, sqlite3.SQLITE_RECURSIVE}:
+                return sqlite3.SQLITE_DENY
+        return sqlite3.SQLITE_OK
+    conn.set_authorizer(authorize)
+    committed = False
     try:
         cur = conn.cursor()
         cur.execute(query, args.get("params") or [])
-        rows = cur.fetchall()
         headers = [d[0] for d in cur.description] if cur.description else []
-        if not is_select:
+        limit = max(1, min(10000, int(args.get("max_rows") or 100)))
+        rows = cur.fetchmany(limit + 1)
+        truncated = len(rows) > limit
+        rows = rows[:limit]
+        # A cursor with RETURNING must finish before commit. Discarding unseen
+        # rows is explicit, and never presented as a complete query result.
+        if not read_only:
+            while cur.fetchmany(1024):
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("SQLite query deadline")
             conn.commit()
+            committed = True
         out_csv = args.get("output_csv")
         ev = runtime._file_evidence(db)
         csv_ev = None
         if out_csv and headers:
+            if truncated:
+                raise ValueError("result exceeds max_rows; refusing a silently partial CSV export")
             csv_path = _resolve(runtime, str(out_csv))
+            if csv_path == db or (csv_path.exists() and os.path.samefile(csv_path, db)):
+                raise ValueError("CSV output cannot overwrite its database")
             csv_path.parent.mkdir(parents=True, exist_ok=True)
-            with csv_path.open("w", encoding="utf-8", newline="") as f:
-                writer = csv.writer(f)
-                writer.writerow(headers)
-                writer.writerows(rows)
+            temporary = csv_path.with_name(csv_path.name + "." + uuid.uuid4().hex + ".tmp")
+            try:
+                with temporary.open("x", encoding="utf-8", newline="") as f:
+                    writer = csv.writer(f)
+                    writer.writerow(headers)
+                    writer.writerows([[v.hex() if isinstance(v, bytes) else v for v in row] for row in rows])
+                temporary.replace(csv_path)
+            finally:
+                temporary.unlink(missing_ok=True)
             csv_ev = runtime._file_evidence(csv_path)
-        return {"success": True, "result": {"headers": headers, "rows": rows[:100], "row_count": len(rows), "changed": conn.total_changes, "csv": csv_ev}, "evidence": csv_ev or ev}
+        serialized_rows = [[{"type": "blob", "hex": v.hex()} if isinstance(v, bytes) else v for v in row] for row in rows]
+        return {"success": True, "result": {"headers": headers, "rows": serialized_rows,
+            "row_count": None if truncated else len(rows), "returned_rows": len(rows),
+            "truncated": truncated, "read_only": read_only,
+            "changed": conn.total_changes, "csv": csv_ev}, "evidence": csv_ev or ev}
+    except Exception as exc:
+        conn.rollback()
+        return {"success": False, "message": str(exc), "ambiguous_effect": committed,
+                "execution_state": "committed_export_failed" if committed else "failed_without_commit"}
     finally:
         conn.close()

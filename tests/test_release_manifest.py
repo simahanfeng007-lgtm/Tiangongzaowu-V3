@@ -43,11 +43,11 @@ class ReleaseManifestTests(unittest.TestCase):
         # Release pins describe published file bytes, not the parsed registry snapshot.
         self.assertEqual(
             manifest.action_registry_sha256,
-            "9260ab62b4f519fb3e8ce4d1c4b0f8b3afca53778f9492e7809733473acde368",
+            "1f576ec29b2f38b97d93531f05627fe9f6ec9c7195dda9f88947fac8270e7234",
         )
         self.assertEqual(
             manifest.capability_manifest_sha256,
-            "b9f84fecb4c41e8791133d0450025a87a79d810e2ca1e7a1c516e59f68a46158",
+            "f3bdb7d6209ccf17c42ffc25e84e16e25bb814bcf968bc79416954c0e407c51f",
         )
         self.assertEqual(
             manifest.skill_index_sha256,

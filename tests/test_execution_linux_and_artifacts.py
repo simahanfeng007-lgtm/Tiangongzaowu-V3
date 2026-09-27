@@ -210,7 +210,8 @@ def test_media_encoder_fits_real_sandbox_and_produces_decodable_frames(runner):
 
 
 @pytest.mark.parametrize('explicit_source', [True, False])
-def test_portable_browser_snapshot_keeps_html_input_and_output_distinct(tmp_path, explicit_source):
+def test_real_browser_snapshot_keeps_html_input_and_output_distinct(tmp_path, explicit_source):
+    pytest.importorskip('playwright.sync_api')
     from PIL import Image
     source = '<html><title>Fixture</title><body>Actual content 42</body></html>'
     (tmp_path / 'page.html').write_text(source)
@@ -218,7 +219,10 @@ def test_portable_browser_snapshot_keeps_html_input_and_output_distinct(tmp_path
     target = 'snapshot.png' if explicit_source else 'page.html'
     args = {'source': 'page.html'} if explicit_source else {'output': 'snapshot.png'}
     result = runtime.run('browser.chrome.screenshot', target, args)
+    if not result['success'] and 'No working Chromium executable' in result.get('message', ''):
+        pytest.skip('native Chromium runtime is not available in this environment')
     assert result['success'], result
+    assert result['result']['execution_mode'] == 'real_browser'
     assert (tmp_path / 'page.html').read_text() == source
     with Image.open(tmp_path / 'snapshot.png') as image:
         assert image.size == (1280, 1600)

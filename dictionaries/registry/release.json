@@ -1,12 +1,12 @@
 {
-  "dictionary_sha256": "f83a7cce9573792cad6e5952c5592d4d9c1c2d5150338757045a31b2ebd1c3cf",
+  "dictionary_sha256": "60ba81796a80f0a705b2d8d5bb7bc5d59f28cc3b74b4b1b837892834c8384204",
   "schema": "tiangong.dictionary.release.v1",
   "skill_count": 0,
-  "source_hash": "fb8e7c8f7a5512fc2a5afc1e0957700a335a99048221d1b2d23e8a7d69c7cbfd",
-  "tool_count": 791,
-  "version": "2026.09.26.1",
+  "source_hash": "915adaf798c5a9fbcc9d4182739935c67b144d64bafa9df09a51e424f743c7ee",
+  "tool_count": 779,
+  "version": "2026.09.27.3",
   "views": {
-    "actions.json": "9260ab62b4f519fb3e8ce4d1c4b0f8b3afca53778f9492e7809733473acde368",
-    "capability_manifest.generated.json": "b9f84fecb4c41e8791133d0450025a87a79d810e2ca1e7a1c516e59f68a46158"
+    "actions.json": "1f576ec29b2f38b97d93531f05627fe9f6ec9c7195dda9f88947fac8270e7234",
+    "capability_manifest.generated.json": "f3bdb7d6209ccf17c42ffc25e84e16e25bb814bcf968bc79416954c0e407c51f"
   }
 }

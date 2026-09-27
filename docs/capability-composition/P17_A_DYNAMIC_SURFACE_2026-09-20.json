@@ -22,7 +22,7 @@
   {
    "kind": "reflective_getattr",
    "path": "app/backend/tiangong-backend/omni_body_skill/tools/omni_body_tool.py",
-   "line": 907,
+   "line": 909,
    "target": "handler_name",
    "classification": "verified",
    "verified_category": "tool_handler_dispatch"
@@ -30,7 +30,7 @@
   {
    "kind": "dynamic_import",
    "path": "app/backend/tiangong-backend/omni_body_skill/tools/omni_body_tool.py",
-   "line": 1620,
+   "line": 1622,
    "target": "<__import__>",
    "classification": "verified",
    "verified_category": "optional_dependency"
@@ -239,10 +239,10 @@
   {
    "kind": "reflective_getattr",
    "path": "src/capability_dictionary/__init__.py",
-   "line": 126,
+   "line": 131,
    "target": "name",
    "classification": "verified",
-   "verified_category": "optional_dependency"
+   "verified_category": "structural_field_access"
   },
   {
    "kind": "reflective_getattr",
@@ -495,7 +495,7 @@
   {
    "kind": "reflective_getattr",
    "path": "src/omni_body_skill/tools/omni_body_tool.py",
-   "line": 907,
+   "line": 909,
    "target": "handler_name",
    "classification": "verified",
    "verified_category": "tool_handler_dispatch"
@@ -503,7 +503,7 @@
   {
    "kind": "dynamic_import",
    "path": "src/omni_body_skill/tools/omni_body_tool.py",
-   "line": 1620,
+   "line": 1622,
    "target": "<__import__>",
    "classification": "verified",
    "verified_category": "optional_dependency"

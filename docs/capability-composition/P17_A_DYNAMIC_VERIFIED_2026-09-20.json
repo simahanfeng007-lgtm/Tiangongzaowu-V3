@@ -6,11 +6,6 @@
    "reason": "Loads a fixed internal runtime module; the Omni loader additionally pins the resolved source path.",
    "reviewed_line": "module = importlib.import_module(module_name)"
   },
-  "app/backend/tiangong-backend/omni_body_skill/tools/omni_body_tool.py:907": {
-   "category": "tool_handler_dispatch",
-   "reason": "Resolves the method bound by the pinned dictionary after readiness and authorization checks.",
-   "reviewed_line": "handler = getattr(self, handler_name, None)"
-  },
   "app/backend/tiangong-backend/omni_body_skill/tools/omni_capability.py:79": {
    "category": "structural_field_access",
    "reason": "Fixed composition profile extractor reads only execution_profile_id and execution_profile_sha256 from a sealed contract; it does not resolve an import or action handler.",
@@ -135,11 +130,6 @@
    "category": "structural_field_access",
    "reason": "Reads fixed emotional/state fields or probes named confirmation/lifecycle methods; it does not resolve model-supplied tool authority.",
    "reviewed_line": "current = getattr(target, key)"
-  },
-  "src/capability_dictionary/__init__.py:126": {
-   "category": "optional_dependency",
-   "reason": "Checks executable availability declared by the pinned dictionary; missing dependencies block execution.",
-   "reviewed_line": "available = bool(kind == \"executable\" and runtime and getattr(runtime, name, None)) or _dependency_available(dependency)"
   },
   "src/communication_service/feishu_outbound.py:641": {
    "category": "model_field_iteration",
@@ -270,11 +260,6 @@
    "category": "lazy_module_import",
    "reason": "Loads a fixed internal runtime module; the Omni loader additionally pins the resolved source path.",
    "reviewed_line": "module = importlib.import_module(module_name)"
-  },
-  "src/omni_body_skill/tools/omni_body_tool.py:907": {
-   "category": "tool_handler_dispatch",
-   "reason": "Resolves the method bound by the pinned dictionary after readiness and authorization checks.",
-   "reviewed_line": "handler = getattr(self, handler_name, None)"
   },
   "src/omni_body_skill/tools/omni_capability.py:79": {
    "category": "structural_field_access",
@@ -606,15 +591,25 @@
    "reason": "Reads a fixed set of contract fields for identity, uniqueness, or schema validation.",
    "reviewed_line": "values = tuple(getattr(primitive, field))"
   },
-  "app/backend/tiangong-backend/omni_body_skill/tools/omni_body_tool.py:1620": {
-   "category": "optional_dependency",
-   "reason": "Checks a fixed list of optional parser or document runtime dependencies.",
-   "reviewed_line": "__import__(mod)"
+  "app/backend/tiangong-backend/omni_body_skill/tools/omni_body_tool.py:909": {
+   "category": "tool_handler_dispatch",
+   "reason": "Reviewed for ontology v1.55: handler name comes from the validated published dictionary binding after lifecycle/readiness checks, never arbitrary model attribute text. The generated mirror is checked against src/omni_body_skill/tools/omni_body_tool.py. Missing handlers fail before execution."
   },
-  "src/omni_body_skill/tools/omni_body_tool.py:1620": {
+  "app/backend/tiangong-backend/omni_body_skill/tools/omni_body_tool.py:1622": {
    "category": "optional_dependency",
-   "reason": "Checks a fixed list of optional parser or document runtime dependencies.",
-   "reviewed_line": "__import__(mod)"
+   "reason": "Reviewed fixed installed-library probe list: docx, pptx, openpyxl, PIL, pypdf, reportlab, imageio_ffmpeg. No model-supplied import name. Returns dependency availability only; does not claim application execution or grant authority."
+  },
+  "src/capability_dictionary/__init__.py:131": {
+   "category": "structural_field_access",
+   "reason": "Reviewed v1.55 readiness: the attribute name is the executable dependency from the published dictionary. Reads a runtime dependency field without invoking it; installed dependency probe is the fallback. This descriptive readiness does not grant task/account/target authority. Covered by test_ontology_connection_and_observation.py."
+  },
+  "src/omni_body_skill/tools/omni_body_tool.py:909": {
+   "category": "tool_handler_dispatch",
+   "reason": "Reviewed for ontology v1.55: handler name comes from the validated published dictionary binding after lifecycle/readiness checks, never arbitrary model attribute text. The generated mirror is checked against src/omni_body_skill/tools/omni_body_tool.py. Missing handlers fail before execution."
+  },
+  "src/omni_body_skill/tools/omni_body_tool.py:1622": {
+   "category": "optional_dependency",
+   "reason": "Reviewed fixed installed-library probe list: docx, pptx, openpyxl, PIL, pypdf, reportlab, imageio_ffmpeg. No model-supplied import name. Returns dependency availability only; does not claim application execution or grant authority."
   }
  },
  "summary": {

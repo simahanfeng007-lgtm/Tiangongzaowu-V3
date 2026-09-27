@@ -26,7 +26,15 @@
         "core.filesystem.file.hash"
       ],
       "total_actions": 11,
-      "portable_fallback": true
+      "portable_fallback": true,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "core.filesystem"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "core.archive",
@@ -41,7 +49,15 @@
         "core.archive.zip.extract"
       ],
       "total_actions": 2,
-      "portable_fallback": true
+      "portable_fallback": true,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "core.archive"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "core.code",
@@ -61,7 +77,15 @@
         "core.code.shell.run"
       ],
       "total_actions": 7,
-      "portable_fallback": true
+      "portable_fallback": true,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "core.code"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "core.office",
@@ -81,7 +105,15 @@
         "core.office.mindmap.create"
       ],
       "total_actions": 7,
-      "portable_fallback": true
+      "portable_fallback": true,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "core.office"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "core.image",
@@ -102,7 +134,15 @@
         "core.image.image.convert"
       ],
       "total_actions": 8,
-      "portable_fallback": true
+      "portable_fallback": true,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "core.image"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "core.audio",
@@ -118,7 +158,15 @@
         "core.audio.audio.concat"
       ],
       "total_actions": 3,
-      "portable_fallback": true
+      "portable_fallback": true,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "core.audio"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "core.video",
@@ -136,7 +184,15 @@
         "core.video.video.slideshow"
       ],
       "total_actions": 5,
-      "portable_fallback": true
+      "portable_fallback": true,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "core.video"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "core.rollback",
@@ -151,7 +207,15 @@
         "core.rollback.rollback.apply"
       ],
       "total_actions": 2,
-      "portable_fallback": true
+      "portable_fallback": true,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "core.rollback"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "microsoft.word",
@@ -166,7 +230,15 @@
         "microsoft.word.pdf.create_from_text"
       ],
       "total_actions": 2,
-      "portable_fallback": true
+      "portable_fallback": true,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "microsoft.word"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "microsoft.excel",
@@ -181,7 +253,15 @@
         "microsoft.excel.sheet.read"
       ],
       "total_actions": 2,
-      "portable_fallback": true
+      "portable_fallback": true,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "microsoft.excel"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "microsoft.powerpoint",
@@ -195,7 +275,15 @@
         "microsoft.powerpoint.pptx.create"
       ],
       "total_actions": 1,
-      "portable_fallback": true
+      "portable_fallback": true,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "microsoft.powerpoint"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "wps.writer",
@@ -210,7 +298,15 @@
         "wps.writer.pdf.create_from_text"
       ],
       "total_actions": 2,
-      "portable_fallback": true
+      "portable_fallback": true,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "wps.writer"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "wps.spreadsheet",
@@ -225,7 +321,15 @@
         "wps.spreadsheet.sheet.read"
       ],
       "total_actions": 2,
-      "portable_fallback": true
+      "portable_fallback": true,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "wps.spreadsheet"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "wps.presentation",
@@ -239,7 +343,15 @@
         "wps.presentation.pptx.create"
       ],
       "total_actions": 1,
-      "portable_fallback": true
+      "portable_fallback": true,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "wps.presentation"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "ffmpeg",
@@ -259,7 +371,15 @@
         "ffmpeg.audio.concat"
       ],
       "total_actions": 7,
-      "portable_fallback": true
+      "portable_fallback": true,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "ffmpeg"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "pillow",
@@ -280,7 +400,15 @@
         "pillow.image.convert"
       ],
       "total_actions": 8,
-      "portable_fallback": true
+      "portable_fallback": true,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "pillow"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "browser.chrome",
@@ -288,8 +416,8 @@
       "category": "browser",
       "adapter": "browser_driver",
       "status": "adapter_required",
-      "implemented_actions": 7,
-      "adapter_required_actions": 18,
+      "implemented_actions": 8,
+      "adapter_required_actions": 10,
       "actions": [
         "browser.chrome.open",
         "browser.chrome.goto",
@@ -311,7 +439,15 @@
         "browser.chrome.pdf.print"
       ],
       "total_actions": 18,
-      "portable_fallback": true
+      "portable_fallback": true,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "browser.chrome"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "browser.edge",
@@ -333,7 +469,15 @@
         "browser.edge.run_js",
         "browser.edge.pdf.print"
       ],
-      "total_actions": 10
+      "total_actions": 10,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "browser.edge"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "browser.firefox",
@@ -355,7 +499,15 @@
         "browser.firefox.run_js",
         "browser.firefox.pdf.print"
       ],
-      "total_actions": 10
+      "total_actions": 10,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "browser.firefox"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "google.docs",
@@ -374,7 +526,15 @@
         "google.docs.export.pdf",
         "google.docs.share.set_permission"
       ],
-      "total_actions": 7
+      "total_actions": 7,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "google.docs"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "google.sheets",
@@ -393,7 +553,15 @@
         "google.sheets.export.xlsx",
         "google.sheets.share.set_permission"
       ],
-      "total_actions": 7
+      "total_actions": 7,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "google.sheets"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "google.slides",
@@ -411,7 +579,15 @@
         "google.slides.export.pdf",
         "google.slides.share.set_permission"
       ],
-      "total_actions": 6
+      "total_actions": 6,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "google.slides"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "google.drive",
@@ -431,7 +607,15 @@
         "google.drive.permission.set",
         "google.drive.folder.create"
       ],
-      "total_actions": 8
+      "total_actions": 8,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "google.drive"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "gmail",
@@ -450,7 +634,15 @@
         "gmail.label.apply",
         "gmail.thread.read"
       ],
-      "total_actions": 7
+      "total_actions": 7,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "gmail"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "microsoft.outlook",
@@ -469,7 +661,15 @@
         "microsoft.outlook.calendar.search",
         "microsoft.outlook.attachment.download"
       ],
-      "total_actions": 7
+      "total_actions": 7,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "microsoft.outlook"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "microsoft.onedrive",
@@ -488,7 +688,15 @@
         "microsoft.onedrive.file.delete_to_trash",
         "microsoft.onedrive.permission.set"
       ],
-      "total_actions": 7
+      "total_actions": 7,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "microsoft.onedrive"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "microsoft.sharepoint",
@@ -507,7 +715,15 @@
         "microsoft.sharepoint.list.read",
         "microsoft.sharepoint.list.update_item"
       ],
-      "total_actions": 7
+      "total_actions": 7,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "microsoft.sharepoint"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "microsoft.teams",
@@ -525,7 +741,15 @@
         "microsoft.teams.file.upload",
         "microsoft.teams.channel.list"
       ],
-      "total_actions": 6
+      "total_actions": 6,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "microsoft.teams"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "microsoft.onenote",
@@ -542,7 +766,15 @@
         "microsoft.onenote.page.update",
         "microsoft.onenote.export.pdf"
       ],
-      "total_actions": 5
+      "total_actions": 5,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "microsoft.onenote"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "microsoft.visio",
@@ -559,7 +791,15 @@
         "microsoft.visio.export.pdf",
         "microsoft.visio.export.svg"
       ],
-      "total_actions": 5
+      "total_actions": 5,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "microsoft.visio"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "feishu.docs",
@@ -568,7 +808,7 @@
       "adapter": "feishu_api",
       "status": "adapter_required",
       "implemented_actions": 5,
-      "adapter_required_actions": 7,
+      "adapter_required_actions": 2,
       "actions": [
         "feishu.docs.doc.create",
         "feishu.docs.doc.read",
@@ -579,7 +819,15 @@
         "feishu.docs.permission.set"
       ],
       "total_actions": 7,
-      "portable_fallback": true
+      "portable_fallback": true,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "feishu.docs"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "feishu.sheets",
@@ -597,7 +845,15 @@
         "feishu.sheets.export.xlsx",
         "feishu.sheets.permission.set"
       ],
-      "total_actions": 6
+      "total_actions": 6,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "feishu.sheets"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "feishu.wiki",
@@ -615,7 +871,15 @@
         "feishu.wiki.search",
         "feishu.wiki.permission.set"
       ],
-      "total_actions": 6
+      "total_actions": 6,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "feishu.wiki"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "feishu.im",
@@ -632,7 +896,15 @@
         "feishu.im.file.upload",
         "feishu.im.group.list"
       ],
-      "total_actions": 5
+      "total_actions": 5,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "feishu.im"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "dingtalk.docs",
@@ -651,7 +923,15 @@
         "dingtalk.docs.export.pdf",
         "dingtalk.docs.permission.set"
       ],
-      "total_actions": 7
+      "total_actions": 7,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "dingtalk.docs"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "dingtalk.im",
@@ -668,7 +948,15 @@
         "dingtalk.im.file.upload",
         "dingtalk.im.group.list"
       ],
-      "total_actions": 5
+      "total_actions": 5,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "dingtalk.im"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "wechat_work",
@@ -686,7 +974,15 @@
         "wechat_work.file.upload",
         "wechat_work.calendar.create_event"
       ],
-      "total_actions": 6
+      "total_actions": 6,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "wechat_work"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "wechat.desktop",
@@ -703,7 +999,15 @@
         "wechat.desktop.file.send_confirmed",
         "wechat.desktop.contact.search_visible"
       ],
-      "total_actions": 5
+      "total_actions": 5,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "wechat.desktop"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "yuque",
@@ -721,7 +1025,15 @@
         "yuque.export.markdown",
         "yuque.permission.set"
       ],
-      "total_actions": 6
+      "total_actions": 6,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "yuque"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "notion",
@@ -740,7 +1052,15 @@
         "notion.export.markdown",
         "notion.search"
       ],
-      "total_actions": 7
+      "total_actions": 7,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "notion"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "obsidian",
@@ -759,7 +1079,15 @@
         "obsidian.graph.export",
         "obsidian.search"
       ],
-      "total_actions": 7
+      "total_actions": 7,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "obsidian"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "adobe.photoshop",
@@ -768,7 +1096,7 @@
       "adapter": "photoshop_uxp_or_jsx",
       "status": "adapter_required",
       "implemented_actions": 8,
-      "adapter_required_actions": 12,
+      "adapter_required_actions": 4,
       "actions": [
         "adobe.photoshop.document.open",
         "adobe.photoshop.document.create",
@@ -784,7 +1112,15 @@
         "adobe.photoshop.export.psd"
       ],
       "total_actions": 12,
-      "portable_fallback": true
+      "portable_fallback": true,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "adobe.photoshop"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "adobe.illustrator",
@@ -805,7 +1141,15 @@
         "adobe.illustrator.export.pdf",
         "adobe.illustrator.export.png"
       ],
-      "total_actions": 9
+      "total_actions": 9,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "adobe.illustrator"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "adobe.indesign",
@@ -824,7 +1168,15 @@
         "adobe.indesign.export.pdf",
         "adobe.indesign.package.create"
       ],
-      "total_actions": 7
+      "total_actions": 7,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "adobe.indesign"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "adobe.lightroom",
@@ -842,7 +1194,15 @@
         "adobe.lightroom.export.jpg",
         "adobe.lightroom.batch.export"
       ],
-      "total_actions": 6
+      "total_actions": 6,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "adobe.lightroom"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "figma",
@@ -862,7 +1222,15 @@
         "figma.export.svg",
         "figma.comment.add"
       ],
-      "total_actions": 8
+      "total_actions": 8,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "figma"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "canva",
@@ -881,7 +1249,15 @@
         "canva.export.pdf",
         "canva.brandkit.apply"
       ],
-      "total_actions": 7
+      "total_actions": 7,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "canva"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "sketch",
@@ -899,7 +1275,15 @@
         "sketch.export.png",
         "sketch.export.svg"
       ],
-      "total_actions": 6
+      "total_actions": 6,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "sketch"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "adobe.premiere",
@@ -921,7 +1305,15 @@
         "adobe.premiere.color.apply",
         "adobe.premiere.export.mp4"
       ],
-      "total_actions": 10
+      "total_actions": 10,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "adobe.premiere"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "adobe.aftereffects",
@@ -941,7 +1333,15 @@
         "adobe.aftereffects.render.queue",
         "adobe.aftereffects.export.mov"
       ],
-      "total_actions": 8
+      "total_actions": 8,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "adobe.aftereffects"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "adobe.audition",
@@ -959,7 +1359,15 @@
         "adobe.audition.mixdown.export",
         "adobe.audition.effect.apply"
       ],
-      "total_actions": 6
+      "total_actions": 6,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "adobe.audition"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "capcut",
@@ -981,7 +1389,15 @@
         "capcut.cover.create",
         "capcut.export.mp4"
       ],
-      "total_actions": 10
+      "total_actions": 10,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "capcut"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "jianying",
@@ -990,7 +1406,7 @@
       "adapter": "jianying_adapter",
       "status": "adapter_required",
       "implemented_actions": 7,
-      "adapter_required_actions": 10,
+      "adapter_required_actions": 3,
       "actions": [
         "jianying.project.create",
         "jianying.media.import",
@@ -1004,7 +1420,15 @@
         "jianying.export.mp4"
       ],
       "total_actions": 10,
-      "portable_fallback": true
+      "portable_fallback": true,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "jianying"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "davinci.resolve",
@@ -1024,7 +1448,15 @@
         "davinci.resolve.fusion.apply",
         "davinci.resolve.deliver.render"
       ],
-      "total_actions": 8
+      "total_actions": 8,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "davinci.resolve"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "finalcut",
@@ -1043,7 +1475,15 @@
         "finalcut.music.add",
         "finalcut.export.mp4"
       ],
-      "total_actions": 7
+      "total_actions": 7,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "finalcut"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "audacity",
@@ -1062,7 +1502,15 @@
         "audacity.export.wav",
         "audacity.export.mp3"
       ],
-      "total_actions": 7
+      "total_actions": 7,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "audacity"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "reaper",
@@ -1081,7 +1529,15 @@
         "reaper.render.wav",
         "reaper.render.mp3"
       ],
-      "total_actions": 7
+      "total_actions": 7,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "reaper"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "ableton.live",
@@ -1099,7 +1555,15 @@
         "ableton.live.device.add",
         "ableton.live.arrangement.render"
       ],
-      "total_actions": 6
+      "total_actions": 6,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "ableton.live"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "flstudio",
@@ -1116,7 +1580,15 @@
         "flstudio.pattern.create",
         "flstudio.mixdown.export"
       ],
-      "total_actions": 5
+      "total_actions": 5,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "flstudio"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "vscode",
@@ -1135,7 +1607,15 @@
         "vscode.extension.install",
         "vscode.diagnostics.read"
       ],
-      "total_actions": 7
+      "total_actions": 7,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "vscode"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "jetbrains.idea",
@@ -1153,7 +1633,15 @@
         "jetbrains.idea.test.run",
         "jetbrains.idea.inspection.read"
       ],
-      "total_actions": 6
+      "total_actions": 6,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "jetbrains.idea"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "git",
@@ -1161,8 +1649,8 @@
       "category": "developer",
       "adapter": "git_cli",
       "status": "adapter_required",
-      "implemented_actions": 0,
-      "adapter_required_actions": 10,
+      "implemented_actions": 5,
+      "adapter_required_actions": 5,
       "actions": [
         "git.status",
         "git.diff",
@@ -1175,7 +1663,15 @@
         "git.stash",
         "git.tag"
       ],
-      "total_actions": 10
+      "total_actions": 10,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "git"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "github",
@@ -1194,7 +1690,15 @@
         "github.workflow.run",
         "github.release.create"
       ],
-      "total_actions": 7
+      "total_actions": 7,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "github"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "gitlab",
@@ -1211,7 +1715,15 @@
         "gitlab.pipeline.run",
         "gitlab.release.create"
       ],
-      "total_actions": 5
+      "total_actions": 5,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "gitlab"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "docker",
@@ -1230,7 +1742,15 @@
         "docker.compose.down",
         "docker.volume.list"
       ],
-      "total_actions": 7
+      "total_actions": 7,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "docker"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "kubernetes",
@@ -1248,7 +1768,15 @@
         "kubernetes.rollout.status",
         "kubernetes.namespace.create"
       ],
-      "total_actions": 6
+      "total_actions": 6,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "kubernetes"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "jupyter",
@@ -1266,7 +1794,15 @@
         "jupyter.export.html",
         "jupyter.export.ipynb"
       ],
-      "total_actions": 6
+      "total_actions": 6,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "jupyter"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "sqlite",
@@ -1274,8 +1810,8 @@
       "category": "database",
       "adapter": "sqlite3",
       "status": "adapter_required",
-      "implemented_actions": 0,
-      "adapter_required_actions": 5,
+      "implemented_actions": 1,
+      "adapter_required_actions": 4,
       "actions": [
         "sqlite.query.run",
         "sqlite.schema.read",
@@ -1283,7 +1819,15 @@
         "sqlite.table.import_csv",
         "sqlite.backup.create"
       ],
-      "total_actions": 5
+      "total_actions": 5,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "sqlite"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "postgresql",
@@ -1300,7 +1844,15 @@
         "postgresql.table.import_csv",
         "postgresql.backup.create"
       ],
-      "total_actions": 5
+      "total_actions": 5,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "postgresql"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "mysql",
@@ -1317,7 +1869,15 @@
         "mysql.table.import_csv",
         "mysql.backup.create"
       ],
-      "total_actions": 5
+      "total_actions": 5,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "mysql"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "redis",
@@ -1334,7 +1894,15 @@
         "redis.scan",
         "redis.info.read"
       ],
-      "total_actions": 5
+      "total_actions": 5,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "redis"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "powerbi",
@@ -1350,7 +1918,15 @@
         "powerbi.dashboard.read",
         "powerbi.query.execute"
       ],
-      "total_actions": 4
+      "total_actions": 4,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "powerbi"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "tableau",
@@ -1366,7 +1942,15 @@
         "tableau.extract.refresh",
         "tableau.dashboard.read"
       ],
-      "total_actions": 4
+      "total_actions": 4,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "tableau"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "airtable",
@@ -1384,7 +1968,15 @@
         "airtable.record.delete",
         "airtable.view.read"
       ],
-      "total_actions": 6
+      "total_actions": 6,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "airtable"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "trello",
@@ -1401,7 +1993,15 @@
         "trello.checklist.add",
         "trello.comment.add"
       ],
-      "total_actions": 5
+      "total_actions": 5,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "trello"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "jira",
@@ -1418,7 +2018,15 @@
         "jira.issue.transition",
         "jira.comment.add"
       ],
-      "total_actions": 5
+      "total_actions": 5,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "jira"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "linear",
@@ -1435,7 +2043,15 @@
         "linear.cycle.read",
         "linear.comment.add"
       ],
-      "total_actions": 5
+      "total_actions": 5,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "linear"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "asana",
@@ -1452,7 +2068,15 @@
         "asana.project.read",
         "asana.comment.add"
       ],
-      "total_actions": 5
+      "total_actions": 5,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "asana"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "clickup",
@@ -1469,7 +2093,15 @@
         "clickup.space.read",
         "clickup.comment.add"
       ],
-      "total_actions": 5
+      "total_actions": 5,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "clickup"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "salesforce",
@@ -1487,7 +2119,15 @@
         "salesforce.report.run",
         "salesforce.task.create"
       ],
-      "total_actions": 6
+      "total_actions": 6,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "salesforce"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "hubspot",
@@ -1505,7 +2145,15 @@
         "hubspot.task.create",
         "hubspot.email.create_draft"
       ],
-      "total_actions": 6
+      "total_actions": 6,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "hubspot"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "zoho.crm",
@@ -1523,7 +2171,15 @@
         "zoho.crm.task.create",
         "zoho.crm.report.run"
       ],
-      "total_actions": 6
+      "total_actions": 6,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "zoho.crm"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "sap",
@@ -1540,7 +2196,15 @@
         "sap.workflow.create_draft",
         "sap.export.xlsx"
       ],
-      "total_actions": 5
+      "total_actions": 5,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "sap"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "kingdee",
@@ -1557,7 +2221,15 @@
         "kingdee.inventory.read",
         "kingdee.export.xlsx"
       ],
-      "total_actions": 5
+      "total_actions": 5,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "kingdee"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "yonyou",
@@ -1574,7 +2246,15 @@
         "yonyou.inventory.read",
         "yonyou.export.xlsx"
       ],
-      "total_actions": 5
+      "total_actions": 5,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "yonyou"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "shopify",
@@ -1591,7 +2271,15 @@
         "shopify.order.fulfillment_update",
         "shopify.inventory.update"
       ],
-      "total_actions": 5
+      "total_actions": 5,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "shopify"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "wordpress",
@@ -1608,7 +2296,15 @@
         "wordpress.page.create",
         "wordpress.comment.moderate"
       ],
-      "total_actions": 5
+      "total_actions": 5,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "wordpress"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "openai_api",
@@ -1626,7 +2322,15 @@
         "openai_api.tts.create",
         "openai_api.embedding.create"
       ],
-      "total_actions": 6
+      "total_actions": 6,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "openai_api"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "deepseek_api",
@@ -1642,7 +2346,15 @@
         "deepseek_api.reasoning.run",
         "deepseek_api.embedding.create"
       ],
-      "total_actions": 4
+      "total_actions": 4,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "deepseek_api"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "anthropic_api",
@@ -1657,7 +2369,15 @@
         "anthropic_api.vision.analyze",
         "anthropic_api.tool_use.run"
       ],
-      "total_actions": 3
+      "total_actions": 3,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "anthropic_api"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "gemini_api",
@@ -1673,7 +2393,15 @@
         "gemini_api.video.analyze",
         "gemini_api.embedding.create"
       ],
-      "total_actions": 4
+      "total_actions": 4,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "gemini_api"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "comfyui",
@@ -1691,7 +2419,15 @@
         "comfyui.image.outpaint",
         "comfyui.queue.status"
       ],
-      "total_actions": 6
+      "total_actions": 6,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "comfyui"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "stable_diffusion_webui",
@@ -1708,7 +2444,15 @@
         "stable_diffusion_webui.image.upscale",
         "stable_diffusion_webui.model.switch"
       ],
-      "total_actions": 5
+      "total_actions": 5,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "stable_diffusion_webui"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "whisper",
@@ -1724,7 +2468,15 @@
         "whisper.segments.export_srt",
         "whisper.segments.export_txt"
       ],
-      "total_actions": 4
+      "total_actions": 4,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "whisper"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "tts.edge",
@@ -1738,7 +2490,15 @@
         "tts.edge.tts.create",
         "tts.edge.voice.list"
       ],
-      "total_actions": 2
+      "total_actions": 2,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "tts.edge"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "elevenlabs",
@@ -1747,14 +2507,22 @@
       "adapter": "elevenlabs_adapter",
       "status": "adapter_required",
       "implemented_actions": 1,
-      "adapter_required_actions": 3,
+      "adapter_required_actions": 2,
       "actions": [
         "elevenlabs.tts.create",
         "elevenlabs.voice.list",
         "elevenlabs.voice.clone_authorized"
       ],
       "total_actions": 3,
-      "portable_fallback": true
+      "portable_fallback": true,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "elevenlabs"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "windows.desktop",
@@ -1763,7 +2531,7 @@
       "adapter": "windows_ui_automation",
       "status": "adapter_required",
       "implemented_actions": 4,
-      "adapter_required_actions": 10,
+      "adapter_required_actions": 6,
       "actions": [
         "windows.desktop.window.list",
         "windows.desktop.window.focus",
@@ -1777,7 +2545,15 @@
         "windows.desktop.clipboard.write"
       ],
       "total_actions": 10,
-      "portable_fallback": true
+      "portable_fallback": true,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "windows.desktop"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "macos.desktop",
@@ -1786,7 +2562,7 @@
       "adapter": "apple_script_or_accessibility",
       "status": "adapter_required",
       "implemented_actions": 4,
-      "adapter_required_actions": 10,
+      "adapter_required_actions": 6,
       "actions": [
         "macos.desktop.window.list",
         "macos.desktop.window.focus",
@@ -1800,7 +2576,15 @@
         "macos.desktop.clipboard.write"
       ],
       "total_actions": 10,
-      "portable_fallback": true
+      "portable_fallback": true,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "macos.desktop"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "linux.desktop",
@@ -1809,7 +2593,7 @@
       "adapter": "xdotool_or_pyautogui",
       "status": "adapter_required",
       "implemented_actions": 4,
-      "adapter_required_actions": 10,
+      "adapter_required_actions": 6,
       "actions": [
         "linux.desktop.window.list",
         "linux.desktop.window.focus",
@@ -1823,7 +2607,15 @@
         "linux.desktop.clipboard.write"
       ],
       "total_actions": 10,
-      "portable_fallback": true
+      "portable_fallback": true,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "linux.desktop"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     },
     {
       "app_id": "windows.powershell",
@@ -1840,8 +2632,16 @@
         "windows.powershell.service.list",
         "windows.powershell.process.list"
       ],
-      "total_actions": 5
+      "total_actions": 5,
+      "connection_discovery": {
+        "action": "mcp.servers.list",
+        "args": {
+          "app_id": "windows.powershell"
+        },
+        "config_source": "~/.tiangong/v3/mcp_servers.json",
+        "association_key": "applications"
+      }
     }
   ],
-  "implemented_actions_total": 110
+  "implemented_actions_total": 117
 }

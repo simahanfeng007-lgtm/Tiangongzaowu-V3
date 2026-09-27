@@ -128,6 +128,36 @@ class RuntimeEffectBoundaryTests(unittest.TestCase):
         self.assertEqual(state["regenerative"]["pending_effect_ids"], [])
         self.assertEqual(state["regenerative"]["ambiguous_effect_ids"], [])
 
+    def test_nested_native_unknown_result_keeps_effect_unresolved(self) -> None:
+        context = self.context()
+        state = _runtime_state(context)
+        outcomes = []
+        owner = _Owner([])
+        owner._jineng_zhixing = lambda *a, **kw: {"ok": False, "result": {
+            "success": False, "error": "mcp.outcome.unknown", "ambiguous_effect": True}}
+        def respond(payload):
+            op = payload["operation"]
+            if op == "prepare_effect":
+                return {"disposition": "prepared", "effect_id": "eff_" + "3" * 64,
+                        "logical_effect_id": payload["logical_effect_id"],
+                        "attempt_id": "att_" + "4" * 64, "step_id": "stp_" + "5" * 64}
+            if op == "start_effect":
+                return {"dispatch_permitted": True, "disposition": "dispatched"}
+            if op == "finish_effect":
+                outcomes.append(payload["outcome"])
+                return {"effect_state": "AMBIGUOUS" if payload["outcome"] == "ambiguous" else "FAILED_FINAL"}
+            return {}
+        def provider(payload):
+            return {"schema": "tiangong.gateway.regenerative-provider.v1", "operation": payload["operation"], **respond(payload)}
+        set_simple_chain_regenerative_execution_provider(provider)
+        with bind_run_context(context):
+            _simple_chain_regenerative_execute_tool(owner, state, TurnLoopState(),
+                tool_name="omni_body", tool_args={"action": "mcp.tool.call", "target": "owner-service", "args": {"tool": "create"}},
+                user_message="create once", call_id="call_unknown", global_step=1,
+                attempted_action="mcp.tool.call", update_frontier=False)
+        self.assertEqual(outcomes, ["ambiguous"])
+        self.assertEqual(state["regenerative"]["ambiguous_effect_ids"], ["eff_" + "3" * 64])
+
     def test_real_wrapper_never_dispatches_already_committed_logical_effect(self) -> None:
         trace: list[str] = []
         owner = _Owner(trace)

@@ -20,5 +20,5 @@
 - 行动建议：
 
 ## 质检
-- qc.sheet.analysis_report_check
+- 读取实际数据、计算结果和分析内容，由对抗智能体按用户要求验收。
 - qc.sheet.delivery_check

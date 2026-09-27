@@ -25,6 +25,10 @@ from __future__ import annotations
 # 1.49 flushes workspace commit bytes through writable Windows handles.
 # 1.50 isolates Fact runtime state from tool snapshots and media-only dependencies.
 # 1.51 restores scoped system-library selectors inside Linux containment.
-VERIFICATION_PLANE_VERSION = "1.51"
+# 1.52 retires twelve metadata-only assessments from the executable dictionary.
+# 1.53 binds real browser observations, scoped MCP connections and mandatory adversarial completion.
+# 1.54 removes residual rubric authority and hidden execution from content observations.
+# 1.55 preserves typed unavailability and explicit document observation failures/ranges.
+VERIFICATION_PLANE_VERSION = "1.55"
 
 __all__ = ["VERIFICATION_PLANE_VERSION"]

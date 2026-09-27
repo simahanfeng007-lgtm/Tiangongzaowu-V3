@@ -8,8 +8,8 @@
   },
   "capability_manifest": {
    "path": "dictionaries/registry/capability_manifest.generated.json",
-   "manifest_blob": "2b21ee9c4fd07172ee18592ffcae939a0c7b6981",
-   "action_count": 791
+   "manifest_blob": "dc3380c4a5b9ef9d29f49da860d0e56e807bfcc7",
+   "action_count": 779
   }
  },
  "summary": {
