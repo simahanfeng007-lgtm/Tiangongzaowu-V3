@@ -98,6 +98,22 @@ def verify_release_manifest() -> None:
         raise RuntimeError("source release manifest is inconsistent")
 
 
+def verify_audit_snapshots() -> None:
+    """Check derived developer records without changing reviews or source."""
+    # Reuse the existing guards: regenerating a snapshot must not silently
+    # approve unreviewed dynamic calls or widen the desktop route allowlist.
+    completed = subprocess.run(
+        [sys.executable, "-m", "pytest", "-q",
+         "tests/test_p17_traceability_seed.py",
+         "tests/test_p17_dynamic_p13d_drill.py",
+         "tests/test_frontend_gateway_routing.py"],
+        cwd=ROOT, capture_output=True, text=True,
+    )
+    if completed.returncode:
+        raise RuntimeError("Source audit and route guards failed:\n"
+                           + completed.stdout + completed.stderr)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--quick", action="store_true")
@@ -107,6 +123,7 @@ def main() -> int:
     verify_imports()
     verify_cross_platform_source()
     verify_generated_sources()
+    verify_audit_snapshots()
     verify_release_manifest()
     summary = {
         "ok": True,

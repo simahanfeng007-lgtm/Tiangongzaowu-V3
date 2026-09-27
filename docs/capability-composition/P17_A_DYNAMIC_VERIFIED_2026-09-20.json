@@ -31,7 +31,7 @@
    "reason": "1 hit: getattr for dynamic daemon component loading",
    "reviewed_line": "function = getattr(target, name, None)"
   },
-  "app/backend/tiangong-backend/v3/duihua_qiaojie.py:4548": {
+  "app/backend/tiangong-backend/v3/duihua_qiaojie.py:4569": {
    "category": "structural_field_access",
    "reason": "Explicit opt-in compatibility catalog flag; default is disabled and no module is loaded from this value.",
    "reviewed_line": "include_learned_catalog = str(os.getenv(\"TIANGONG_ENABLE_LEARNED_SKILL_CATALOG\") or \"\").strip().lower() in {\"1\", \"true\", \"yes\", \"on\"}"
@@ -496,27 +496,27 @@
    "reason": "2 hits: getattr for governance field access",
    "reviewed_line": "if str(getattr(checkpoint, name) or \"\") != str(getattr(current, name) or \"\")"
   },
-  "src/total_gateway/server.py:347": {
+  "src/total_gateway/server.py:350": {
    "category": "inline_stdlib_import",
    "reason": "Fixed standard-library import of time; no caller-supplied module name.",
    "reviewed_line": "now_ms=__import__(\"time\").time_ns() // 1_000_000,"
   },
-  "src/total_gateway/server.py:388": {
+  "src/total_gateway/server.py:391": {
    "category": "inline_stdlib_import",
    "reason": "Fixed standard-library import of time; no caller-supplied module name.",
    "reviewed_line": "response = api.submit(body, now_ms=__import__(\"time\").time_ns() // 1_000_000)"
   },
-  "src/total_gateway/server.py:749": {
+  "src/total_gateway/server.py:752": {
    "category": "inline_stdlib_import",
    "reason": "Fixed standard-library import of time; no caller-supplied module name.",
    "reviewed_line": "epoch = store.increment_action_fence(reason=reason, now_ms=__import__(\"time\").time_ns() // 1_000_000)"
   },
-  "src/total_gateway/server.py:763": {
+  "src/total_gateway/server.py:766": {
    "category": "inline_stdlib_import",
    "reason": "Fixed standard-library import of time; no caller-supplied module name.",
    "reviewed_line": "now_ms = __import__(\"time\").time_ns() // 1_000_000"
   },
-  "src/total_gateway/server.py:791": {
+  "src/total_gateway/server.py:794": {
    "category": "inline_stdlib_import",
    "reason": "Fixed standard-library import of time; no caller-supplied module name.",
    "reviewed_line": "now_ms = __import__(\"time\").time_ns() // 1_000_000"
