@@ -846,7 +846,7 @@ class HttpKehuduan:
     def scoped_semantic_inference(self, *, endpoint, max_output_tokens: int = 2048):
         """Use one resolved endpoint and an isolated, tool-free interpretation turn."""
         role = _MODEL_CALL_ROLE.get()
-        limit = 16384 if role == "judge" else 8192 if role == "challenger" else 4096
+        limit = 32768 if role == "judge" else 8192 if role == "challenger" else 4096
         token = self._semantic_inference.set((endpoint, max(128, min(limit, int(max_output_tokens)))))
         try:
             with self.scoped_tools(disable_tools=True), self.scoped_native_history(()), self.scoped_native_audio(()), self.scoped_native_images(()):

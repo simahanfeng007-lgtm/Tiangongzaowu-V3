@@ -26,7 +26,11 @@ def endpoint(model="mimo-v2.6-pro"):
         optimization_family="mimo", config_fingerprint=model)
 
 
-def test_truncated_judge_response_keeps_usage_and_bounded_budget(monkeypatch):
+@pytest.mark.parametrize("role,requested,expected", [
+    ("judge", 16384, 16384), ("judge", 32768, 32768), ("judge", 64000, 32768),
+    ("challenger", 32768, 8192), ("auxiliary", 32768, 4096),
+])
+def test_truncated_judge_response_keeps_usage_and_bounded_budget(monkeypatch, role, requested, expected):
     from v3.jineng import http_kehuduan as http
     from v3.jineng.model_transport_executor import TransportExecutionError
     from v3.endpoint_security import EndpointBinding
@@ -44,14 +48,55 @@ def test_truncated_judge_response_keeps_usage_and_bounded_budget(monkeypatch):
     monkeypatch.setattr(http, "execute_streaming_turn", execute)
     client = http.HttpKehuduan()
     try:
-        with client.scoped_call_context("judge"), client.scoped_semantic_inference(endpoint=pinned, max_output_tokens=16384):
+        with client.scoped_call_context(role), client.scoped_semantic_inference(endpoint=pinned, max_output_tokens=requested):
             result = client.llm_diaoyong("judge", "evidence")
     finally:
         client.guanbi()
-    assert sent[0]["max_tokens"] == 16384
+    assert sent[0]["max_tokens"] == expected
+    from v3.jineng.model_transport_registry import get_model_transport
+    wire = get_model_transport(pinned.protocol_family).build_request(pinned, "fixture", sent[0]).payload
+    assert wire["max_tokens"] == expected
     assert result.stop_semantics == "output_truncated" and result.usage == usage
     assert result.stream_metadata["attempts"][0]["usage"] == usage
     assert traces[-1]["usage"] == usage and traces[-1]["api_status"] == "output_truncated"
+
+
+def test_judge_recovery_budget_reaches_real_http_transport(monkeypatch):
+    from v3 import adversarial_review as review
+    from v3.jineng import http_kehuduan as http
+    from v3.jineng.model_transport_executor import TransportExecutionError
+    from v3.model_protocol_contract import ProviderTurnEnvelope
+    from v3.endpoint_security import EndpointBinding
+    from test_adversarial_completion import verdict
+    pinned, sent = endpoint(), []
+    monkeypatch.setattr(http, "duqu_endpoint_api_miyao", lambda *a: "fixture")
+    monkeypatch.setattr(http, "_jilu_l4_youhua_zhuizong", lambda *a, **kw: None)
+    monkeypatch.setattr(http, "validate_model_endpoint", lambda *a, **kw: EndpointBinding(
+        provider_id="mimo", base_url=pinned.base_url, origin="https://example.test", host="example.test",
+        port=443, official=False, custom_scope="test", resolved_ips=("203.0.113.10",)))
+    def execute(**kw):
+        from v3.jineng.model_transport_registry import get_model_transport
+        wire = get_model_transport(pinned.protocol_family).build_request(pinned, "fixture", kw["canonical_payload"]).payload
+        sent.append(wire)
+        assert not wire.get("tools")
+        if len(sent) == 1:
+            raise TransportExecutionError("model_output_truncated", pinned.base_url,
+                error_code="output_truncated", response_metrics={"attempts": [{"usage": {"completion_tokens": 16384}}]})
+        return SimpleNamespace(turn=ProviderTurnEnvelope(verdict(), visible_text=verdict()),
+            output_repaired=False, http_status=200, latency_ms=1, retry_count=0)
+    monkeypatch.setattr(http, "execute_streaming_turn", execute)
+    client = http.HttpKehuduan()
+    try:
+        reviewer = review.CompletionSession(client, endpoint_resolver=lambda: pinned)
+        state = {"mode": "work", "original_user_goal": "Read this text. " + "Text. " * 12000}
+        record = reviewer.judge(state, [], "candidate", remaining_seconds=120)["review"]
+        assert record["decision"] == "complete" and record["output_limit_retries"] == 1
+        assert [p["max_tokens"] for p in sent] == [16384, 32768]
+        assert [c["status"] for c in record["model_calls"]] == ["unavailable", "completed"]
+        assert reviewer.approved(state, [], "candidate")
+        assert not reviewer.approved(state, [], "changed")
+    finally:
+        client.guanbi()
 
 
 def bundle():

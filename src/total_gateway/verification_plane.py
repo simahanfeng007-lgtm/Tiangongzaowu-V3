@@ -34,6 +34,7 @@ from __future__ import annotations
 # 1.58 preserves Windows transaction lock bytes while maintaining process exclusion.
 # 1.63 binds finite native numeric arguments without widening signed contracts.
 # 1.64 recovers one truncated judge turn under the same authority and deadline.
-VERIFICATION_PLANE_VERSION = "1.64"
+# 1.65 carries the bounded recovery budget through the actual HTTP call scope.
+VERIFICATION_PLANE_VERSION = "1.65"
 
 __all__ = ["VERIFICATION_PLANE_VERSION"]
