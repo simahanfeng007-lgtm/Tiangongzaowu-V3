@@ -1,5 +1,5 @@
 {
- "verification_plane_version": "1.65",
+ "verification_plane_version": "1.66",
  "baseline_sha": "9a3344de9fe468fa845d2ff501166484439b8ec4",
  "store_schema_version": 33,
  "contract_schema_versions": {
@@ -161,7 +161,7 @@
   "src/total_gateway/composition_step_execution.py": "6218c6be28a599a93d18a6e65b40e87a0563c16ed8c07119c46b2fc5109cfc42",
   "src/total_gateway/desktop_completion.py": "36926c2b1ca08ddff73278ea87f9f76a0583daf78cd76346451589dd16792fb6",
   "src/total_gateway/desktop_attachment_ingress.py": "78c5131400815219444ab3e60d3b31e229b749b9cea0c4de54481a51ed85ab60",
-  "src/total_gateway/embedded_backend.py": "c2055229076231fe48a57d64c587c4841a0c4d5f7fbfd72885134e7b48db4149",
+  "src/total_gateway/embedded_backend.py": "0bcb932bed03122263eeea131107111ac1b694e8dce0ae2338016c26e0f05431",
   "src/total_gateway/fact_ledger.py": "a88b4572c26e793f749ac6206ddc0e12e088a501950f1a68e1bbda690a78aa35",
   "src/total_gateway/frozen_backend_compat.py": "e11a2dba296277eab940d3a1958ab9e360f4f1540d72989a63c535ab4a3d6d36",
   "src/total_gateway/omni_grant_authority.py": "5736ccd22925adc50730738ae7af46ec125b71ecf196a5c20e5e1a925fcb1ae6",
@@ -176,7 +176,7 @@
   "src/total_gateway/verification_repair_coordinator.py": "089efa6a4c888d4e06d4bdd5044a0adc283d69648463a859f42e2c063f0187f6",
   "src/total_gateway/verification_repair_policy.py": "bb2ac036d01a516729d43cc068b37bb3e92f71983004275937fcfab82b2e9eaf",
   "src/total_gateway/verification_plan_executor.py": "63a27353f037dca87e64e8ef80ceee187260949650d404e6ea9fd83d84174452",
-  "src/total_gateway/verification_plane.py": "f166cc3149d64f13d2aec18e80402ed5296e24bd5f28b820a0c93bc58b8e3c39",
+  "src/total_gateway/verification_plane.py": "bbd4f4711831df597c69da5068e9c1b0d817e5cda8595194a06b4b78ec694d15",
   "src/total_gateway/verification_readiness.py": "3c1e7f89fb958ba82cb2aed7de85a237a007717839727a5146a3d29d532a8a39",
   "src/total_gateway/verification_failure_evidence.py": "955b1d3c2e77b2ec229ebdd8da612f8ce26794d6fdfc849967ffaaef6fd73dea",
   "src/total_gateway/verification_registry.py": "afab7caae8079c241953c42d85945fbeb5b106114e16963219c1f8c5524b310a",

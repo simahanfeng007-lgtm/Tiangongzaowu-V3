@@ -91,3 +91,29 @@ def test_verified_ledger_categories_are_known():
     for key, entry in ledger["annotations"].items():
         assert entry["category"] in known, f"{key}: {entry['category']}"
         assert entry["reason"]
+        path, line = key.rsplit(":", 1)
+        assert entry["reviewed_line"] == (ROOT / path).read_text(encoding="utf-8").splitlines()[int(line) - 1].strip()
+
+
+def test_review_annotation_cannot_approve_changed_call_at_same_line(tmp_path, monkeypatch):
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("dynamic_surface_probe", DYNAMIC_SCRIPT)
+    scanner = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(scanner)
+    (tmp_path / "src").mkdir()
+    source = tmp_path / "src" / "sample.py"
+    source.write_text("value = getattr(owner, field)\n", encoding="utf-8")
+    ledger = tmp_path / "reviewed.json"
+    ledger.write_text(json.dumps({"annotations": {"src/sample.py:1": {
+        "category": "structural_field_access", "reason": "fixed field set",
+        "reviewed_line": "value = getattr(owner, field)",
+    }}}), encoding="utf-8")
+    monkeypatch.setattr(scanner, "ROOT", tmp_path)
+    monkeypatch.setattr(scanner, "VERIFIED_FILE", ledger)
+    monkeypatch.setattr(scanner, "RETIREMENT_MATRIX", tmp_path / "no-retirement.json")
+    assert scanner.scan()["summary"]["verified"] == 1
+    source.write_text("value = getattr(owner, unreviewed_name)\n", encoding="utf-8")
+    result = scanner.scan()
+    assert result["summary"]["verified"] == 0
+    assert result["summary"]["needs_review"] == 1

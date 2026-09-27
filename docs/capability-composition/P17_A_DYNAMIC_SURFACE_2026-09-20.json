@@ -38,7 +38,7 @@
   {
    "kind": "reflective_getattr",
    "path": "app/backend/tiangong-backend/omni_body_skill/tools/omni_capability.py",
-   "line": 79,
+   "line": 80,
    "target": "key",
    "classification": "verified",
    "verified_category": "structural_field_access"
@@ -511,7 +511,7 @@
   {
    "kind": "reflective_getattr",
    "path": "src/omni_body_skill/tools/omni_capability.py",
-   "line": 79,
+   "line": 80,
    "target": "key",
    "classification": "verified",
    "verified_category": "structural_field_access"
@@ -783,7 +783,7 @@
   {
    "kind": "dynamic_import",
    "path": "src/total_gateway/embedded_backend.py",
-   "line": 1594,
+   "line": 1600,
    "target": "'v3.knowledge_store'",
    "classification": "verified",
    "verified_category": "lazy_module_import"
@@ -799,7 +799,7 @@
   {
    "kind": "reflective_getattr",
    "path": "src/total_gateway/omni_grant_authority.py",
-   "line": 280,
+   "line": 281,
    "target": "name",
    "classification": "verified",
    "verified_category": "structural_field_access"
@@ -807,7 +807,7 @@
   {
    "kind": "reflective_getattr",
    "path": "src/total_gateway/omni_grant_authority.py",
-   "line": 293,
+   "line": 294,
    "target": "name",
    "classification": "verified",
    "verified_category": "structural_field_access"
@@ -815,7 +815,7 @@
   {
    "kind": "reflective_getattr",
    "path": "src/total_gateway/omni_grant_authority.py",
-   "line": 953,
+   "line": 954,
    "target": "name",
    "classification": "verified",
    "verified_category": "structural_field_access"
@@ -823,7 +823,7 @@
   {
    "kind": "reflective_getattr",
    "path": "src/total_gateway/omni_grant_authority.py",
-   "line": 1235,
+   "line": 1236,
    "target": "name",
    "classification": "verified",
    "verified_category": "structural_field_access"

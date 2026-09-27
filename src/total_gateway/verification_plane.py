@@ -35,6 +35,7 @@ from __future__ import annotations
 # 1.63 binds finite native numeric arguments without widening signed contracts.
 # 1.64 recovers one truncated judge turn under the same authority and deadline.
 # 1.65 carries the bounded recovery budget through the actual HTTP call scope.
-VERIFICATION_PLANE_VERSION = "1.65"
+# 1.66 detaches epoch providers only after the embedded execution lane quiesces.
+VERIFICATION_PLANE_VERSION = "1.66"
 
 __all__ = ["VERIFICATION_PLANE_VERSION"]
