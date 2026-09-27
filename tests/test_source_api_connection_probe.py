@@ -119,7 +119,9 @@ def test_custom_anthropic_auth_override_is_used_by_the_probe(monkeypatch):
     (200, b"<html>login</html>", "provider_response_invalid"),
     (200, {"error": {"code": "bad_key"}}, "provider_response_invalid"),
     (200, {}, "provider_response_invalid"),
-    (200, b"x" * (256 * 1024 + 1), "provider_response_too_large"),
+    # Keep the real oversized body out of PYTEST_CURRENT_TEST on Windows.
+    pytest.param(200, b"x" * (256 * 1024 + 1), "provider_response_too_large",
+                 id="oversized-response"),
 ])
 def test_http_errors_html_and_oversized_bodies_never_report_model_success(monkeypatch, status, body, error):
     monkeypatch.setenv("TIANGONG_ALLOW_LOCAL_MODEL_ENDPOINT", "1")
