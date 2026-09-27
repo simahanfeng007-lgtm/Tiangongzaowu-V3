@@ -1,10 +1,10 @@
 {
-  "dictionary_sha256": "3236e30643be1f64923ec22f2367eea22d9841c3e15af9e9b3537fb4500d852a",
+  "dictionary_sha256": "89dbd96fcfd6ab7204ee5f4a0531842e4ffb540b868be4e78a34743c304c06d3",
   "schema": "tiangong.dictionary.release.v1",
   "skill_count": 0,
   "source_hash": "66b1fcfab9de32f609479dbe2a271c7a78e023955cef192a5ae7def974048bc1",
   "tool_count": 791,
-  "version": "2026.09.27.6",
+  "version": "2026.09.27.7",
   "views": {
     "actions.json": "b07591e8abd6a70b55263afc3c619a9dd8698f00f6c1d92609edacf8a12a8656",
     "capability_manifest.generated.json": "f3c179e7bf699354019e4f73137b0ae2c1e7d853002eba114595d9ef0d1fdac6"

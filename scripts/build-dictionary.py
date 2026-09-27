@@ -8,6 +8,17 @@ from pathlib import Path
 import sys
 
 
+def validate_application_connections(release) -> None:
+    associated = {name for app in release.applications["apps"] for name in app["actions"]}
+    for name, row in release.tools.items():
+        runtime = row["runtime"]
+        if (runtime.get("status", "active") == "active"
+                and not runtime.get("implemented")
+                and row["budget"]["profile"] == "external-adapter"
+                and name not in associated):
+            raise ValueError("dictionary_pending_application_missing:" + name)
+
+
 def build(root: Path, *, check: bool = False) -> dict:
     sys.path[:0] = [str(root / "src"), str(root / "app/backend/tiangong-backend")]
     from capability_dictionary import load_dictionary
@@ -16,6 +27,7 @@ def build(root: Path, *, check: bool = False) -> dict:
     from v3.fact_kernel import compile_manifest
 
     release = load_dictionary(root / "dictionaries")
+    validate_application_connections(release)
     for name, row in release.tools.items():
         if row["binding"]["kind"] != "alias":
             continue

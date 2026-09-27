@@ -26413,14 +26413,23 @@
       "action": "microsoft.excel.native.chart.create",
       "adapter_label": null,
       "alias_metadata_verified": false,
-      "applications": [],
+      "applications": [
+        "microsoft.excel"
+      ],
       "binding": {
         "kind": "delivery",
         "target": "delivery_kernel"
       },
       "binding_source": null,
       "canonical_action": "microsoft.excel.native.chart.create",
-      "connection_discovery": [],
+      "connection_discovery": [
+        {
+          "action": "mcp.servers.list",
+          "args": {
+            "app_id": "microsoft.excel"
+          }
+        }
+      ],
       "contract_entries": {
         "arguments": false,
         "results": false,
@@ -42394,8 +42403,8 @@
     }
   ],
   "application_count": 100,
-  "applications_sha256": "06d80ab6680253e16eace67e8a31843491e234e06214709927a05e6968bd47d6",
-  "catalog_sha256": "bc471caa56788b0af1e4b827146c3b44a863b3dd6c6980741a69b1ff9de68842",
+  "applications_sha256": "7b166325768e469567f0a5bb57e83a3af07aebcf836e858d7039f1c59afbabcd",
+  "catalog_sha256": "232b50c205795b460751b20032e6e8f62f986121093bf408655beba3f26f147f",
   "counts": {
     "merge_explicit_alias": 78,
     "retain_disabled": 2,
@@ -42403,7 +42412,7 @@
     "retain_with_contract": 219,
     "retire": 6
   },
-  "dictionary_version": "2026.09.27.6",
+  "dictionary_version": "2026.09.27.7",
   "interpretation": "Complete inventory is not complete semantic audit, real execution coverage or application connection proof.",
   "registered_actions": 791,
   "schema": "tiangong.ontology.coverage.v1",

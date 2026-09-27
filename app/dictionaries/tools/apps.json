@@ -2,7 +2,7 @@
   "schema": "tiangong.dictionary.applications.v1",
   "description": "应用即工具包注册表。所有应用动作均通过唯一 v3 工具 omni_body 调用；不注册为独立 v3 tool。implemented=false 的动作为挂载协议，需要对应 adapter 后端后才可执行。",
   "total_apps": 100,
-  "total_actions": 614,
+  "total_actions": 615,
   "apps": [
     {
       "app_id": "core.filesystem",
@@ -247,12 +247,13 @@
       "adapter": "office_com_or_openpyxl",
       "status": "mixed_core_alias_and_adapter",
       "implemented_actions": 2,
-      "adapter_required_actions": 0,
+      "adapter_required_actions": 1,
       "actions": [
         "microsoft.excel.sheet.create",
-        "microsoft.excel.sheet.read"
+        "microsoft.excel.sheet.read",
+        "microsoft.excel.native.chart.create"
       ],
-      "total_actions": 2,
+      "total_actions": 3,
       "portable_fallback": true,
       "connection_discovery": {
         "action": "mcp.servers.list",

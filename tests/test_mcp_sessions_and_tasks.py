@@ -192,6 +192,32 @@ def test_requirement_binding_checks_actual_schema_before_effect(service):
     assert all(v["value"]!=99 for v in state["sessions"].values())
 
 
+def test_native_excel_requirement_can_bind_only_its_declared_application(service):
+    import hashlib
+    from capability_dictionary import load_dictionary
+    action = "microsoft.excel.native.chart.create"
+    state, path = service
+    config = json.loads(path.read_text())
+    row = config["servers"]["actual"]
+    row["applications"] = ["microsoft.excel"]
+    row["action_bindings"] = {action: {"tool": "work",
+        "input_schema_sha256": hashlib.sha256(b'{"type":"object"}').hexdigest()}}
+    path.write_text(json.dumps(config))
+    result = mcp.call_bound_action("actual", action, {"set": 47}, scope="excel-owner")
+    assert result["text"] == "47" and result["requirement_action"] == action
+    assert mcp.call_tool("actual", "work", {}, scope="excel-owner")["text"] == "47"
+    # A controlled transport binding does not prove native Excel execution.
+    assert result["native_application_execution_not_inferred"]
+    assert not load_dictionary().tools[action]["runtime"]["implemented"]
+    calls = state["initializes"]
+    row["applications"] = ["google.docs"]
+    path.write_text(json.dumps(config))
+    with pytest.raises(mcp.McpClientError, match="mcp.binding.application_mismatch"):
+        mcp.call_bound_action("actual", action, {"set": 99}, scope="excel-owner")
+    assert state["initializes"] == calls
+    assert all(value["value"] != 99 for value in state["sessions"].values())
+
+
 def test_all_requirements_remain_discoverable_without_fabricated_backends(service):
     from capability_dictionary import load_dictionary
     rows=[];offset=0

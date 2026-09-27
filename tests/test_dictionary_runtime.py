@@ -140,6 +140,20 @@ def test_application_discovery_is_migrated_with_dictionary_references(dictionary
         load_dictionary(dictionary)
 
 
+def test_dictionary_publication_rejects_orphaned_pending_application(dictionary):
+    import runpy
+    validate = runpy.run_path(str(ROOT / "scripts/build-dictionary.py"))["validate_application_connections"]
+    validate(load_dictionary(dictionary))
+    action = "microsoft.excel.native.chart.create"
+    def remove_owner(doc):
+        for app in doc["apps"]:
+            app["actions"] = [name for name in app["actions"] if name != action]
+    update_json(dictionary / "tools/apps.json", remove_owner)
+    load_dictionary.cache_clear()
+    with pytest.raises(ValueError, match="dictionary_pending_application_missing:" + action):
+        validate(load_dictionary(dictionary))
+
+
 def test_declared_effect_survives_projection_and_controls_gateway_floor(dictionary):
     from v3.fact_kernel import compile_manifest
     from total_gateway.action_registry import compile_action_registry
