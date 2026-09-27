@@ -76,3 +76,46 @@ def test_storage_failure_receipt_requires_reconciliation(tmp_path):
     assert not result['success']
     assert result['ambiguous_effect'] and result['reconciliation_required']
     assert result['execution_state'] == 'unknown'
+
+
+def test_public_preflight_and_engine_share_empty_actual_revision_contract(tmp_path):
+    from omni_body_skill.tool_contracts import validate_tool_request
+    from v3.novel_system import NovelSystemEngine
+    target = tmp_path / 'managed'
+    engine = NovelSystemEngine(target)
+    request = validate_tool_request('novel.project.create', str(target),
+        {'title': '短篇', 'genre': '实验', 'planned_chapters': 1, 'target_words': 5}, workspace=tmp_path)
+    assert request['ok'], request
+    engine.create_project(request['args'])
+    # No invented characters, events, outcomes, or emotional annotations.
+    engine.update_blueprint({'section': 'chapters', 'data': [{'number': 1, 'title': '星光'}]})
+    engine.compile_blueprint({})
+    for content, revision_of in [('星光亮起。', None), ('星光熄灭。', 'current')]:
+        args = {'chapter_number': 1}
+        if revision_of:
+            args['revision_of'] = engine._ledger()[-1]['sha256']
+        checkout = validate_tool_request('novel.chapter.checkout', str(target), args, workspace=tmp_path)
+        assert checkout['ok'], checkout
+        lease = engine.checkout_chapter(checkout['args'])
+        request = validate_tool_request('novel.chapter.submit', str(target),
+            {'lease_id': lease['lease_id'], 'chapter_number': 1, 'title': '星光', 'content': content, 'actual': {}}, workspace=tmp_path)
+        assert request['ok'], request
+        assert request['args']['actual'] == {}
+        result = engine.submit_chapter(request['args'])
+        assert result['committed']
+    assert Path(result['chapter_path']).read_text(encoding='utf-8') == '星光熄灭。\n'
+    assert len(engine._ledger()) == 1
+
+
+def test_public_preflight_single_scene_and_positive_scope_have_no_old_thresholds(tmp_path):
+    from omni_body_skill.tool_contracts import validate_tool_request
+    for action, args in (
+        ('novel.project.create', {'title':'x', 'genre':'x', 'planned_chapters':1, 'target_words':100000}),
+        ('novel.scene.design', {'candidates':[{'title':'x','target_chapter':1}], 'selected_index':0, 'expected_state_hash':'a'*64}),
+        ('novel.blueprint.update', {'section':'chapters','data':[{'number':1, 'event_ids':[]}]}),
+    ):
+        result = validate_tool_request(action, str(tmp_path/'managed'), args, workspace=tmp_path)
+        assert result['ok'], result
+    invalid = validate_tool_request('novel.chapter.submit', str(tmp_path/'managed'),
+        {'lease_id':'lease_'+'a'*32, 'chapter_number':1,'title':'x','content':'x','actual':{'events':[None]}}, workspace=tmp_path)
+    assert not invalid['ok']

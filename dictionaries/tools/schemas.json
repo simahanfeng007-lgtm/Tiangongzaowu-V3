@@ -362,7 +362,7 @@
               "to": "new value"
             }
           ],
-          "summary": "required factual summary string",
+          "summary": "optional caller summary; {} is valid; revision requires {}",
           "theme_tags": [
             "string"
           ]

@@ -98,7 +98,9 @@ for kind in ('local','browser','mcp','quality','document','novel'):
     elif kind=='mcp':
         protocol=json.loads((p/'mcp-events.json').read_text())
         calls=[e['params'] for e in protocol if e['method']=='tools/call']
-        assert [c['name'] for c in calls]==['create_record','read_record']
+        assert sum(c['name']=='create_record' for c in calls)==1
+        assert any(c['name']=='read_record' for c in calls)
+        assert all(c['name'] in ('create_record','read_record') for c in calls)
         rows=[json.loads(f.read_text()) for f in (p/'remote-objects').glob('*.json')]
         assert len(rows)==1 and rows[0]['value']==41 and rows[0]['label']=='本体连接验收' and rows[0]['version']==1
         assert calls[-1]['arguments']['id']==rows[0]['id']
@@ -116,6 +118,23 @@ for kind in ('local','browser','mcp','quality','document','novel'):
         report=(p/'workspace/report.md').read_text()
         assert all(v in report for v in ('SKU-A','SKU-B','7','11','18'))
         actual={'independent_XML_values':values,'known_total':18,'corrupt_read_failure_retained':True}
+    elif kind=='novel':
+        project=p/'workspace/managed-novel'
+        chapters=list((project/'正文').glob('*.md'))
+        ledger=json.loads((project/'.novel-system/ledger/chapters.json').read_text())
+        assert len(chapters)==len(ledger)==1
+        assert chapters[0].read_bytes()=='星光熄灭。\n'.encode()
+        assert ledger[0]['sha256']==sha(chapters[0]) and ledger[0]['content_quality']=='unassessed'
+        history=[json.loads(f.read_text()) for f in (project/'.novel-system/transactions/committed').glob('*.json')]
+        assert len(history)==2 and any(t.get('previous_content')=='星光亮起。\n' for t in history)
+        calls=state['tool_calls']
+        assert any(c.get('tool_action')=='novel.chapter.submit' and c.get('ok') for c in calls)
+        readbacks=[o for o in state['observations'] if o.get('tool_action')=='file.read'
+            and Path(o.get('tool_args',{}).get('target','')).name==chapters[0].name]
+        contents=[o['tool_result']['result']['content'] for o in readbacks]
+        assert '星光亮起。\n' in contents and contents[-1]=='星光熄灭。\n'
+        actual={'before_repair':'星光亮起。\n','after_repair':'星光熄灭。\n',
+            'retained_transactions':len(history),'ledger_count':len(ledger),'sha256':sha(chapters[0])}
     else:
         assert not (p/'workspace/must-not-execute.txt').exists()
         assert (p/'workspace/report.md').is_file()

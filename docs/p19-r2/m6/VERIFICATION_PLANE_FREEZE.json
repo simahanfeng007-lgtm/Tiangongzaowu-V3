@@ -1,5 +1,5 @@
 {
- "verification_plane_version": "1.56",
+ "verification_plane_version": "1.57",
  "baseline_sha": "9a3344de9fe468fa845d2ff501166484439b8ec4",
  "store_schema_version": 33,
  "contract_schema_versions": {
@@ -125,8 +125,8 @@
   "src/communication_service/raw_inbound_store.py": "34cb53224ae8f469255a1b8e9da0509a6b38f18264fffd101069e54566b32a04",
   "src/communication_service/wechat_file_outbound.py": "336bb004a946ef52f20e52efeba2e9b47317c92fee941c48034b82cbf49a9480",
   "src/communication_service/feishu_outbound.py": "6dbb5cfcee3c43c94f13d9915c78392f8a11fa48b2548385575ca4fa4abc0c84",
-  "dictionaries/registry/capability_manifest.generated.json": "c9ad99e89642f64d45f368976de5776ec698092701f53770be85cf75bc072123",
-  "src/omni_body_skill/tool_contracts.py": "56b73202aff4666e603253f9e85e238d2b6269e3b8c1395c08e5bfb4ea096564",
+  "dictionaries/registry/capability_manifest.generated.json": "9447b0703de63d278336fa74210e2ecd0925732e1117c22f2c65dcb6643246f3",
+  "src/omni_body_skill/tool_contracts.py": "00b15e8c6b8ae572cb1041b5b9cb54167eab630a8cf4e80608a4b11253574fde",
   "src/omni_body_skill/tools/omni_capability.py": "e858b11bf73a11b9ed6ece4db312a88a4d9da6866a5404cb08dd296acbbd6096",
   "src/omni_body_skill/api/v1/v3/tools/omni_body.py": "32f3bc104655bc0b64d98291082b208b24fa073ede3b026ec5752e5a38267eb2",
   "src/omni_body_skill/tools/cli.py": "3bc0a18322789461e0d615a0431a23aec4001779da41d7a830d16e80b1194319",
@@ -172,7 +172,7 @@
   "src/total_gateway/verification_repair_coordinator.py": "089efa6a4c888d4e06d4bdd5044a0adc283d69648463a859f42e2c063f0187f6",
   "src/total_gateway/verification_repair_policy.py": "bb2ac036d01a516729d43cc068b37bb3e92f71983004275937fcfab82b2e9eaf",
   "src/total_gateway/verification_plan_executor.py": "63a27353f037dca87e64e8ef80ceee187260949650d404e6ea9fd83d84174452",
-  "src/total_gateway/verification_plane.py": "ec0cd16f70dddd539d21c59435320c7fedea28c35e48b7c46a253b715b380936",
+  "src/total_gateway/verification_plane.py": "421a5ddbe377631e6723df8004f209e6725fab132742d2ce8e311748413f34fe",
   "src/total_gateway/verification_readiness.py": "3c1e7f89fb958ba82cb2aed7de85a237a007717839727a5146a3d29d532a8a39",
   "src/total_gateway/verification_failure_evidence.py": "955b1d3c2e77b2ec229ebdd8da612f8ce26794d6fdfc849967ffaaef6fd73dea",
   "src/total_gateway/verification_registry.py": "afab7caae8079c241953c42d85945fbeb5b106114e16963219c1f8c5524b310a",

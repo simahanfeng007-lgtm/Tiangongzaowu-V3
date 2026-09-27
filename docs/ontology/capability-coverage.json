@@ -6631,8 +6631,8 @@
         "app/backend/tiangong-backend/v3/tool_result_contract.py:69",
         "app/backend/tiangong-backend/v3/zongdiaodu.py:1132",
         "app/backend/tiangong-backend/v3/zongdiaodu.py:1269",
-        "src/omni_body_skill/tool_contracts.py:1305",
-        "src/omni_body_skill/tool_contracts.py:1757",
+        "src/omni_body_skill/tool_contracts.py:1214",
+        "src/omni_body_skill/tool_contracts.py:1658",
         "src/omni_body_skill/tool_contracts.py:270",
         "src/omni_body_skill/tool_contracts.py:272",
         "src/omni_body_skill/tool_contracts.py:273",
@@ -6725,8 +6725,8 @@
         "app/backend/tiangong-backend/v3/zongdiaodu.py:1131",
         "app/backend/tiangong-backend/v3/zongdiaodu.py:1269",
         "app/backend/tiangong-backend/v3/zongdiaodu.py:838",
-        "src/omni_body_skill/tool_contracts.py:1293",
-        "src/omni_body_skill/tool_contracts.py:1757",
+        "src/omni_body_skill/tool_contracts.py:1202",
+        "src/omni_body_skill/tool_contracts.py:1658",
         "src/omni_body_skill/tool_contracts.py:273",
         "src/omni_body_skill/tool_contracts.py:73",
         "src/omni_body_skill/tools/omni_capability.py:124",
@@ -10460,10 +10460,10 @@
         "app/backend/tiangong-backend/v3/tool_result_contract.py:71",
         "app/backend/tiangong-backend/v3/zongdiaodu.py:1138",
         "app/backend/tiangong-backend/v3/zongdiaodu.py:838",
-        "src/omni_body_skill/tool_contracts.py:1123",
-        "src/omni_body_skill/tool_contracts.py:1378",
-        "src/omni_body_skill/tool_contracts.py:1379",
-        "src/omni_body_skill/tool_contracts.py:1397",
+        "src/omni_body_skill/tool_contracts.py:1037",
+        "src/omni_body_skill/tool_contracts.py:1287",
+        "src/omni_body_skill/tool_contracts.py:1288",
+        "src/omni_body_skill/tool_contracts.py:1306",
         "src/omni_body_skill/tool_contracts.py:85",
         "src/omni_body_skill/tools/omni_body_tool.py:1305",
         "src/omni_body_skill/tools/omni_body_tool.py:1312",
@@ -12261,8 +12261,8 @@
         "app/backend/tiangong-backend/v3/tool_result_contract.py:72",
         "app/backend/tiangong-backend/v3/zongdiaodu.py:1130",
         "app/backend/tiangong-backend/v3/zongdiaodu.py:1269",
-        "src/omni_body_skill/tool_contracts.py:1295",
-        "src/omni_body_skill/tool_contracts.py:1757",
+        "src/omni_body_skill/tool_contracts.py:1204",
+        "src/omni_body_skill/tool_contracts.py:1658",
         "src/omni_body_skill/tool_contracts.py:74"
       ],
       "semantic_atomicity_review": "not_claimed_complete",
@@ -12302,11 +12302,11 @@
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:3672",
         "app/backend/tiangong-backend/v3/tool_result_contract.py:73",
         "app/backend/tiangong-backend/v3/zongdiaodu.py:1269",
-        "src/omni_body_skill/tool_contracts.py:1039",
-        "src/omni_body_skill/tool_contracts.py:1257",
-        "src/omni_body_skill/tool_contracts.py:1297",
-        "src/omni_body_skill/tool_contracts.py:1766",
-        "src/omni_body_skill/tool_contracts.py:75"
+        "src/omni_body_skill/tool_contracts.py:1166",
+        "src/omni_body_skill/tool_contracts.py:1206",
+        "src/omni_body_skill/tool_contracts.py:1667",
+        "src/omni_body_skill/tool_contracts.py:75",
+        "src/omni_body_skill/tool_contracts.py:953"
       ],
       "semantic_atomicity_review": "not_claimed_complete",
       "summary": "Copy a file or directory with overwrite protection and rollback snapshot."
@@ -12347,10 +12347,10 @@
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:3673",
         "app/backend/tiangong-backend/v3/tool_result_contract.py:74",
         "app/backend/tiangong-backend/v3/zongdiaodu.py:1269",
-        "src/omni_body_skill/tool_contracts.py:1043",
-        "src/omni_body_skill/tool_contracts.py:1044",
-        "src/omni_body_skill/tool_contracts.py:1757",
-        "src/omni_body_skill/tool_contracts.py:76"
+        "src/omni_body_skill/tool_contracts.py:1658",
+        "src/omni_body_skill/tool_contracts.py:76",
+        "src/omni_body_skill/tool_contracts.py:957",
+        "src/omni_body_skill/tool_contracts.py:958"
       ],
       "semantic_atomicity_review": "not_claimed_complete",
       "summary": "Move file/directory into workspace trash; never permanent delete."
@@ -12390,8 +12390,8 @@
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:3418",
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:3880",
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:4269",
-        "src/omni_body_skill/tool_contracts.py:1262",
-        "src/omni_body_skill/tool_contracts.py:1266",
+        "src/omni_body_skill/tool_contracts.py:1171",
+        "src/omni_body_skill/tool_contracts.py:1175",
         "src/omni_body_skill/tool_contracts.py:239",
         "src/omni_body_skill/tool_contracts.py:77",
         "src/omni_body_skill/tools/omni_capability.py:34"
@@ -12438,8 +12438,8 @@
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:4269",
         "app/backend/tiangong-backend/v3/world_dictionary_binding.py:55",
         "app/backend/tiangong-backend/v3/zongdiaodu.py:1134",
-        "src/omni_body_skill/tool_contracts.py:1262",
-        "src/omni_body_skill/tool_contracts.py:1265",
+        "src/omni_body_skill/tool_contracts.py:1171",
+        "src/omni_body_skill/tool_contracts.py:1174",
         "src/omni_body_skill/tool_contracts.py:221",
         "src/omni_body_skill/tool_contracts.py:78",
         "src/omni_body_skill/tools/omni_capability.py:34"
@@ -12482,13 +12482,13 @@
         "app/backend/tiangong-backend/v3/tool_result_contract.py:75",
         "app/backend/tiangong-backend/v3/zongdiaodu.py:1128",
         "app/backend/tiangong-backend/v3/zongdiaodu.py:1269",
-        "src/omni_body_skill/tool_contracts.py:1037",
-        "src/omni_body_skill/tool_contracts.py:1038",
         "src/omni_body_skill/tool_contracts.py:266",
         "src/omni_body_skill/tool_contracts.py:273",
         "src/omni_body_skill/tool_contracts.py:599",
         "src/omni_body_skill/tool_contracts.py:716",
         "src/omni_body_skill/tool_contracts.py:79",
+        "src/omni_body_skill/tool_contracts.py:951",
+        "src/omni_body_skill/tool_contracts.py:952",
         "src/omni_body_skill/tools/omni_capability.py:126",
         "src/omni_body_skill/tools/omni_capability.py:27"
       ],
@@ -12530,12 +12530,12 @@
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:3673",
         "app/backend/tiangong-backend/v3/tool_result_contract.py:76",
         "app/backend/tiangong-backend/v3/zongdiaodu.py:1269",
-        "src/omni_body_skill/tool_contracts.py:1040",
-        "src/omni_body_skill/tool_contracts.py:1257",
-        "src/omni_body_skill/tool_contracts.py:1297",
-        "src/omni_body_skill/tool_contracts.py:1757",
-        "src/omni_body_skill/tool_contracts.py:1766",
-        "src/omni_body_skill/tool_contracts.py:80"
+        "src/omni_body_skill/tool_contracts.py:1166",
+        "src/omni_body_skill/tool_contracts.py:1206",
+        "src/omni_body_skill/tool_contracts.py:1658",
+        "src/omni_body_skill/tool_contracts.py:1667",
+        "src/omni_body_skill/tool_contracts.py:80",
+        "src/omni_body_skill/tool_contracts.py:954"
       ],
       "semantic_atomicity_review": "not_claimed_complete",
       "summary": "Move a file or directory with rollback snapshot."
@@ -12612,11 +12612,11 @@
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:4269",
         "app/backend/tiangong-backend/v3/world_dictionary_binding.py:55",
         "app/backend/tiangong-backend/v3/zongdiaodu.py:1133",
-        "src/omni_body_skill/tool_contracts.py:1045",
-        "src/omni_body_skill/tool_contracts.py:1262",
-        "src/omni_body_skill/tool_contracts.py:1264",
+        "src/omni_body_skill/tool_contracts.py:1171",
+        "src/omni_body_skill/tool_contracts.py:1173",
         "src/omni_body_skill/tool_contracts.py:205",
         "src/omni_body_skill/tool_contracts.py:81",
+        "src/omni_body_skill/tool_contracts.py:959",
         "src/omni_body_skill/tools/omni_body_tool.py:1844",
         "src/omni_body_skill/tools/omni_capability.py:34"
       ],
@@ -12657,11 +12657,11 @@
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:3227",
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:3673",
         "app/backend/tiangong-backend/v3/tool_result_contract.py:77",
-        "src/omni_body_skill/tool_contracts.py:1041",
-        "src/omni_body_skill/tool_contracts.py:1042",
-        "src/omni_body_skill/tool_contracts.py:1299",
-        "src/omni_body_skill/tool_contracts.py:1757",
-        "src/omni_body_skill/tool_contracts.py:82"
+        "src/omni_body_skill/tool_contracts.py:1208",
+        "src/omni_body_skill/tool_contracts.py:1658",
+        "src/omni_body_skill/tool_contracts.py:82",
+        "src/omni_body_skill/tool_contracts.py:955",
+        "src/omni_body_skill/tool_contracts.py:956"
       ],
       "semantic_atomicity_review": "not_claimed_complete",
       "summary": "Rename a file or directory in place with rollback snapshot."
@@ -12743,8 +12743,8 @@
         "app/backend/tiangong-backend/v3/zongdiaodu.py:1129",
         "app/backend/tiangong-backend/v3/zongdiaodu.py:1269",
         "app/backend/tiangong-backend/v3/zongdiaodu.py:838",
-        "src/omni_body_skill/tool_contracts.py:1293",
-        "src/omni_body_skill/tool_contracts.py:1757",
+        "src/omni_body_skill/tool_contracts.py:1202",
+        "src/omni_body_skill/tool_contracts.py:1658",
         "src/omni_body_skill/tool_contracts.py:273",
         "src/omni_body_skill/tool_contracts.py:84",
         "src/omni_body_skill/tools/omni_capability.py:123",
@@ -17964,7 +17964,7 @@
       "review_scope": "source_definition_and_binding_review",
       "runtime_literal_references": [
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:3266",
-        "src/omni_body_skill/tool_contracts.py:1356"
+        "src/omni_body_skill/tool_contracts.py:1265"
       ],
       "semantic_atomicity_review": "not_claimed_complete",
       "summary": "Read this Life's current authoritative Life projection and live runtime body state with a gateway audit receipt."
@@ -21007,10 +21007,10 @@
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:3674",
         "app/backend/tiangong-backend/v3/tool_result_contract.py:86",
         "app/backend/tiangong-backend/v3/zongdiaodu.py:838",
-        "src/omni_body_skill/tool_contracts.py:1123",
-        "src/omni_body_skill/tool_contracts.py:1378",
-        "src/omni_body_skill/tool_contracts.py:1379",
-        "src/omni_body_skill/tool_contracts.py:1399",
+        "src/omni_body_skill/tool_contracts.py:1037",
+        "src/omni_body_skill/tool_contracts.py:1287",
+        "src/omni_body_skill/tool_contracts.py:1288",
+        "src/omni_body_skill/tool_contracts.py:1308",
         "src/omni_body_skill/tool_contracts.py:88",
         "src/omni_body_skill/tools/omni_body_tool.py:1317",
         "src/omni_body_skill/tools/omni_body_tool.py:800"
@@ -21774,8 +21774,8 @@
         "app/backend/tiangong-backend/v3/novel_system.py:1649",
         "app/backend/tiangong-backend/v3/novel_system.py:500",
         "app/backend/tiangong-backend/v3/novel_system.py:595",
-        "src/omni_body_skill/tool_contracts.py:1187",
-        "src/omni_body_skill/tool_contracts.py:1628",
+        "src/omni_body_skill/tool_contracts.py:1101",
+        "src/omni_body_skill/tool_contracts.py:1520",
         "src/omni_body_skill/tool_contracts.py:34",
         "src/omni_body_skill/tools/novel_system.py:332",
         "src/omni_body_skill/tools/novel_system.py:45"
@@ -21849,7 +21849,7 @@
       "review_scope": "source_definition_and_binding_review",
       "runtime_literal_references": [
         "app/backend/tiangong-backend/v3/novel_system.py:805",
-        "src/omni_body_skill/tool_contracts.py:1572",
+        "src/omni_body_skill/tool_contracts.py:1464",
         "src/omni_body_skill/tool_contracts.py:32",
         "src/omni_body_skill/tools/novel_system.py:328",
         "src/omni_body_skill/tools/novel_system.py:35",
@@ -21887,7 +21887,7 @@
       "review_scope": "source_definition_and_binding_review",
       "runtime_literal_references": [
         "app/backend/tiangong-backend/v3/novel_system.py:428",
-        "src/omni_body_skill/tool_contracts.py:1493",
+        "src/omni_body_skill/tool_contracts.py:1387",
         "src/omni_body_skill/tool_contracts.py:31",
         "src/omni_body_skill/tools/novel_system.py:30",
         "src/omni_body_skill/tools/novel_system.py:306",
@@ -21928,8 +21928,8 @@
         "app/backend/tiangong-backend/v3/novel_system.py:500",
         "app/backend/tiangong-backend/v3/novel_system.py:595",
         "app/backend/tiangong-backend/v3/novel_system.py:724",
-        "src/omni_body_skill/tool_contracts.py:1130",
-        "src/omni_body_skill/tool_contracts.py:1601",
+        "src/omni_body_skill/tool_contracts.py:1044",
+        "src/omni_body_skill/tool_contracts.py:1493",
         "src/omni_body_skill/tool_contracts.py:33",
         "src/omni_body_skill/tools/novel_system.py:330",
         "src/omni_body_skill/tools/novel_system.py:366",
@@ -21971,7 +21971,7 @@
         "app/backend/tiangong-backend/v3/novel_system.py:1462",
         "app/backend/tiangong-backend/v3/novel_system.py:1574",
         "app/backend/tiangong-backend/v3/novel_system.py:1649",
-        "src/omni_body_skill/tool_contracts.py:1697",
+        "src/omni_body_skill/tool_contracts.py:1589",
         "src/omni_body_skill/tool_contracts.py:42",
         "src/omni_body_skill/tools/novel_system.py:306",
         "src/omni_body_skill/tools/novel_system.py:348",
@@ -22009,8 +22009,7 @@
       "review_scope": "source_definition_and_binding_review",
       "runtime_literal_references": [
         "app/backend/tiangong-backend/v3/novel_system.py:1202",
-        "src/omni_body_skill/tool_contracts.py:1204",
-        "src/omni_body_skill/tool_contracts.py:1708",
+        "src/omni_body_skill/tool_contracts.py:1603",
         "src/omni_body_skill/tool_contracts.py:43",
         "src/omni_body_skill/tools/novel_system.py:350",
         "src/omni_body_skill/tools/novel_system.py:369",
@@ -22047,9 +22046,9 @@
       "retry": "observe_before_retry",
       "review_scope": "source_definition_and_binding_review",
       "runtime_literal_references": [
-        "src/omni_body_skill/tool_contracts.py:1153",
-        "src/omni_body_skill/tool_contracts.py:1168",
-        "src/omni_body_skill/tool_contracts.py:1751",
+        "src/omni_body_skill/tool_contracts.py:1067",
+        "src/omni_body_skill/tool_contracts.py:1082",
+        "src/omni_body_skill/tool_contracts.py:1652",
         "src/omni_body_skill/tool_contracts.py:45",
         "src/omni_body_skill/tools/novel_system.py:100",
         "src/omni_body_skill/tools/novel_system.py:354"
@@ -22086,7 +22085,7 @@
       "review_scope": "source_definition_and_binding_review",
       "runtime_literal_references": [
         "app/backend/tiangong-backend/v3/novel_system.py:695",
-        "src/omni_body_skill/tool_contracts.py:1677",
+        "src/omni_body_skill/tool_contracts.py:1569",
         "src/omni_body_skill/tool_contracts.py:39",
         "src/omni_body_skill/tools/novel_system.py:342",
         "src/omni_body_skill/tools/novel_system.py:70"
@@ -22122,7 +22121,7 @@
       "retry": "observe_before_retry",
       "review_scope": "source_definition_and_binding_review",
       "runtime_literal_references": [
-        "src/omni_body_skill/tool_contracts.py:1701",
+        "src/omni_body_skill/tool_contracts.py:1596",
         "src/omni_body_skill/tool_contracts.py:41",
         "src/omni_body_skill/tools/novel_system.py:346",
         "src/omni_body_skill/tools/novel_system.py:368",
@@ -22195,7 +22194,7 @@
       "retry": "observe_before_retry",
       "review_scope": "source_definition_and_binding_review",
       "runtime_literal_references": [
-        "src/omni_body_skill/tool_contracts.py:1469",
+        "src/omni_body_skill/tool_contracts.py:1378",
         "src/omni_body_skill/tool_contracts.py:28",
         "src/omni_body_skill/tools/novel_system.py:15",
         "src/omni_body_skill/tools/novel_system.py:318",
@@ -22309,9 +22308,9 @@
       "retry": "observe_before_retry",
       "review_scope": "source_definition_and_binding_review",
       "runtime_literal_references": [
-        "src/omni_body_skill/tool_contracts.py:1153",
-        "src/omni_body_skill/tool_contracts.py:1181",
-        "src/omni_body_skill/tool_contracts.py:1635",
+        "src/omni_body_skill/tool_contracts.py:1067",
+        "src/omni_body_skill/tool_contracts.py:1095",
+        "src/omni_body_skill/tool_contracts.py:1527",
         "src/omni_body_skill/tool_contracts.py:35",
         "src/omni_body_skill/tools/novel_system.py:334",
         "src/omni_body_skill/tools/novel_system.py:50"
@@ -22347,7 +22346,7 @@
       "retry": "observe_before_retry",
       "review_scope": "source_definition_and_binding_review",
       "runtime_literal_references": [
-        "src/omni_body_skill/tool_contracts.py:1745",
+        "src/omni_body_skill/tool_contracts.py:1638",
         "src/omni_body_skill/tool_contracts.py:44",
         "src/omni_body_skill/tools/novel_system.py:352",
         "src/omni_body_skill/tools/novel_system.py:95"
@@ -22383,7 +22382,7 @@
       "retry": "observe_before_retry",
       "review_scope": "source_definition_and_binding_review",
       "runtime_literal_references": [
-        "src/omni_body_skill/tool_contracts.py:1641",
+        "src/omni_body_skill/tool_contracts.py:1533",
         "src/omni_body_skill/tool_contracts.py:36",
         "src/omni_body_skill/tools/novel_system.py:336",
         "src/omni_body_skill/tools/novel_system.py:55"
@@ -22421,7 +22420,7 @@
       "runtime_literal_references": [
         "app/backend/tiangong-backend/v3/novel_system.py:709",
         "app/backend/tiangong-backend/v3/novel_system.py:734",
-        "src/omni_body_skill/tool_contracts.py:1668",
+        "src/omni_body_skill/tool_contracts.py:1560",
         "src/omni_body_skill/tool_contracts.py:38",
         "src/omni_body_skill/tools/novel_system.py:340",
         "src/omni_body_skill/tools/novel_system.py:65"
@@ -22457,7 +22456,7 @@
       "retry": "observe_before_retry",
       "review_scope": "source_definition_and_binding_review",
       "runtime_literal_references": [
-        "src/omni_body_skill/tool_contracts.py:1657",
+        "src/omni_body_skill/tool_contracts.py:1549",
         "src/omni_body_skill/tool_contracts.py:37",
         "src/omni_body_skill/tools/novel_system.py:338",
         "src/omni_body_skill/tools/novel_system.py:60"
@@ -23814,11 +23813,11 @@
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:3675",
         "app/backend/tiangong-backend/v3/tool_result_contract.py:88",
         "app/backend/tiangong-backend/v3/zongdiaodu.py:1140",
-        "src/omni_body_skill/tool_contracts.py:1123",
-        "src/omni_body_skill/tool_contracts.py:1378",
-        "src/omni_body_skill/tool_contracts.py:1379",
-        "src/omni_body_skill/tool_contracts.py:1398",
-        "src/omni_body_skill/tool_contracts.py:1404",
+        "src/omni_body_skill/tool_contracts.py:1037",
+        "src/omni_body_skill/tool_contracts.py:1287",
+        "src/omni_body_skill/tool_contracts.py:1288",
+        "src/omni_body_skill/tool_contracts.py:1307",
+        "src/omni_body_skill/tool_contracts.py:1313",
         "src/omni_body_skill/tool_contracts.py:86",
         "src/omni_body_skill/tools/omni_body_tool.py:1305",
         "src/omni_body_skill/tools/omni_body_tool.py:359",
@@ -23859,7 +23858,7 @@
       "runtime_literal_references": [
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:2749",
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:3221",
-        "src/omni_body_skill/tool_contracts.py:1421",
+        "src/omni_body_skill/tool_contracts.py:1330",
         "src/omni_body_skill/tool_contracts.py:87",
         "src/omni_body_skill/tools/omni_body_tool.py:359"
       ],
@@ -23950,8 +23949,8 @@
         "app/backend/tiangong-backend/v3/zongdiaodu.py:1267",
         "src/omni_body_skill/api/v1/v3/tools/omni_body.py:331",
         "src/omni_body_skill/api/v1/v3/tools/omni_body.py:332",
-        "src/omni_body_skill/tool_contracts.py:1330",
-        "src/omni_body_skill/tool_contracts.py:1776",
+        "src/omni_body_skill/tool_contracts.py:1239",
+        "src/omni_body_skill/tool_contracts.py:1677",
         "src/omni_body_skill/tool_contracts.py:275",
         "src/omni_body_skill/tool_contracts.py:717",
         "src/omni_body_skill/tools/omni_body_tool.py:1380",
@@ -24127,7 +24126,7 @@
       "retry": "read_retry",
       "review_scope": "source_definition_and_binding_review",
       "runtime_literal_references": [
-        "src/omni_body_skill/tool_contracts.py:1450",
+        "src/omni_body_skill/tool_contracts.py:1359",
         "src/omni_body_skill/tool_contracts.py:89",
         "src/omni_body_skill/tools/delivery_kernel.py:169",
         "src/omni_body_skill/tools/delivery_kernel.py:67",
@@ -25604,10 +25603,10 @@
         "app/backend/tiangong-backend/v3/zongdiaodu.py:1149",
         "src/omni_body_skill/api/v1/v3/tools/omni_body.py:331",
         "src/omni_body_skill/api/v1/v3/tools/omni_body.py:332",
-        "src/omni_body_skill/tool_contracts.py:1322",
-        "src/omni_body_skill/tool_contracts.py:1776",
-        "src/omni_body_skill/tool_contracts.py:1777",
-        "src/omni_body_skill/tool_contracts.py:1781",
+        "src/omni_body_skill/tool_contracts.py:1231",
+        "src/omni_body_skill/tool_contracts.py:1677",
+        "src/omni_body_skill/tool_contracts.py:1678",
+        "src/omni_body_skill/tool_contracts.py:1682",
         "src/omni_body_skill/tools/omni_body_tool.py:2319"
       ],
       "semantic_atomicity_review": "not_claimed_complete",
@@ -26845,7 +26844,7 @@
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:3310",
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:4265",
         "app/backend/tiangong-backend/v3/world_dictionary_binding.py:55",
-        "src/omni_body_skill/tool_contracts.py:1817"
+        "src/omni_body_skill/tool_contracts.py:1718"
       ],
       "semantic_atomicity_review": "not_claimed_complete",
       "summary": "Return metadata for a single action, including aliases and adapter requirements."
@@ -27146,7 +27145,7 @@
       "runtime_literal_references": [
         "app/backend/tiangong-backend/v3/permission_settings.py:78",
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:2742",
-        "src/omni_body_skill/tool_contracts.py:1432",
+        "src/omni_body_skill/tool_contracts.py:1341",
         "src/omni_body_skill/tools/delivery_kernel.py:163",
         "src/omni_body_skill/tools/delivery_kernel.py:63",
         "src/omni_body_skill/tools/omni_body_tool.py:312"
@@ -27688,7 +27687,7 @@
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:3235",
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:3676",
         "app/backend/tiangong-backend/v3/tool_result_contract.py:94",
-        "src/omni_body_skill/tool_contracts.py:1099"
+        "src/omni_body_skill/tool_contracts.py:1013"
       ],
       "semantic_atomicity_review": "not_claimed_complete",
       "summary": "Create simple slideshow video from images using ffmpeg."
@@ -30811,7 +30810,7 @@
   ],
   "application_count": 100,
   "applications_sha256": "dc3dac4fb1f5cc32442a270221058973abb3ec1f58e1a70315f01047f7843f48",
-  "catalog_sha256": "b4c386e0859841625bcf06caacea9b706a11cb99b591d138a7af093e840a7e76",
+  "catalog_sha256": "d77d7246e7892874c179e15bef5de028e4f2dc435dc9761a17b3c721d776e334",
   "counts": {
     "merge_explicit_alias": 78,
     "retain_disabled": 2,
@@ -30819,9 +30818,9 @@
     "retain_with_contract": 196,
     "retire": 6
   },
-  "dictionary_version": "2026.09.27.4",
+  "dictionary_version": "2026.09.27.5",
   "interpretation": "Complete inventory is not complete semantic audit, real execution coverage or application connection proof.",
   "registered_actions": 779,
   "schema": "tiangong.ontology.coverage.v1",
-  "schemas_sha256": "576f47ad5dc35b902aca087c595114dfb493d282f94ff8ce0d6d88ba85605562"
+  "schemas_sha256": "56dd4009a303986a1a0d8aff4a755e84cffe03a7617697178a8393b3bb7701f9"
 }
