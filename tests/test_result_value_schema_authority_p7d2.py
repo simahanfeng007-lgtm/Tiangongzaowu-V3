@@ -18,9 +18,9 @@ H = "a" * 64
 CONTROLLED_EXPLICIT_ACTIONS = {
     "code.patch_replace": ("A3", "write"), "code.write": ("A3", "write"),
     "core.code.code.patch_replace": ("A3", "write"), "core.code.code.write": ("A3", "write"),
-    "core.code.python.run": ("A4", "write"), "core.filesystem.file.mkdir": ("A3", "write"),
+    "core.code.python.run": ("A4", "write"), "core.filesystem.file.mkdir": ("A2", "write"),
     "core.filesystem.file.write": ("A3", "write"), "file.mkdir": ("A2", "write"),
-    "file.patch_replace": ("A3", "execute"), "file.write": ("A3", "write"), "python.run": ("A4", "write"),
+    "file.patch_replace": ("A3", "write"), "file.write": ("A3", "write"), "python.run": ("A4", "write"),
 }
 EXPLICIT_ACTIONS = {
     "core.filesystem.file.read",

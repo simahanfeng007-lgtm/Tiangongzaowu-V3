@@ -31022,12 +31022,12 @@
       "retry": "read_retry",
       "review_scope": "source_definition_and_binding_review",
       "runtime_literal_references": [
-        "src/omni_body_skill/tools/local_apps.py:149",
-        "src/omni_body_skill/tools/local_apps.py:161",
-        "src/omni_body_skill/tools/local_apps.py:164",
-        "src/omni_body_skill/tools/local_apps.py:206",
-        "src/omni_body_skill/tools/local_apps.py:212",
-        "src/omni_body_skill/tools/local_apps.py:29"
+        "src/omni_body_skill/tools/local_apps.py:154",
+        "src/omni_body_skill/tools/local_apps.py:166",
+        "src/omni_body_skill/tools/local_apps.py:169",
+        "src/omni_body_skill/tools/local_apps.py:211",
+        "src/omni_body_skill/tools/local_apps.py:217",
+        "src/omni_body_skill/tools/local_apps.py:30"
       ],
       "semantic_atomicity_review": "explicit_change_review",
       "summary": "Export Markdown wiki-link references, including unresolved links, to a fresh JSON file."
@@ -31083,10 +31083,10 @@
       "retry": "observe_before_retry",
       "review_scope": "source_definition_and_binding_review",
       "runtime_literal_references": [
-        "src/omni_body_skill/tools/local_apps.py:177",
-        "src/omni_body_skill/tools/local_apps.py:180",
-        "src/omni_body_skill/tools/local_apps.py:212",
-        "src/omni_body_skill/tools/local_apps.py:28"
+        "src/omni_body_skill/tools/local_apps.py:182",
+        "src/omni_body_skill/tools/local_apps.py:185",
+        "src/omni_body_skill/tools/local_apps.py:217",
+        "src/omni_body_skill/tools/local_apps.py:29"
       ],
       "semantic_atomicity_review": "explicit_change_review",
       "summary": "Append a wiki-link to a note at an expected version; returns actual new bytes."
@@ -31142,10 +31142,10 @@
       "retry": "observe_before_retry",
       "review_scope": "source_definition_and_binding_review",
       "runtime_literal_references": [
-        "src/omni_body_skill/tools/local_apps.py:148",
-        "src/omni_body_skill/tools/local_apps.py:173",
-        "src/omni_body_skill/tools/local_apps.py:212",
-        "src/omni_body_skill/tools/local_apps.py:25"
+        "src/omni_body_skill/tools/local_apps.py:153",
+        "src/omni_body_skill/tools/local_apps.py:178",
+        "src/omni_body_skill/tools/local_apps.py:217",
+        "src/omni_body_skill/tools/local_apps.py:26"
       ],
       "semantic_atomicity_review": "explicit_change_review",
       "summary": "Create a new Markdown note; refuses to overwrite an existing note."
@@ -31201,7 +31201,7 @@
       "retry": "read_retry",
       "review_scope": "source_definition_and_binding_review",
       "runtime_literal_references": [
-        "src/omni_body_skill/tools/local_apps.py:26"
+        "src/omni_body_skill/tools/local_apps.py:27"
       ],
       "semantic_atomicity_review": "explicit_change_review",
       "summary": "Read exact Markdown note bytes as text with hash and character range."
@@ -31257,9 +31257,9 @@
       "retry": "observe_before_retry",
       "review_scope": "source_definition_and_binding_review",
       "runtime_literal_references": [
-        "src/omni_body_skill/tools/local_apps.py:177",
-        "src/omni_body_skill/tools/local_apps.py:212",
-        "src/omni_body_skill/tools/local_apps.py:27"
+        "src/omni_body_skill/tools/local_apps.py:182",
+        "src/omni_body_skill/tools/local_apps.py:217",
+        "src/omni_body_skill/tools/local_apps.py:28"
       ],
       "semantic_atomicity_review": "explicit_change_review",
       "summary": "Replace a note only at the expected SHA256 version, retaining an original snapshot."
@@ -31315,10 +31315,10 @@
       "retry": "read_retry",
       "review_scope": "source_definition_and_binding_review",
       "runtime_literal_references": [
-        "src/omni_body_skill/tools/local_apps.py:149",
-        "src/omni_body_skill/tools/local_apps.py:153",
+        "src/omni_body_skill/tools/local_apps.py:154",
         "src/omni_body_skill/tools/local_apps.py:158",
-        "src/omni_body_skill/tools/local_apps.py:30"
+        "src/omni_body_skill/tools/local_apps.py:163",
+        "src/omni_body_skill/tools/local_apps.py:31"
       ],
       "semantic_atomicity_review": "explicit_change_review",
       "summary": "Search local Markdown note text literally and paginate results without changing notes."
@@ -31374,8 +31374,8 @@
       "retry": "read_retry",
       "review_scope": "source_definition_and_binding_review",
       "runtime_literal_references": [
-        "src/omni_body_skill/tools/local_apps.py:149",
-        "src/omni_body_skill/tools/local_apps.py:24"
+        "src/omni_body_skill/tools/local_apps.py:154",
+        "src/omni_body_skill/tools/local_apps.py:25"
       ],
       "semantic_atomicity_review": "explicit_change_review",
       "summary": "List Markdown notes in an authorized local vault with explicit pagination."
@@ -36354,8 +36354,8 @@
       "retry": "observe_before_retry",
       "review_scope": "source_definition_and_binding_review",
       "runtime_literal_references": [
-        "src/omni_body_skill/tools/local_apps.py:23",
-        "src/omni_body_skill/tools/local_apps.py:80"
+        "src/omni_body_skill/tools/local_apps.py:24",
+        "src/omni_body_skill/tools/local_apps.py:83"
       ],
       "semantic_atomicity_review": "explicit_change_review",
       "summary": "Create a consistent SQLite online backup to a fresh file and verify integrity."
@@ -36513,8 +36513,8 @@
       "retry": "read_retry",
       "review_scope": "source_definition_and_binding_review",
       "runtime_literal_references": [
-        "src/omni_body_skill/tools/local_apps.py:20",
-        "src/omni_body_skill/tools/local_apps.py:77"
+        "src/omni_body_skill/tools/local_apps.py:21",
+        "src/omni_body_skill/tools/local_apps.py:80"
       ],
       "semantic_atomicity_review": "explicit_change_review",
       "summary": "Read the real SQLite schema without writes."
@@ -36570,8 +36570,8 @@
       "retry": "read_retry",
       "review_scope": "source_definition_and_binding_review",
       "runtime_literal_references": [
-        "src/omni_body_skill/tools/local_apps.py:21",
-        "src/omni_body_skill/tools/local_apps.py:91"
+        "src/omni_body_skill/tools/local_apps.py:22",
+        "src/omni_body_skill/tools/local_apps.py:96"
       ],
       "semantic_atomicity_review": "explicit_change_review",
       "summary": "Export every row of one SQLite table to a fresh CSV; report total rows and input version."
@@ -36627,8 +36627,8 @@
       "retry": "observe_before_retry",
       "review_scope": "source_definition_and_binding_review",
       "runtime_literal_references": [
-        "src/omni_body_skill/tools/local_apps.py:22",
-        "src/omni_body_skill/tools/local_apps.py:63"
+        "src/omni_body_skill/tools/local_apps.py:23",
+        "src/omni_body_skill/tools/local_apps.py:66"
       ],
       "semantic_atomicity_review": "explicit_change_review",
       "summary": "Append a rectangular CSV to an existing table in one transaction; malformed input rolls back."

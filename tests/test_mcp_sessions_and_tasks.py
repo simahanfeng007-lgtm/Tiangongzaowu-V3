@@ -1,6 +1,8 @@
 """Real HTTP state, connection lifetime and task effects across runtime calls."""
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
+import os
+from pathlib import Path
 import socket
 import subprocess
 import sys
@@ -203,13 +205,16 @@ def test_all_requirements_remain_discoverable_without_fabricated_backends(servic
 
 def test_process_exit_then_resume_queries_the_original_remote_job(service, tmp_path):
     receipt = tmp_path / "task-receipt.json"
+    root = Path(__file__).resolve().parents[1]
+    env = dict(os.environ, PYTHONPATH=os.pathsep.join(
+        str(root / path) for path in ("src", "app/backend/tiangong-backend")))
     setup = "from pathlib import Path; import json,os; from omni_body_skill.tools import mcp_client as m; m.CONFIG_PATH=Path(" + repr(str(service[1])) + "); "
     creation = "r=m.call_tool('actual','work',{},task={'ttl':60000},scope='original'); Path(" + repr(str(receipt)) + ").write_text(json.dumps(r)); os._exit(0)"
-    subprocess.run([sys.executable, "-c", setup + creation], check=True, timeout=15)
+    subprocess.run([sys.executable, "-c", setup + creation], check=True, timeout=15, env=env, cwd=tmp_path)
     job = json.loads(receipt.read_text())
     service[0]["tasks"][job["task"]["taskId"]]["status"] = "completed"
     resumed = "r=json.loads(Path(" + repr(str(receipt)) + ").read_text()); print(json.dumps(m.task_request('actual','result',task_id=r['task']['taskId'],fingerprint=r['connection_fingerprint'],scope='restarted')))"
-    result = json.loads(subprocess.check_output([sys.executable, "-c", setup + resumed], timeout=15))
+    result = json.loads(subprocess.check_output([sys.executable, "-c", setup + resumed], timeout=15, env=env, cwd=tmp_path))
     assert result["result_available"] and result["execution_state"] == "completed"
     assert result["result"]["content"][0]["text"] == "answer=73"
     assert service[0]["creates"] == 1

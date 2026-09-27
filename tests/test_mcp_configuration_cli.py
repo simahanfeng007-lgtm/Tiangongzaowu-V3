@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -7,9 +8,12 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def call(config, *extra):
+    env = dict(os.environ)
+    env.pop("PYTHONPATH", None)
     return subprocess.run([sys.executable, str(ROOT/"scripts/configure-mcp.py"), "owner",
         "--config", str(config), "--application", "google.docs", "--location", "test-host",
-        "--workspace", "workspace-a", *extra], capture_output=True, text=True)
+        "--workspace", "workspace-a", *extra], capture_output=True, text=True,
+        env=env, cwd=config.parent)
 
 
 def test_cli_registers_environment_without_claiming_connection_and_preserves_existing_entries(tmp_path):

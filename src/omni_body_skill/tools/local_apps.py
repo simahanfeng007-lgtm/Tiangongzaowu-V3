@@ -6,6 +6,7 @@ operations use real transactions and reopen exported files before reporting.
 from __future__ import annotations
 
 import csv
+from contextlib import closing
 import hashlib
 import json
 import os
@@ -44,7 +45,9 @@ def _fresh(path, writer):
     temp = Path(name)
     try:
         writer(temp)
-        with temp.open("rb") as f: os.fsync(f.fileno())
+        # Windows _commit requires a writable descriptor. The writer has
+        # already closed its handle; reopen without truncating before publish.
+        with temp.open("r+b") as f: os.fsync(f.fileno())
         # Atomic no-clobber publication. A concurrent creator wins; no replace.
         os.link(temp, path)
     finally:
@@ -80,7 +83,9 @@ def _sqlite(runtime, action, target, args):
         elif action == "sqlite.backup.create":
             output = runtime._resolve(args["output"])
             def write_backup(temp):
-                with sqlite3.connect(temp) as destination:
+                # A Connection context manager commits/rolls back but does not
+                # close the handle. Close it before publishing/unlinking on Windows.
+                with closing(sqlite3.connect(temp)) as destination:
                     connection.backup(destination, pages=128, progress=check_deadline)
                     destination.set_progress_handler(lambda: int(time.monotonic() >= deadline), 1000)
                     if destination.execute("PRAGMA integrity_check").fetchone() != ("ok",):

@@ -12,7 +12,7 @@ import sys
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path[:0] = [str(ROOT / "src")]
+sys.path[:0] = [str(ROOT / "src"), str(ROOT / "app/backend/tiangong-backend")]
 
 
 def main():
