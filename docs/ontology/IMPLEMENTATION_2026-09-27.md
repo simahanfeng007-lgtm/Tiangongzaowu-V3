@@ -82,3 +82,5 @@ MCP 当前每个动作独立连接，不支持跨动作保留有状态会话、�
 该候选当前 Windows P19 报出一个新增测试的默认 cp1252 解码错误。修正仅使测试显式读取 UTF-8，不改变产品或断言。此前 `35d925c` 的 Node 超时失败、本轮 `3d1c981` 公共预检失败和主动取消的检查均保留，最终检查以 [PR #114 的精确头部](https://github.com/simahanfeng007-lgtm/Tiangongzaowu-V3/pull/114/checks) 为准，不拼接不同候选的 Windows 分片。
 
 安装预检先在未准备安装镜像的新工作树失败；使用既有 `sync-generated-sources.py --write` 准备后，`verify_source.py --quick` 通过（1551 个 Python 文件、153 个 JavaScript 文件、真实模块导入及生成一致性）。这是 Linux 源码准备/启动检查，不能替代 Windows 安装器与桌面 UI 实测。全量测试日志与精确源码身份保留在本机同日验收目录；整体方案和外部资源缺项继续开放。
+
+该产品候选的新一轮本地全库为 6483 passed、1 failed、93 skipped、1145 subtests。唯一失败是路由测试仍匹配已改写的 Skill 英文句子；当前 Skill 已明确使用用户声明的章节数/字数并禁止隐式字数公式。测试改为核对这两句现行约束，未放宽产品范围；路由与小说专项复测 24 passed、4 subtests。原全库日志 `python-public-contract.log` 保留为失败，最终全库/CI 使用修正后的测试重新运行。此次差异仅在测试与证据说明，不改变六条真实任务使用的产品字节。
