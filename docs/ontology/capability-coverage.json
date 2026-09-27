@@ -21771,9 +21771,9 @@
       "retry": "observe_before_retry",
       "review_scope": "source_definition_and_binding_review",
       "runtime_literal_references": [
-        "app/backend/tiangong-backend/v3/novel_system.py:1649",
-        "app/backend/tiangong-backend/v3/novel_system.py:500",
-        "app/backend/tiangong-backend/v3/novel_system.py:595",
+        "app/backend/tiangong-backend/v3/novel_system.py:1648",
+        "app/backend/tiangong-backend/v3/novel_system.py:499",
+        "app/backend/tiangong-backend/v3/novel_system.py:594",
         "src/omni_body_skill/tool_contracts.py:1101",
         "src/omni_body_skill/tool_contracts.py:1520",
         "src/omni_body_skill/tool_contracts.py:34",
@@ -21811,7 +21811,7 @@
       "retry": "observe_before_retry",
       "review_scope": "source_definition_and_binding_review",
       "runtime_literal_references": [
-        "app/backend/tiangong-backend/v3/novel_system.py:805",
+        "app/backend/tiangong-backend/v3/novel_system.py:804",
         "src/omni_body_skill/tool_contracts.py:40",
         "src/omni_body_skill/tools/novel_system.py:344",
         "src/omni_body_skill/tools/novel_system.py:367",
@@ -21848,7 +21848,7 @@
       "retry": "observe_before_retry",
       "review_scope": "source_definition_and_binding_review",
       "runtime_literal_references": [
-        "app/backend/tiangong-backend/v3/novel_system.py:805",
+        "app/backend/tiangong-backend/v3/novel_system.py:804",
         "src/omni_body_skill/tool_contracts.py:1464",
         "src/omni_body_skill/tool_contracts.py:32",
         "src/omni_body_skill/tools/novel_system.py:328",
@@ -21886,7 +21886,7 @@
       "retry": "observe_before_retry",
       "review_scope": "source_definition_and_binding_review",
       "runtime_literal_references": [
-        "app/backend/tiangong-backend/v3/novel_system.py:428",
+        "app/backend/tiangong-backend/v3/novel_system.py:427",
         "src/omni_body_skill/tool_contracts.py:1387",
         "src/omni_body_skill/tool_contracts.py:31",
         "src/omni_body_skill/tools/novel_system.py:30",
@@ -21925,9 +21925,9 @@
       "retry": "observe_before_retry",
       "review_scope": "source_definition_and_binding_review",
       "runtime_literal_references": [
-        "app/backend/tiangong-backend/v3/novel_system.py:500",
-        "app/backend/tiangong-backend/v3/novel_system.py:595",
-        "app/backend/tiangong-backend/v3/novel_system.py:724",
+        "app/backend/tiangong-backend/v3/novel_system.py:499",
+        "app/backend/tiangong-backend/v3/novel_system.py:594",
+        "app/backend/tiangong-backend/v3/novel_system.py:723",
         "src/omni_body_skill/tool_contracts.py:1044",
         "src/omni_body_skill/tool_contracts.py:1493",
         "src/omni_body_skill/tool_contracts.py:33",
@@ -21966,11 +21966,11 @@
       "retry": "observe_before_retry",
       "review_scope": "source_definition_and_binding_review",
       "runtime_literal_references": [
-        "app/backend/tiangong-backend/v3/novel_system.py:1026",
-        "app/backend/tiangong-backend/v3/novel_system.py:1090",
-        "app/backend/tiangong-backend/v3/novel_system.py:1462",
-        "app/backend/tiangong-backend/v3/novel_system.py:1574",
-        "app/backend/tiangong-backend/v3/novel_system.py:1649",
+        "app/backend/tiangong-backend/v3/novel_system.py:1025",
+        "app/backend/tiangong-backend/v3/novel_system.py:1089",
+        "app/backend/tiangong-backend/v3/novel_system.py:1461",
+        "app/backend/tiangong-backend/v3/novel_system.py:1573",
+        "app/backend/tiangong-backend/v3/novel_system.py:1648",
         "src/omni_body_skill/tool_contracts.py:1589",
         "src/omni_body_skill/tool_contracts.py:42",
         "src/omni_body_skill/tools/novel_system.py:306",
@@ -22008,7 +22008,7 @@
       "retry": "observe_before_retry",
       "review_scope": "source_definition_and_binding_review",
       "runtime_literal_references": [
-        "app/backend/tiangong-backend/v3/novel_system.py:1202",
+        "app/backend/tiangong-backend/v3/novel_system.py:1201",
         "src/omni_body_skill/tool_contracts.py:1603",
         "src/omni_body_skill/tool_contracts.py:43",
         "src/omni_body_skill/tools/novel_system.py:350",
@@ -22084,7 +22084,7 @@
       "retry": "observe_before_retry",
       "review_scope": "source_definition_and_binding_review",
       "runtime_literal_references": [
-        "app/backend/tiangong-backend/v3/novel_system.py:695",
+        "app/backend/tiangong-backend/v3/novel_system.py:694",
         "src/omni_body_skill/tool_contracts.py:1569",
         "src/omni_body_skill/tool_contracts.py:39",
         "src/omni_body_skill/tools/novel_system.py:342",
@@ -22158,7 +22158,7 @@
       "retry": "observe_before_retry",
       "review_scope": "source_definition_and_binding_review",
       "runtime_literal_references": [
-        "app/backend/tiangong-backend/v3/novel_system.py:1462",
+        "app/backend/tiangong-backend/v3/novel_system.py:1461",
         "src/omni_body_skill/tool_contracts.py:46",
         "src/omni_body_skill/tools/novel_system.py:105",
         "src/omni_body_skill/tools/novel_system.py:356"
@@ -22232,7 +22232,7 @@
       "retry": "observe_before_retry",
       "review_scope": "source_definition_and_binding_review",
       "runtime_literal_references": [
-        "app/backend/tiangong-backend/v3/novel_system.py:1649",
+        "app/backend/tiangong-backend/v3/novel_system.py:1648",
         "src/omni_body_skill/tool_contracts.py:30",
         "src/omni_body_skill/tools/novel_system.py:25",
         "src/omni_body_skill/tools/novel_system.py:306",
@@ -22418,8 +22418,8 @@
       "retry": "observe_before_retry",
       "review_scope": "source_definition_and_binding_review",
       "runtime_literal_references": [
-        "app/backend/tiangong-backend/v3/novel_system.py:709",
-        "app/backend/tiangong-backend/v3/novel_system.py:734",
+        "app/backend/tiangong-backend/v3/novel_system.py:708",
+        "app/backend/tiangong-backend/v3/novel_system.py:733",
         "src/omni_body_skill/tool_contracts.py:1560",
         "src/omni_body_skill/tool_contracts.py:38",
         "src/omni_body_skill/tools/novel_system.py:340",
@@ -23893,7 +23893,7 @@
       "retry": "read_retry",
       "review_scope": "source_definition_and_binding_review",
       "runtime_literal_references": [
-        "app/backend/tiangong-backend/v3/novel_system.py:1649",
+        "app/backend/tiangong-backend/v3/novel_system.py:1648",
         "app/backend/tiangong-backend/v3/permission_settings.py:78",
         "src/omni_body_skill/tools/_stub_actions.py:13",
         "src/omni_body_skill/tools/delivery_kernel.py:165",

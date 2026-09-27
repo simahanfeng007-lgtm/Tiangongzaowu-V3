@@ -1,5 +1,5 @@
 {
- "verification_plane_version": "1.57",
+ "verification_plane_version": "1.58",
  "baseline_sha": "9a3344de9fe468fa845d2ff501166484439b8ec4",
  "store_schema_version": 33,
  "contract_schema_versions": {
@@ -13,7 +13,7 @@
  "golden_corpus_sha256": "cf904ee6c4a26c3fb48ca0a8bafca272bfcdd5dfab5a4b514bf984d37e8e458a",
  "golden_trace_version": "1",
  "authority_surface_sha256": {
-  "app/backend/tiangong-backend/v3/novel_system.py": "49b2d0e27176375b9b5d312b6c499eb3a1985249a5325625cfcbc955d9d3094b",
+  "app/backend/tiangong-backend/v3/novel_system.py": "1a9058943d9ef5bcf82d3a4b6b6610d5df26d9b4a29e992f43490a6407c70d62",
   "src/omni_body_skill/tools/novel_system.py": "e51e5bd2867689e4cfb002b30c593bb05cd94203a59c593e8f1a77a4aebc322c",
   "src/bundled_skills/novel-creation/scripts/novel_tool.py": "94ed73c86a1ceddc65d50fa990abba8ea483744323b870eae42599ef9586563f",
   "src/bundled_skills/novel-creation/SKILL.md": "c08c879cec9be4cc9e23d3e7e77f55b0342c2d487321400b331276a270aa3f6a",
@@ -172,7 +172,7 @@
   "src/total_gateway/verification_repair_coordinator.py": "089efa6a4c888d4e06d4bdd5044a0adc283d69648463a859f42e2c063f0187f6",
   "src/total_gateway/verification_repair_policy.py": "bb2ac036d01a516729d43cc068b37bb3e92f71983004275937fcfab82b2e9eaf",
   "src/total_gateway/verification_plan_executor.py": "63a27353f037dca87e64e8ef80ceee187260949650d404e6ea9fd83d84174452",
-  "src/total_gateway/verification_plane.py": "421a5ddbe377631e6723df8004f209e6725fab132742d2ce8e311748413f34fe",
+  "src/total_gateway/verification_plane.py": "ed947b9dc07c63df2b568382e0988997b5e757c2316fe4d626066b5465a68386",
   "src/total_gateway/verification_readiness.py": "3c1e7f89fb958ba82cb2aed7de85a237a007717839727a5146a3d29d532a8a39",
   "src/total_gateway/verification_failure_evidence.py": "955b1d3c2e77b2ec229ebdd8da612f8ce26794d6fdfc849967ffaaef6fd73dea",
   "src/total_gateway/verification_registry.py": "afab7caae8079c241953c42d85945fbeb5b106114e16963219c1f8c5524b310a",

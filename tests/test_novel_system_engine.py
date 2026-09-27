@@ -6,6 +6,7 @@ import unittest
 from unittest import mock
 from copy import deepcopy
 import json
+import subprocess
 from pathlib import Path
 
 
@@ -15,6 +16,45 @@ if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
 from v3.novel_system import NovelSystemEngine, NovelSystemError  # noqa: E402
+
+
+class NovelProjectLockTests(unittest.TestCase):
+    def test_lock_preserves_empty_and_historical_bytes(self):
+        from v3.novel_system import _cross_process_lock
+        with tempfile.TemporaryDirectory(prefix="tg-novel-lock-") as directory:
+            path = Path(directory) / "transaction.lock"
+            for content in (b"", b"000000"):
+                path.write_bytes(content)
+                for _ in range(3):
+                    with _cross_process_lock(path):
+                        pass
+                    self.assertEqual(path.read_bytes(), content)
+
+    def test_real_child_cannot_enter_held_lock_and_enters_after_release(self):
+        from v3.novel_system import _cross_process_lock
+        child = """import sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+from v3.novel_system import _cross_process_lock, NovelSystemError
+try:
+    with _cross_process_lock(Path(sys.argv[2]), timeout=0):
+        print('acquired')
+except NovelSystemError as exc:
+    assert exc.code == 'PROJECT_BUSY', exc
+    print('busy')
+"""
+        with tempfile.TemporaryDirectory(prefix="tg-novel-lock-") as directory:
+            path = Path(directory) / "transaction.lock"
+            path.write_bytes(b"")
+            def run_child():
+                result = subprocess.run([sys.executable, "-c", child, str(BACKEND_ROOT), str(path)],
+                                        capture_output=True, text=True, encoding="utf-8", timeout=30)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                return result.stdout.strip()
+            with _cross_process_lock(path):
+                self.assertEqual(run_child(), "busy")
+            self.assertEqual(run_child(), "acquired")
+            self.assertEqual(path.read_bytes(), b"")
 
 
 def _stage_minimal_blueprint(engine: NovelSystemEngine) -> int:

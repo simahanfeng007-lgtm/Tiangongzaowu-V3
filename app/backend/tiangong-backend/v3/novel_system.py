@@ -28,7 +28,7 @@ from typing import Any, Iterable, Iterator, Mapping, MutableMapping, Sequence
 import uuid
 
 
-SYSTEM_VERSION = "3.1.0-observation-and-transaction"
+SYSTEM_VERSION = "3.1.1-observation-and-transaction"
 BLUEPRINT_SECTIONS = (
     "story",
     "characters",
@@ -188,10 +188,9 @@ def _cross_process_lock(path: Path, timeout: float = 15.0) -> Iterator[None]:
             try:
                 if os.name == "nt":
                     import msvcrt
-                    stream.seek(0)
-                    if stream.tell() == 0:
-                        stream.write(b"0")
-                        stream.flush()
+                    # CRT byte-range locks may extend past EOF. No sentinel is
+                    # needed, and writing in append mode grows the file on
+                    # every retry even while another process holds the lock.
                     stream.seek(0)
                     msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
                 else:

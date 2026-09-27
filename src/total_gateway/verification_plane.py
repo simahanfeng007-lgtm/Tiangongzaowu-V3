@@ -31,6 +31,7 @@ from __future__ import annotations
 # 1.55 preserves typed unavailability and explicit document observation failures/ranges.
 # 1.56 makes novel content judgments advisory and validates recovery before writes.
 # 1.57 aligns public novel preflight with the v2 observation/repair contract.
-VERIFICATION_PLANE_VERSION = "1.57"
+# 1.58 preserves Windows transaction lock bytes while maintaining process exclusion.
+VERIFICATION_PLANE_VERSION = "1.58"
 
 __all__ = ["VERIFICATION_PLANE_VERSION"]
