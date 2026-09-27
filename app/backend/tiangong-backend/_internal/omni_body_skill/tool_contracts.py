@@ -867,68 +867,23 @@ def _issue(path: str, code: str, message: str) -> dict[str, str]:
 
 
 def _complete_novel_blueprint_item_issues(section: str, item: Mapping[str, Any], path: str) -> list[dict[str, str]]:
-    """Side-effect-free structural checks for canonical blueprint list items."""
+    """Validate record types; creative annotations do not become prerequisites."""
     issues: list[dict[str, str]] = []
-
-    def non_empty_string(field: str) -> None:
-        value = item.get(field)
-        if not isinstance(value, str) or not value.strip():
-            issues.append(_issue(f"{path}.{field}", "required_non_empty_string", f"{field} must be a non-empty string"))
-
-    def integer(field: str, *, positive: bool = False, non_negative: bool = False) -> None:
-        value = item.get(field)
-        valid = isinstance(value, int) and not isinstance(value, bool)
-        if positive:
-            valid = valid and value > 0
-        if non_negative:
-            valid = valid and value >= 0
-        if not valid:
-            issues.append(_issue(f"{path}.{field}", "integer", f"{field} must be a valid JSON integer"))
-
-    def string_array(field: str, *, maximum: int | None = None) -> None:
-        value = item.get(field)
-        valid = isinstance(value, list) and bool(value) and all(isinstance(row, str) and row.strip() for row in value)
-        if maximum is not None:
-            valid = valid and len(value) <= maximum
-        if not valid:
-            issues.append(_issue(f"{path}.{field}", "non_empty_string_array", f"{field} must be a non-empty string array"))
-
-    if section == "characters":
-        non_empty_string("id")
-        non_empty_string("name")
-        integer("birth_tick")
-        integer("age_at_start", non_negative=True)
-        initial = item.get("initial")
-        if not isinstance(initial, Mapping):
-            issues.append(_issue(f"{path}.initial", "object_required", "initial must contain location and realm"))
-        else:
-            for field in ("location", "realm"):
-                value = initial.get(field)
-                if not isinstance(value, str) or not value.strip():
-                    issues.append(_issue(f"{path}.initial.{field}", "required_non_empty_string", f"initial.{field} must be a non-empty string"))
-    elif section == "locations":
-        non_empty_string("id")
-        non_empty_string("name")
-    elif section == "plot_events":
-        non_empty_string("id")
-        integer("chapter", positive=True)
-        if item.get("phase") not in {"setup", "develop", "turn", "close"}:
-            issues.append(_issue(f"{path}.phase", "enum", "phase must be setup, develop, turn, or close"))
-        integer("start_tick")
-        integer("duration_ticks", positive=True)
-        string_array("participants")
-        non_empty_string("location")
-        string_array("evidence_terms", maximum=3)
-    elif section == "chapters":
-        integer("number", positive=True)
-        non_empty_string("title")
-        string_array("event_ids")
-        string_array("participants")
-        string_array("locations")
-        integer("start_tick")
-        integer("duration_ticks", positive=True)
-        string_array("required_outcomes")
-        string_array("theme_tags")
+    key = "number" if section == "chapters" else "id"
+    value = item.get(key)
+    if (key == "number" and (type(value) is not int or value < 1)) or (key == "id" and (not isinstance(value, str) or not value.strip())):
+        issues.append(_issue(f"{path}.{key}", "canonical_key", "A stable id or positive chapter number is required"))
+    for field in ("birth_tick", "age_at_start", "start_tick", "duration_ticks", "chapter"):
+        if field in item and (type(item[field]) is not int or (field in {"duration_ticks", "chapter"} and item[field] < 1)):
+            issues.append(_issue(f"{path}.{field}", "integer", "Use an integer with positive duration/chapter"))
+    for field in ("participants", "evidence_terms", "event_ids", "locations", "required_outcomes", "theme_tags", "requires_events"):
+        if field in item and (not isinstance(item[field], list) or any(not isinstance(v, str) for v in item[field])):
+            issues.append(_issue(f"{path}.{field}", "string_array", "Use a direct string array; empty arrays are allowed"))
+    for field in ("name", "title", "phase", "location"):
+        if field in item and not isinstance(item[field], str):
+            issues.append(_issue(f"{path}.{field}", "string", "Use a string"))
+    if "initial" in item and not isinstance(item["initial"], Mapping):
+        issues.append(_issue(f"{path}.initial", "object", "initial must be a state object"))
     return issues
 
 
@@ -959,47 +914,6 @@ def _decode_novel_item_wrappers(value: Any) -> Any:
             return flattened
         return {str(key): _decode_novel_item_wrappers(item) for key, item in value.items()}
     return value
-
-
-def _normalize_chapter_actual_sequences(value: Any) -> Any:
-    """Normalize only schema-declared chapter arrays after lossless wrapper decoding."""
-    if not isinstance(value, Mapping):
-        return value
-    actual = copy.deepcopy(dict(value))
-    object_arrays = ("events", "state_changes", "relationship_changes", "foreshadow_ops", "emotional_transactions")
-    for field in object_arrays:
-        rows = actual.get(field)
-        if isinstance(rows, list):
-            actual[field] = [
-                row for row in rows
-                if row is not None and not (isinstance(row, str) and not row.strip())
-            ]
-    string_arrays = ("theme_tags",)
-    for field in string_arrays:
-        rows = actual.get(field)
-        if isinstance(rows, list):
-            actual[field] = [row for row in rows if isinstance(row, str) and row.strip()]
-    for event in actual.get("events") or []:
-        if not isinstance(event, dict):
-            continue
-        for field in ("participants", "evidence_terms", "requires_events", "caused_by_event_ids", "outcome_tags"):
-            rows = event.get(field)
-            if isinstance(rows, list):
-                event[field] = [row for row in rows if isinstance(row, str) and row.strip()]
-    for change in actual.get("relationship_changes") or []:
-        if isinstance(change, dict) and isinstance(change.get("character_ids"), list):
-            change["character_ids"] = [row for row in change["character_ids"] if isinstance(row, str) and row.strip()]
-    for transaction in actual.get("emotional_transactions") or []:
-        if not isinstance(transaction, dict):
-            continue
-        for field in ("evidence_terms", "related_event_ids"):
-            rows = transaction.get(field)
-            if isinstance(rows, list):
-                transaction[field] = [row for row in rows if isinstance(row, str) and row.strip()]
-    proof = actual.get("convergence_proof")
-    if isinstance(proof, dict) and isinstance(proof.get("maintained_anchor_ids"), list):
-        proof["maintained_anchor_ids"] = [row for row in proof["maintained_anchor_ids"] if isinstance(row, str) and row.strip()]
-    return actual
 
 
 NOVEL_INTEGER_FIELDS = frozenset(
@@ -1201,11 +1115,6 @@ def validate_tool_request(
             if decoded_value != payload.get(field):
                 payload[field] = decoded_value
                 argument_aliases.append(f"args.{field}.item-wrapper->array")
-        if normalized == "novel.chapter.submit" and "actual" in payload:
-            normalized_actual = _normalize_chapter_actual_sequences(payload.get("actual"))
-            if normalized_actual != payload.get("actual"):
-                payload["actual"] = normalized_actual
-                argument_aliases.append("args.actual.schema-sequences->direct-arrays")
         coerced_payload = _coerce_novel_integer_fields(payload)
         if coerced_payload != payload:
             payload = coerced_payload
@@ -1473,23 +1382,8 @@ def validate_tool_request(
                 issues.append(_issue("args.genre", "required_non_empty_string", "novel.project.create requires genre"))
             if not isinstance(payload.get("planned_chapters"), int) or isinstance(payload.get("planned_chapters"), bool) or payload.get("planned_chapters", 0) < 1:
                 issues.append(_issue("args.planned_chapters", "positive_integer", "planned_chapters must be a positive integer"))
-            if not isinstance(payload.get("target_words"), int) or isinstance(payload.get("target_words"), bool) or payload.get("target_words", 0) < 1000:
-                issues.append(_issue("args.target_words", "minimum_1000", "target_words must be an integer >= 1000"))
-            planned = payload.get("planned_chapters")
-            words = payload.get("target_words")
-            if (
-                isinstance(planned, int) and not isinstance(planned, bool) and planned > 0
-                and isinstance(words, int) and not isinstance(words, bool) and words >= 1000
-            ):
-                minimum_chapters = (words + 4999) // 5000
-                if planned < minimum_chapters:
-                    issues.append(
-                        _issue(
-                            "args.planned_chapters",
-                            "full_book_chapter_count",
-                            f"planned_chapters is the full-book count, not the writing checkpoint; target_words={words} requires at least {minimum_chapters} chapters",
-                        )
-                    )
+            if not isinstance(payload.get("target_words"), int) or isinstance(payload.get("target_words"), bool) or payload.get("target_words", 0) < 1:
+                issues.append(_issue("args.target_words", "positive_integer", "target_words must be a positive integer"))
         elif normalized == "novel.blueprint.update":
             section = str(payload.get("section") or "")
             if section not in {
@@ -1539,8 +1433,6 @@ def validate_tool_request(
                         )
                     )
                 else:
-                    if section in NOVEL_BLUEPRINT_REQUIRED_LIST_SECTIONS and not data:
-                        issues.append(_issue("args.data", "required_array", f"{section} cannot be empty"))
                     if not all(isinstance(item, dict) for item in data):
                         issues.append(_issue("args.data", "object_items_required", f"Every {section} item must be an object"))
                     else:
@@ -1698,6 +1590,9 @@ def validate_tool_request(
             chapter = payload.get("chapter_number")
             if not isinstance(chapter, int) or isinstance(chapter, bool) or chapter < 1:
                 issues.append(_issue("args.chapter_number", "positive_integer", "chapter_number must be a positive integer"))
+            revision_of = payload.get("revision_of")
+            if revision_of is not None and (not isinstance(revision_of, str) or not re.fullmatch(r"[0-9a-f]{64}", revision_of)):
+                issues.append(_issue("args.revision_of", "sha256", "Use the current recorded chapter SHA-256"))
         elif normalized == "novel.plan.rebase":
             for field in ("expected_state_hash", "reason"):
                 if not isinstance(payload.get(field), str) or not payload.get(field, "").strip():
@@ -1716,8 +1611,8 @@ def validate_tool_request(
             if not isinstance(actual, dict):
                 issues.append(_issue("args.actual", "object", "actual must be a structured chapter delta object"))
             else:
-                if not isinstance(actual.get("summary"), str) or not actual.get("summary", "").strip():
-                    issues.append(_issue("args.actual.summary", "required_non_empty_string", "actual.summary must be a factual non-empty string"))
+                if "summary" in actual and not isinstance(actual["summary"], str):
+                    issues.append(_issue("args.actual.summary", "string", "Optional summary must be a string"))
                 object_arrays = (
                     "events", "state_changes", "relationship_changes", "foreshadow_ops", "emotional_transactions",
                 )
@@ -1726,28 +1621,34 @@ def validate_tool_request(
                     if not isinstance(value, list) or not all(isinstance(item, Mapping) for item in value):
                         issues.append(_issue(f"args.actual.{field}", "object_array", f"actual.{field} must be a direct JSON array of objects; do not group it under character_updates/sowed/item wrappers"))
                 events = actual.get("events") if isinstance(actual.get("events"), list) else []
-                if not events:
-                    issues.append(_issue("args.actual.events", "non_empty_object_array", "actual.events must contain the chapter's planned event records"))
                 for index, event in enumerate(item for item in events if isinstance(item, Mapping)):
-                    for field in ("id", "status", "location"):
+                    for field in ("id", "status"):
                         if not isinstance(event.get(field), str) or not event.get(field, "").strip():
                             issues.append(_issue(f"args.actual.events[{index}].{field}", "required_non_empty_string", f"event {field} is required"))
                     if str(event.get("status") or "") not in {"progressed", "turned", "closed"}:
                         issues.append(_issue(f"args.actual.events[{index}].status", "enum", "event status must be progressed, turned, or closed"))
                     for field in ("start_tick", "duration_ticks"):
                         value = event.get(field)
-                        if not isinstance(value, int) or isinstance(value, bool) or (field == "duration_ticks" and value < 1):
+                        if field in event and (not isinstance(value, int) or isinstance(value, bool) or (field == "duration_ticks" and value < 1)):
                             issues.append(_issue(f"args.actual.events[{index}].{field}", "integer", f"event {field} must be an integer"))
                     for field in ("participants", "evidence_terms"):
-                        value = event.get(field)
-                        if not isinstance(value, list) or not all(isinstance(item, str) and item.strip() for item in value):
+                        value = event.get(field, [])
+                        if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
                             issues.append(_issue(f"args.actual.events[{index}].{field}", "string_array", f"event {field} must be a direct string array"))
         elif normalized == "novel.scene.design":
-            if not isinstance(payload.get("trigger_id"), str) or not payload.get("trigger_id", "").strip():
-                issues.append(_issue("args.trigger_id", "required_non_empty_string", "trigger_id is required"))
-            candidates = payload.get("candidates")
-            if not isinstance(candidates, list) or not 2 <= len(candidates) <= 3 or not all(isinstance(item, dict) for item in candidates):
-                issues.append(_issue("args.candidates", "array_2_to_3", "candidates must contain 2-3 objects"))
+            if "trigger_id" in payload and (not isinstance(payload["trigger_id"], str) or not payload["trigger_id"].strip()):
+                issues.append(_issue("args.trigger_id", "string", "Optional historical trigger_id must be a non-empty string"))
+            candidates, selected = payload.get("candidates"), payload.get("selected_index")
+            if not isinstance(candidates, list) or not candidates or not all(isinstance(item, dict) for item in candidates):
+                issues.append(_issue("args.candidates", "object_array", "candidates must be a non-empty object array"))
+            elif type(selected) is not int or not 0 <= selected < len(candidates):
+                issues.append(_issue("args.selected_index", "index", "Select one candidate by its zero-based index"))
+            else:
+                candidate = candidates[selected]
+                if not isinstance(candidate.get("title"), str) or not candidate["title"].strip() or type(candidate.get("target_chapter")) is not int:
+                    issues.append(_issue("args.candidates", "selected_candidate", "Selected candidate needs title and integer target_chapter"))
+            if not isinstance(payload.get("expected_state_hash"), str) or not re.fullmatch(r"[0-9a-f]{64}", payload["expected_state_hash"]):
+                issues.append(_issue("args.expected_state_hash", "sha256", "Use the observed current state SHA-256"))
         elif normalized == "novel.context.query":
             if str(payload.get("entity_type") or "") not in {"character", "event", "foreshadow", "relationship", "chapter", "emotion"}:
                 issues.append(_issue("args.entity_type", "enum", "Unsupported novel context entity type"))

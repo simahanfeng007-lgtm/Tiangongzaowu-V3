@@ -179,7 +179,9 @@ def load_model_capability_manifest(
                 max_output_bytes=536_870_912,
                 max_tool_calls=10_000,
                 available=readiness["ready"],
-                unavailable_reason=None if readiness["ready"] else ";".join(readiness["reasons"]),
+                # This field is a machine reason code, not free-form detail.
+                # Full lifecycle/dependency reasons remain in dictionary readiness.
+                unavailable_reason=None if readiness["ready"] else "dictionary_readiness_unavailable",
                 model_visible=True,
             )
         )

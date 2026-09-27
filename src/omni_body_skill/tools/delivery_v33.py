@@ -28,11 +28,6 @@ V33_DELIVERY_ACTIONS: Dict[str, Dict[str, Any]] = {
         "implemented": True,
         "summary": "Create a web-novel chapter beat plan with hook/conflict/payoff/end-cliffhanger."
     },
-    "qc.novel.chapter_check": {
-        "risk": "A0",
-        "implemented": True,
-        "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality."
-    },
     "poster.brief.create": {
         "risk": "A2",
         "implemented": True,
@@ -41,88 +36,48 @@ V33_DELIVERY_ACTIONS: Dict[str, Dict[str, Any]] = {
     "qc.poster.commercial_check": {
         "risk": "A0",
         "implemented": True,
-        "summary": "Check poster/image campaign delivery for hierarchy, readability, CTA, brand consistency, export specs, and image technical readiness."
+        "summary": "Observe actual poster brief text or decoded image properties; no commercial-quality score or visual-content claim."
     },
     "spreadsheet.analysis.plan.create": {
         "risk": "A2",
         "implemented": True,
         "summary": "Create a spreadsheet analysis plan with questions, data dictionary, cleaning, analysis, charts, and decision outputs."
     },
-    "qc.sheet.analysis_report_check": {
-        "risk": "A0",
-        "implemented": True,
-        "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality."
-    },
     "meeting.minutes.create": {
         "risk": "A2",
         "implemented": True,
         "summary": "Create structured meeting minutes with decisions, action items, owners, deadlines, risks, and follow-up."
-    },
-    "qc.meeting.minutes_check": {
-        "risk": "A0",
-        "implemented": True,
-        "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality."
     },
     "sales.script.create": {
         "risk": "A2",
         "implemented": True,
         "summary": "Create B2B sales script with ICP, opening, diagnosis questions, value proof, objections, and close."
     },
-    "qc.sales.script_check": {
-        "risk": "A0",
-        "implemented": True,
-        "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality."
-    },
     "course.lesson_plan.create": {
         "risk": "A2",
         "implemented": True,
         "summary": "Create a course/lesson plan with learning objectives, assessment, activities, timing, materials, and differentiation."
-    },
-    "qc.course.plan_check": {
-        "risk": "A0",
-        "implemented": True,
-        "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality."
     },
     "kb.ingestion_manifest.create": {
         "risk": "A2",
         "implemented": True,
         "summary": "Create a knowledge-base ingestion manifest with source inventory, chunking plan, metadata, QA pairs, and validation plan."
     },
-    "qc.kb.ingestion_check": {
-        "risk": "A0",
-        "implemented": True,
-        "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality."
-    },
     "voice.consent_pack.create": {
         "risk": "A2",
         "implemented": True,
         "summary": "Create an authorized voice/audio production consent pack and quality checklist; does not clone voices."
-    },
-    "qc.voice_authorized.delivery_check": {
-        "risk": "A0",
-        "implemented": True,
-        "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality."
     },
     "seo.content.brief.create": {
         "risk": "A2",
         "implemented": True,
         "summary": "Create people-first SEO/web content brief with audience intent, experience, evidence, structure, helpfulness, and credibility signals."
     },
-    "qc.seo.people_first_check": {
-        "risk": "A0",
-        "implemented": True,
-        "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality."
-    },
     "content.calendar.create": {
         "risk": "A2",
         "implemented": True,
         "summary": "Create a multi-channel content calendar with goals, audience, topics, formats, owners, deadlines, and metrics."
     },
-    "qc.content.calendar_check": {
-        "risk": "A0",
-        "implemented": True,
-        "summary": "Return input file/content metadata with semantic quality unassessed (assessment_mode=model_required, score=null, acceptance=null). The model evaluates meaning and quality."
-    }
 }
 
 RUBRIC_WEIGHTS_V33: Dict[str, Dict[str, int]] = {
@@ -179,30 +134,20 @@ RUBRIC_WEIGHTS_V33: Dict[str, Dict[str, int]] = {
 }
 
 
-
 def handle_v33_action(runtime: Any, op_id: str, action: str, target: str | None, args: Dict[str, Any]) -> Dict[str, Any]:
     table = {
         "delivery.v33.info": _v33_info,
         "writing.chapter.plan.create": _writing_chapter_plan_create,
-        "qc.novel.chapter_check": _qc_novel_chapter,
         "poster.brief.create": _poster_brief_create,
         "qc.poster.commercial_check": _qc_poster,
         "spreadsheet.analysis.plan.create": _spreadsheet_analysis_plan_create,
-        "qc.sheet.analysis_report_check": _qc_sheet_analysis,
         "meeting.minutes.create": _meeting_minutes_create,
-        "qc.meeting.minutes_check": _qc_meeting_minutes,
         "sales.script.create": _sales_script_create,
-        "qc.sales.script_check": _qc_sales_script,
         "course.lesson_plan.create": _course_lesson_plan_create,
-        "qc.course.plan_check": _qc_course_plan,
         "kb.ingestion_manifest.create": _kb_ingestion_manifest_create,
-        "qc.kb.ingestion_check": _qc_kb_ingestion,
         "voice.consent_pack.create": _voice_consent_pack_create,
-        "qc.voice_authorized.delivery_check": _qc_voice_authorized,
         "seo.content.brief.create": _seo_content_brief_create,
-        "qc.seo.people_first_check": _qc_seo_people_first,
         "content.calendar.create": _content_calendar_create,
-        "qc.content.calendar_check": _qc_content_calendar,
     }
     fn = table.get(action)
     if fn is None:
@@ -222,7 +167,7 @@ def handle_v33_action(runtime: Any, op_id: str, action: str, target: str | None,
                 "role": "template_or_skeleton_helper",
                 "not_final_delivery": True,
                 "model_must_complete_content": True,
-                "next_required_steps": ["produce actual content with model", "write/create final artifact", "run qc.*", "repair until pass", "deliverable.package"],
+                "next_required_steps": ["produce requested content", "write the actual artifact", "read back content and applicable structural observations", "repair observed problems", "submit current evidence to the adversarial reviewer"],
             })
         result["not_final_delivery"] = True
         result["llm_note"] = "This action creates a skeleton/brief only. The model must continue the Skill workflow; do not treat it as final completion."
@@ -304,21 +249,8 @@ def _issue(code: str, message: str, severity: str = "medium", repair: str = "") 
     return {"code": code, "severity": severity, "message": message, "repair": repair or message}
 
 
-def _score(issues: List[Dict[str, Any]], warnings: List[Dict[str, Any]] | None = None) -> int:
-    score = 100
-    for it in issues:
-        score -= {"critical": 24, "high": 14, "medium": 8, "low": 3}.get(it.get("severity", "medium"), 6)
-    for it in warnings or []:
-        score -= 2 if it.get("severity", "low") == "low" else 4
-    return max(0, min(100, score))
 
 
-def _grade(score: int) -> str:
-    if score >= 90: return "world_class_ready"
-    if score >= 80: return "delivery_ready"
-    if score >= 70: return "acceptable_with_minor_repair"
-    if score >= 60: return "needs_repair"
-    return "not_ready"
 
 
 def _has_any(text: str, words: List[str]) -> bool:
@@ -352,7 +284,7 @@ def _v33_info(runtime: Any, target: str | None, args: Dict[str, Any]) -> Dict[st
         "result": {
             "schema": "tiangong.v3.delivery_expansion.v33.v1",
             "version": "3.3.1",
-            "principle": "tool-only expanded skill pack: create actions are skeleton helpers; skill.route returns Skill for the model to execute.",
+            "principle": "create actions are optional skeleton helpers; the model composes task-local Tools and Skill from current goals and observations; only the adversarial reviewer decides task completion.",
             "rubrics": sorted(RUBRIC_WEIGHTS_V33.keys()),
             "quality_gates": sorted(k for k in V33_DELIVERY_ACTIONS if k.startswith("qc.")),
             "create_actions": sorted(k for k in V33_DELIVERY_ACTIONS if not k.startswith("qc.") and k != "delivery.v33.info"),
@@ -372,15 +304,10 @@ def _writing_chapter_plan_create(runtime: Any, target: str | None, args: Dict[st
         ("场景节拍", ["场景目标", "阻碍/冲突", "代价升级", "角色反应", "小反转或新信息", "阶段性回报"]),
         ("人物与情绪", ["主角欲望", "对手压力", "情绪曲线：压迫→选择→爆发/反转", "具体动作替代抽象心理"]),
         ("结尾钩子", ["未解决问题", "下一章必须点开的信息差", "一句强情绪或强悬念收束"]),
-        ("质检动作", ["qc.novel.chapter_check", "qc.writing.ai_tone_check"]),
+        ("内容观察", ["读取实际产物；按用户要求由对抗智能体验收。元数据不代表内容质量。"]),
     ]
     _write(output, _section_markdown(str(title), sections))
     return {"success": True, "output": {"path": _rel(runtime, output), "exists": True, "bytes": output.stat().st_size}}
-
-
-def _qc_novel_chapter(runtime: Any, target: str | None, args: Dict[str, Any]) -> Dict[str, Any]:
-    from .delivery_kernel import _semantic_assessment
-    return _semantic_assessment(runtime, target, args, "novel_chapter")
 
 
 def _poster_brief_create(runtime: Any, target: str | None, args: Dict[str, Any]) -> Dict[str, Any]:
@@ -397,41 +324,20 @@ def _poster_brief_create(runtime: Any, target: str | None, args: Dict[str, Any])
 
 
 def _qc_poster(runtime: Any, target: str | None, args: Dict[str, Any]) -> Dict[str, Any]:
-    issues: List[Dict[str, Any]] = []
-    warnings: List[Dict[str, Any]] = []
-    text = str(args.get("brief") or args.get("content") or "")
-    path = None
-    image_info: Dict[str, Any] = {}
-    if target:
-        path = _resolve(runtime, target, must_exist=True)
-        if path.suffix.lower() in {".md", ".txt", ".json"}:
-            text += "\n" + _read_text_any(path)
-        else:
-            try:
-                from PIL import Image, ImageStat  # type: ignore
-                with Image.open(path) as im:
-                    image_info = {"width": im.width, "height": im.height, "mode": im.mode, "format": im.format}
-                    if im.width < 1000 or im.height < 1000:
-                        warnings.append(_issue("low_resolution", "图像分辨率偏低。", "low", "导出宽高至少 1080px 级别。"))
-                    gray = im.convert("L")
-                    stat = ImageStat.Stat(gray)
-                    if stat.stddev and stat.stddev[0] < 8:
-                        # MM-P1-2: a near-solid/blank poster is not "high
-                        # quality" — it must fail instead of passing quietly.
-                        issues.append(_issue(
-                            "solid_color_image",
-                            "图像接近纯色/空白，缺乏有效视觉内容。",
-                            "critical",
-                            "添加真实图形、文字与视觉层次后重新导出。",
-                        ))
-                    elif stat.stddev and stat.stddev[0] < 24:
-                        warnings.append(_issue("low_contrast", "整体对比度偏低，标题可读性可能不足。", "low", "增强标题区明暗对比或加遮罩。"))
-            except Exception as exc:
-                issues.append(_issue("image_unreadable", f"图片不可读：{exc}", "critical", "重新导出 PNG/JPG。"))
-    combined = text
-    warnings.extend(_generic_ai_issues(combined))
-    score = _score(issues, warnings)
-    return {"success": True, "result": {"type": "poster_campaign", "score": score, "grade": _grade(score), "image_info": image_info, "issues": issues, "warnings": warnings, "acceptance": score >= 80}, "evidence": {"path": _rel(runtime, path) if path else "content", "exists": bool(path), "bytes": path.stat().st_size if path else len(combined.encode('utf-8')), "score": score}}
+    if not target:
+        return {"success": False, "message": "A real poster artifact is required for observation."}
+    path = _resolve(runtime, target, must_exist=True)
+    if path.suffix.lower() in {".md", ".txt", ".json"}:
+        text = _read_text_any(path)
+        return {"success": True, "result": {"type": "poster_brief_observation",
+            "text": text[:12000], "truncated": len(text) > 12000,
+            "assessment_mode": "brief_text_only", "visual_content": "not_observed",
+            "content_quality": "unassessed", "completion_authority": "adversarial_judge"},
+            "evidence": {"path": _rel(runtime, path), "exists": True, "bytes": path.stat().st_size}}
+    from .delivery_kernel import _qc_image
+    result = _qc_image(runtime, target, args)
+    result["result"]["type"] = "poster_image_observation"
+    return result
 
 
 def _spreadsheet_analysis_plan_create(runtime: Any, target: str | None, args: Dict[str, Any]) -> Dict[str, Any]:
@@ -443,15 +349,10 @@ def _spreadsheet_analysis_plan_create(runtime: Any, target: str | None, args: Di
         ("清洗计划", ["去重", "空值处理", "异常值", "日期/金额格式", "口径统一"]),
         ("分析计划", ["描述统计", "分组对比", "趋势", "贡献度", "异常定位", "可视化"]),
         ("交付物", ["原始数据备份", "清洗后数据", "分析表", "图表", "结论摘要", "行动建议"]),
-        ("质检动作", ["qc.sheet.analysis_report_check", "qc.sheet.delivery_check"]),
+        ("内容观察", ["读取实际产物；按用户要求由对抗智能体验收。元数据不代表内容质量。"]),
     ]
     _write(output, _section_markdown("表格分析交付计划", sections))
     return {"success": True, "output": {"path": _rel(runtime, output), "exists": True, "bytes": output.stat().st_size}}
-
-
-def _qc_sheet_analysis(runtime: Any, target: str | None, args: Dict[str, Any]) -> Dict[str, Any]:
-    from .delivery_kernel import _semantic_assessment
-    return _semantic_assessment(runtime, target, args, "sheet_analysis")
 
 
 def _meeting_minutes_create(runtime: Any, target: str | None, args: Dict[str, Any]) -> Dict[str, Any]:
@@ -465,15 +366,10 @@ def _meeting_minutes_create(runtime: Any, target: str | None, args: Dict[str, An
         ("行动项", actions or ["待补充：任务 / 负责人 / 截止时间 / 验收标准。"]),
         ("风险与阻塞", args.get("risks", ["暂无记录"]) if isinstance(args.get("risks"), list) else [str(args.get("risks"))]),
         ("下次跟进", args.get("follow_up", "待补充时间、负责人和议题。")),
-        ("质检动作", ["qc.meeting.minutes_check"]),
+        ("内容观察", ["读取实际产物；按用户要求由对抗智能体验收。元数据不代表内容质量。"]),
     ]
     _write(output, _section_markdown("会议纪要与行动跟进", sections))
     return {"success": True, "output": {"path": _rel(runtime, output), "exists": True, "bytes": output.stat().st_size}}
-
-
-def _qc_meeting_minutes(runtime: Any, target: str | None, args: Dict[str, Any]) -> Dict[str, Any]:
-    from .delivery_kernel import _semantic_assessment
-    return _semantic_assessment(runtime, target, args, "meeting_minutes")
 
 
 def _sales_script_create(runtime: Any, target: str | None, args: Dict[str, Any]) -> Dict[str, Any]:
@@ -491,11 +387,6 @@ def _sales_script_create(runtime: Any, target: str | None, args: Dict[str, Any])
     return {"success": True, "output": {"path": _rel(runtime, output), "exists": True, "bytes": output.stat().st_size}}
 
 
-def _qc_sales_script(runtime: Any, target: str | None, args: Dict[str, Any]) -> Dict[str, Any]:
-    from .delivery_kernel import _semantic_assessment
-    return _semantic_assessment(runtime, target, args, "sales_script")
-
-
 def _course_lesson_plan_create(runtime: Any, target: str | None, args: Dict[str, Any]) -> Dict[str, Any]:
     output = _resolve(runtime, target or "course_lesson_plan.md")
     sections = [
@@ -505,15 +396,10 @@ def _course_lesson_plan_create(runtime: Any, target: str | None, args: Dict[str,
         ("教学流程", ["导入5-10分钟", "概念讲解", "示范", "分步练习", "综合任务", "展示反馈", "总结"]),
         ("练习与评价", ["过程性检查", "最终作品", "评分标准", "常见错误纠正"]),
         ("分层支持", ["基础学员提示", "进阶挑战", "补救材料"]),
-        ("质检动作", ["qc.course.plan_check"]),
+        ("内容观察", ["读取实际产物；按用户要求由对抗智能体验收。元数据不代表内容质量。"]),
     ]
     _write(output, _section_markdown("课程/教案交付", sections))
     return {"success": True, "output": {"path": _rel(runtime, output), "exists": True, "bytes": output.stat().st_size}}
-
-
-def _qc_course_plan(runtime: Any, target: str | None, args: Dict[str, Any]) -> Dict[str, Any]:
-    from .delivery_kernel import _semantic_assessment
-    return _semantic_assessment(runtime, target, args, "course_plan")
 
 
 def _kb_ingestion_manifest_create(runtime: Any, target: str | None, args: Dict[str, Any]) -> Dict[str, Any]:
@@ -534,11 +420,6 @@ def _kb_ingestion_manifest_create(runtime: Any, target: str | None, args: Dict[s
     return {"success": True, "output": {"path": _rel(runtime, output), "exists": True, "bytes": output.stat().st_size, "sources": len(sources)}}
 
 
-def _qc_kb_ingestion(runtime: Any, target: str | None, args: Dict[str, Any]) -> Dict[str, Any]:
-    from .delivery_kernel import _semantic_assessment
-    return _semantic_assessment(runtime, target, args, "kb_ingestion")
-
-
 def _voice_consent_pack_create(runtime: Any, target: str | None, args: Dict[str, Any]) -> Dict[str, Any]:
     output = _resolve(runtime, target or "authorized_voice_consent_pack.md")
     sections = [
@@ -546,15 +427,10 @@ def _voice_consent_pack_create(runtime: Any, target: str | None, args: Dict[str,
         ("必须保留的证据", ["书面授权/录音授权", "样本来源", "脚本文本", "生成文件清单", "水印/披露说明", "撤回机制"]),
         ("质量要求", ["口齿清晰", "响度一致", "无明显爆音/底噪", "与脚本一致", "导出 WAV/MP3"]),
         ("禁用场景", ["冒充他人", "无授权克隆", "欺诈/诈骗", "政治误导", "绕过平台风控"]),
-        ("质检动作", ["qc.voice_authorized.delivery_check"]),
+        ("内容观察", ["读取实际产物；按用户要求由对抗智能体验收。元数据不代表内容质量。"]),
     ]
     _write(output, _section_markdown("授权声音/音频交付同意包", sections))
     return {"success": True, "output": {"path": _rel(runtime, output), "exists": True, "bytes": output.stat().st_size}}
-
-
-def _qc_voice_authorized(runtime: Any, target: str | None, args: Dict[str, Any]) -> Dict[str, Any]:
-    from .delivery_kernel import _semantic_assessment
-    return _semantic_assessment(runtime, target, args, "voice_authorized")
 
 
 def _seo_content_brief_create(runtime: Any, target: str | None, args: Dict[str, Any]) -> Dict[str, Any]:
@@ -564,15 +440,10 @@ def _seo_content_brief_create(runtime: Any, target: str | None, args: Dict[str, 
         ("有用性设计", ["直接回答问题", "给出一手经验或具体案例", "列出限制条件", "提供下一步操作", "避免为了SEO堆词"]),
         ("可信度", ["作者/组织经验", "来源与引用", "更新时间", "可验证数据", "风险提示"]),
         ("结构", ["标题", "摘要", "目录/小标题", "步骤/清单", "FAQ", "CTA"]),
-        ("质检动作", ["qc.seo.people_first_check", "qc.writing.ai_tone_check"]),
+        ("内容观察", ["读取实际产物；按用户要求由对抗智能体验收。元数据不代表内容质量。"]),
     ]
     _write(output, _section_markdown("People-first SEO/网页内容Brief", sections))
     return {"success": True, "output": {"path": _rel(runtime, output), "exists": True, "bytes": output.stat().st_size}}
-
-
-def _qc_seo_people_first(runtime: Any, target: str | None, args: Dict[str, Any]) -> Dict[str, Any]:
-    from .delivery_kernel import _semantic_assessment
-    return _semantic_assessment(runtime, target, args, "seo_people_first")
 
 
 def _content_calendar_create(runtime: Any, target: str | None, args: Dict[str, Any]) -> Dict[str, Any]:
@@ -591,8 +462,3 @@ def _content_calendar_create(runtime: Any, target: str | None, args: Dict[str, A
                 "metric": args.get("metric", "曝光/点击/线索/转化"), "status": "planned",
             })
     return {"success": True, "output": {"path": _rel(runtime, output), "exists": True, "bytes": output.stat().st_size, "rows": len(topics)}}
-
-
-def _qc_content_calendar(runtime: Any, target: str | None, args: Dict[str, Any]) -> Dict[str, Any]:
-    from .delivery_kernel import _semantic_assessment
-    return _semantic_assessment(runtime, target, args, "content_calendar")

@@ -22,7 +22,7 @@
   {
    "kind": "reflective_getattr",
    "path": "app/backend/tiangong-backend/omni_body_skill/tools/omni_body_tool.py",
-   "line": 907,
+   "line": 909,
    "target": "handler_name",
    "classification": "verified",
    "verified_category": "tool_handler_dispatch"
@@ -30,7 +30,7 @@
   {
    "kind": "dynamic_import",
    "path": "app/backend/tiangong-backend/omni_body_skill/tools/omni_body_tool.py",
-   "line": 1620,
+   "line": 1622,
    "target": "<__import__>",
    "classification": "verified",
    "verified_category": "optional_dependency"
@@ -38,7 +38,7 @@
   {
    "kind": "reflective_getattr",
    "path": "app/backend/tiangong-backend/omni_body_skill/tools/omni_capability.py",
-   "line": 79,
+   "line": 80,
    "target": "key",
    "classification": "verified",
    "verified_category": "structural_field_access"
@@ -62,7 +62,7 @@
   {
    "kind": "env_get",
    "path": "app/backend/tiangong-backend/v3/duihua_qiaojie.py",
-   "line": 4548,
+   "line": 4569,
    "target": "'TIANGONG_ENABLE_LEARNED_SKILL_CATALOG'",
    "classification": "verified",
    "env_name": "TIANGONG_ENABLE_LEARNED_SKILL_CATALOG",
@@ -239,10 +239,10 @@
   {
    "kind": "reflective_getattr",
    "path": "src/capability_dictionary/__init__.py",
-   "line": 126,
+   "line": 131,
    "target": "name",
    "classification": "verified",
-   "verified_category": "optional_dependency"
+   "verified_category": "structural_field_access"
   },
   {
    "kind": "reflective_getattr",
@@ -495,7 +495,7 @@
   {
    "kind": "reflective_getattr",
    "path": "src/omni_body_skill/tools/omni_body_tool.py",
-   "line": 907,
+   "line": 909,
    "target": "handler_name",
    "classification": "verified",
    "verified_category": "tool_handler_dispatch"
@@ -503,7 +503,7 @@
   {
    "kind": "dynamic_import",
    "path": "src/omni_body_skill/tools/omni_body_tool.py",
-   "line": 1620,
+   "line": 1622,
    "target": "<__import__>",
    "classification": "verified",
    "verified_category": "optional_dependency"
@@ -511,7 +511,7 @@
   {
    "kind": "reflective_getattr",
    "path": "src/omni_body_skill/tools/omni_capability.py",
-   "line": 79,
+   "line": 80,
    "target": "key",
    "classification": "verified",
    "verified_category": "structural_field_access"
@@ -783,7 +783,7 @@
   {
    "kind": "dynamic_import",
    "path": "src/total_gateway/embedded_backend.py",
-   "line": 1594,
+   "line": 1600,
    "target": "'v3.knowledge_store'",
    "classification": "verified",
    "verified_category": "lazy_module_import"
@@ -799,7 +799,7 @@
   {
    "kind": "reflective_getattr",
    "path": "src/total_gateway/omni_grant_authority.py",
-   "line": 280,
+   "line": 281,
    "target": "name",
    "classification": "verified",
    "verified_category": "structural_field_access"
@@ -807,7 +807,7 @@
   {
    "kind": "reflective_getattr",
    "path": "src/total_gateway/omni_grant_authority.py",
-   "line": 293,
+   "line": 294,
    "target": "name",
    "classification": "verified",
    "verified_category": "structural_field_access"
@@ -815,7 +815,7 @@
   {
    "kind": "reflective_getattr",
    "path": "src/total_gateway/omni_grant_authority.py",
-   "line": 953,
+   "line": 954,
    "target": "name",
    "classification": "verified",
    "verified_category": "structural_field_access"
@@ -823,7 +823,7 @@
   {
    "kind": "reflective_getattr",
    "path": "src/total_gateway/omni_grant_authority.py",
-   "line": 1235,
+   "line": 1236,
    "target": "name",
    "classification": "verified",
    "verified_category": "structural_field_access"
@@ -855,7 +855,7 @@
   {
    "kind": "dynamic_import",
    "path": "src/total_gateway/server.py",
-   "line": 347,
+   "line": 350,
    "target": "<__import__>",
    "classification": "verified",
    "verified_category": "inline_stdlib_import"
@@ -863,7 +863,7 @@
   {
    "kind": "dynamic_import",
    "path": "src/total_gateway/server.py",
-   "line": 388,
+   "line": 391,
    "target": "<__import__>",
    "classification": "verified",
    "verified_category": "inline_stdlib_import"
@@ -871,7 +871,7 @@
   {
    "kind": "dynamic_import",
    "path": "src/total_gateway/server.py",
-   "line": 749,
+   "line": 752,
    "target": "<__import__>",
    "classification": "verified",
    "verified_category": "inline_stdlib_import"
@@ -879,7 +879,7 @@
   {
    "kind": "dynamic_import",
    "path": "src/total_gateway/server.py",
-   "line": 763,
+   "line": 766,
    "target": "<__import__>",
    "classification": "verified",
    "verified_category": "inline_stdlib_import"
@@ -887,7 +887,7 @@
   {
    "kind": "dynamic_import",
    "path": "src/total_gateway/server.py",
-   "line": 791,
+   "line": 794,
    "target": "<__import__>",
    "classification": "verified",
    "verified_category": "inline_stdlib_import"

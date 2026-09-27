@@ -858,6 +858,7 @@ def _simple_chain_regenerative_execute_tool(
             "effect_id": effect_id,
             "logical_effect_id": logical_effect_id,
             "prior_result_summary": prepared.get("prior_result_summary") or {},
+            "execution_evidence": prepared.get("prior_execution_evidence"),
         }
         if update_frontier:
             _simple_chain_regenerative_update_frontier(
@@ -944,7 +945,10 @@ def _simple_chain_regenerative_execute_tool(
         raw = {"ok": False, "error": str(exc), "error_code": type(exc).__name__}
     status = str(raw.get("status") or raw.get("zhuangtai") or "").strip().lower() if isinstance(raw, dict) else ""
     result_ok = bool(tool_result_ok(tool_name, raw))
-    ambiguous = handler_exception or bool(isinstance(raw, dict) and raw.get("ambiguous_effect")) or status in {
+    native_result = raw.get("result") if isinstance(raw, dict) else None
+    ambiguous = handler_exception or bool(isinstance(raw, dict) and raw.get("ambiguous_effect")) or bool(
+        isinstance(native_result, dict) and native_result.get("ambiguous_effect")
+    ) or status in {
         "ambiguous", "unknown", "deadline", "timeout", "timed_out"
     }
     outcome = "ambiguous" if ambiguous else "succeeded" if result_ok else "failed_final"
@@ -982,9 +986,11 @@ def _simple_chain_regenerative_execute_tool(
         },
     )
     final_effect_state = str((finished or {}).get("effect_state") or "")
-    if outcome != "succeeded" and isinstance(raw, dict) and (finished or {}).get("event_hash"):
+    if isinstance(raw, dict) and (finished or {}).get("event_hash"):
         raw = {**raw, "execution_evidence": {"event_hash": finished["event_hash"],
-               "effect_id": effect_id, "outcome": outcome}}
+               "effect_id": effect_id, "outcome": outcome,
+               **({"repair_relation": finished["repair_relation"]}
+                  if finished.get("repair_relation") else {})}}
     if outcome == "ambiguous" or final_effect_state == "AMBIGUOUS":
         _simple_chain_regenerative_effect_state(run_state, effect_id, state="ambiguous", call_id=call_id)
     else:

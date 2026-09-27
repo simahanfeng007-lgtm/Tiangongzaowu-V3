@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 import tempfile
 import time
@@ -149,6 +150,24 @@ class OmniGatewayGrantIntegrationTests(unittest.TestCase):
                 )
             self.assertRegex(verified["grant_sha256"], r"^[0-9a-f]{64}$")
             self.assertFalse(verified["allow_shell"])
+
+            # A native fractional timestamp must survive the real HTTP router,
+            # signing authority and independent consumer without losing identity.
+            from total_gateway.omni_grant_api import OmniGrantInternalApiRouter, OmniGrantApiError, OMNI_GRANT_PATH
+            router = OmniGrantInternalApiRouter(authority, "a" * 48)
+            video = dict(invocation, action="video.observe_frames", call_id="toolcall_" + "4" * 64,
+                         args={"times": [0, 0.5], "question": "Count the shapes."})
+            status, video_grant = router.dispatch("POST", OMNI_GRANT_PATH, json.dumps(video).encode())
+            self.assertEqual((status, video_grant["status"]), (200, "OK"))
+            with mock.patch.dict(os.environ, {"TIANGONG_OMNI_BODY_STATE_ROOT": str(state_root / "omni-state")}, clear=True):
+                with self.assertRaisesRegex(verifier.CapabilityGrantError, "argument binding"):
+                    verifier.verify_capability_grant(video_grant["grant"], action=video["action"], target=video["target"],
+                        args=dict(video["args"], times=[0, 0.6]), workspace=str(state_root), runtime_meta=video_grant["runtime"])
+                verifier.verify_capability_grant(video_grant["grant"], action=video["action"], target=video["target"],
+                    args=video["args"], workspace=str(state_root), runtime_meta=video_grant["runtime"])
+            overflow = json.dumps(dict(video, call_id="toolcall_" + "5" * 64)).replace("0.5", "1e999")
+            with self.assertRaisesRegex(OmniGrantApiError, "invalid_json_arguments"):
+                router.dispatch("POST", OMNI_GRANT_PATH, overflow.encode())
             authority.unregister(outer.payload.ticket_id)
 
 

@@ -83,19 +83,15 @@ class ModelCredentialContractTests(unittest.TestCase):
         self.assertIn('Object.prototype.hasOwnProperty.call(source, "reasoning_mode")', electron)
         self.assertIn('clean.reasoning_mode = String(source.reasoning_mode', electron)
         self.assertIn('handleTrusted("model:probeProviderApi"', electron)
-        self.assertIn('const protocolFamily = String(settings.protocol_family', electron)
-        self.assertIn('suffix = "responses"', electron)
-        self.assertIn('suffix = "v1/messages"', electron)
-        self.assertIn('headers = { "anthropic-version": "2023-06-01" }', electron)
-        self.assertIn('headers["x-api-key"] = apiKey', electron)
-        self.assertIn('suffix = "chat/completions"', electron)
-        self.assertIn('const endpoint = providerProbeEndpoint(baseUrl, suffix)', electron)
-        self.assertIn('const response = await requestProviderProbe(endpoint', electron)
+        self.assertIn('backendControlJsonRequest("POST", "/api/v1/llm/probe", {}, 30000)', electron)
+        self.assertIn('_route("POST", "/api/v1/llm/probe", "backend")', gateway)
+        self.assertIn('self._write_json(client.probe_connection())', backend)
+        self.assertNotIn('function requestProviderProbe(', electron)
 
         # P18.1 endpoint security authority lives in the backend. Electron owns
         # only encrypted credential storage/binding; it must not duplicate URL
         # policy or expose a vendor key to a different custom endpoint.
-        self.assertIn('credentialId = modelCredentialBindingId(provider, baseUrl)', electron)
+        self.assertIn('credentialId = modelCredentialBindingId(authoritativeProvider, authoritativeBaseUrl)', electron)
         self.assertIn('item.scheme !== "electron-safe-storage-v1"', electron)
         self.assertIn('safeStorage.decryptString(', electron)
         self.assertIn('safeStorage.encryptString(', electron)

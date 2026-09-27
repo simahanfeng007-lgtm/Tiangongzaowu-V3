@@ -6,6 +6,12 @@ procedures.** The LLM interprets the user request and generates task-local Tools
 (ordered action compositions) and a Skill (a graph of those generated Tools).
 Neither a generated name nor a model claim creates a new permission.
 
+The atomic catalog is revisable, not a fixed action-count target. Dictionary
+2026.09.27.1 removes twelve metadata-only assessment wrappers; real file readers,
+hashes, previews and the existing adversarial reviewer remain. Old action IDs
+are unavailable in the new release and are not silently aliased. See the
+[pruning decisions and migration scope](atomic-capability-pruning.md).
+
 ## Normal execution
 
 The ordinary frontend message enters the existing model/observation loop. The

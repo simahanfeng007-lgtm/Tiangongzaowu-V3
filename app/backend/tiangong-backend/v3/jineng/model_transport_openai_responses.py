@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from typing import Any, Mapping
 
-from ..model_endpoint import ModelEndpointConfig, ProtocolFamily
+from ..model_endpoint import ModelEndpointConfig, ProtocolFamily, append_model_endpoint_path
 from ..model_protocol_contract import ProviderContinuationState, ProviderTurnEnvelope, ToolCallBinding, stable_hash
 from .model_context_cache import apply_append_context
 from .model_transport_contract import (
@@ -24,7 +24,7 @@ class OpenAIResponsesTransport:
     protocol_family = ProtocolFamily.OPENAI_RESPONSES.value
 
     def build_url(self, endpoint: ModelEndpointConfig) -> str:
-        return f"{endpoint.base_url.rstrip('/')}/responses"
+        return append_model_endpoint_path(endpoint.base_url, "responses")
 
     def build_headers(self, endpoint: ModelEndpointConfig, api_key: str) -> dict[str, str]:
         return {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
@@ -293,4 +293,4 @@ class OpenAIResponsesTransport:
         return {"type": "function_call_output", "call_id": call_id, "output": json_output(result)}
 
     def probe_payload(self, endpoint: ModelEndpointConfig) -> dict[str, Any]:
-        return {"model": endpoint.model_name, "input": "ping", "max_output_tokens": 1, "store": False}
+        return {"model": endpoint.model_name, "input": "ping", "max_output_tokens": 16, "store": False}

@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import math
 import os
 import re
 import time
@@ -254,7 +255,34 @@ def workspace_scope_hash(workspace: str) -> str:
 
 
 def invocation_arguments_sha256(action: str, target: str, args: Mapping[str, Any]) -> str:
-    return _sha({"action": action, "args": dict(args), "target": target})
+    value = {"action": action, "args": dict(args), "target": target}
+    try:
+        return _sha(value)
+    except CapabilityGrantError:
+        pass
+
+    # Independent consumer of contracts/native_json.py's versioned wire rule.
+    # Only native argument data is tagged; signed grants remain float-free.
+    def tagged(item):
+        if item is None: return ["null"]
+        if isinstance(item, bool): return ["bool", item]
+        if isinstance(item, int):
+            if not -9_007_199_254_740_991 <= item <= 9_007_199_254_740_991:
+                raise CapabilityGrantError("integer outside interoperable JSON range")
+            return ["int", item]
+        if isinstance(item, float):
+            if not math.isfinite(item): raise CapabilityGrantError("non-finite native JSON number")
+            return ["float64", item.hex()]
+        if isinstance(item, str):
+            item.encode("utf-16-be")
+            return ["str", item]
+        if isinstance(item, dict):
+            if any(not isinstance(key, str) for key in item): raise CapabilityGrantError("native JSON keys must be strings")
+            return ["object", [[key, tagged(item[key])] for key in sorted(item, key=lambda key: key.encode("utf-16-be"))]]
+        if isinstance(item, (list, tuple)): return ["array", [tagged(child) for child in item]]
+        raise CapabilityGrantError("unsupported native JSON value")
+
+    return hashlib.sha256(b"tiangong.native-json-float-binding.v1\x00" + _canonical(tagged(value))).hexdigest()
 
 
 def _safe_nonce_root(path_text: str) -> Path:

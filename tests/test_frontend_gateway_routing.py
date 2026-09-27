@@ -299,6 +299,7 @@ class FrontendGatewayRoutingTests(unittest.TestCase):
             ("GET", "/api/v1/llm/settings"),
             ("GET", "/api/v1/llm/optimization"),
             ("POST", "/api/v1/llm/settings"),
+            ("POST", "/api/v1/llm/probe"),
             ("GET", "/api/v1/character/state"),
             ("GET", "/api/v1/body/settings"),
             ("POST", "/api/v1/body/settings"),

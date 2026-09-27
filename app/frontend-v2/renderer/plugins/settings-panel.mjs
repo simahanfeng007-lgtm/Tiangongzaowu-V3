@@ -1079,15 +1079,27 @@ export const settingsPanelPlugin = {
             human = "未找到已保存的 API Key：请填写密钥并保存后再探测";
           } else if (code.includes("endpoint_or_model_missing") || code.includes("model_endpoint_invalid") || code.includes("endpoint_missing")) {
             human = "请先保存有效的模型服务地址（Base URL）和模型名称";
-          } else if (code.includes("model_settings_unavailable") || code.includes("backend_http_0")) {
+          } else if (code.includes("model_settings_unavailable") || code.includes("model_probe_backend_unavailable") || code.includes("backend_http_0")) {
             human = "后台网关启动中（约 20-60 秒），请稍候再探测";
           } else if (code.includes("untrusted") || code.includes("not_trusted") || code.includes("forbidden")) {
             human = "该模型服务地址不在允许的范围内";
           } else if (code.includes("auth") || code.includes("401") || code.includes("403")) {
             human = "鉴权失败：请检查 API Key、权限、余额或服务商控制台配置";
+          } else if (code.includes("permission_denied")) {
+            human = "服务商拒绝访问：请检查账号权限与接口地址是否对应当前套餐";
+          } else if (code.includes("rate_limited_or_quota_exhausted")) {
+            human = "服务商限流或额度不足：请检查套餐余额及并发用量";
+          } else if (code.includes("endpoint_or_model_not_found")) {
+            human = "接口地址或模型不存在：请检查 Base URL、协议与模型名称";
+          } else if (code.includes("response_invalid") || code.includes("redirect_refused")) {
+            human = "该地址未返回模型接口响应：请检查是否填成了网页或跳转地址";
+          } else if (code.includes("provider_unavailable")) {
+            human = "模型服务暂时不可用，请稍后再试";
+          } else if (code.includes("provider_request_rejected")) {
+            human = "模型服务拒绝当前请求格式：请核对接口协议与模型名称";
           } else if (code.includes("timeout") || code.includes("timed_out")) {
             human = "连接超时：请检查网络或服务商状态";
-          } else if (code.includes("dns") || code.includes("network") || code.includes("econn") || code.includes("fetch") || code.includes("econnrefused")) {
+          } else if (code.includes("dns") || code.includes("network") || code.includes("transport_failed") || code.includes("econn") || code.includes("fetch") || code.includes("econnrefused")) {
             human = "无法连接模型服务：请检查网络";
           }
           const detail = result?.error_code || result?.error ? `（${result?.error_code || result?.error}）` : "";

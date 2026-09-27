@@ -2063,6 +2063,27 @@ class _ChuliQi(BaseHTTPRequestHandler):
             except Exception as e:
                 self._write_json({"ok": False, "error": str(e)}, 500)
             return
+        if path == "/api/v1/llm/probe":
+            from .jineng.http_kehuduan import HttpKehuduan
+
+            try:
+                body = self._read_json_body(max_bytes=1024)
+            except ValueError:
+                self._write_json({"ok": False, "error": "model_probe_body_invalid"}, 400)
+                return
+            if body:
+                self._write_json({"ok": False, "error": "model_probe_body_must_be_empty"}, 400)
+                return
+            client = None
+            try:
+                client = HttpKehuduan()
+                self._write_json(client.probe_connection())
+            except Exception:
+                self._write_json({"ok": False, "error": "model_probe_failed"}, 500)
+            finally:
+                if client is not None:
+                    client.guanbi()
+            return
         if path == "/api/v1/llm/settings":
             try:
                 self._write_json(_save_llm_settings(self._read_json_body()))

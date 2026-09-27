@@ -6,12 +6,17 @@
    "reason": "Loads a fixed internal runtime module; the Omni loader additionally pins the resolved source path.",
    "reviewed_line": "module = importlib.import_module(module_name)"
   },
-  "app/backend/tiangong-backend/omni_body_skill/tools/omni_body_tool.py:907": {
+  "app/backend/tiangong-backend/omni_body_skill/tools/omni_body_tool.py:1622": {
+   "category": "optional_dependency",
+   "reason": "Reviewed fixed installed-library probe list: docx, pptx, openpyxl, PIL, pypdf, reportlab, imageio_ffmpeg. No model-supplied import name. Returns dependency availability only; does not claim application execution or grant authority.",
+   "reviewed_line": "__import__(mod)"
+  },
+  "app/backend/tiangong-backend/omni_body_skill/tools/omni_body_tool.py:909": {
    "category": "tool_handler_dispatch",
-   "reason": "Resolves the method bound by the pinned dictionary after readiness and authorization checks.",
+   "reason": "Reviewed for ontology v1.55: handler name comes from the validated published dictionary binding after lifecycle/readiness checks, never arbitrary model attribute text. The generated mirror is checked against src/omni_body_skill/tools/omni_body_tool.py. Missing handlers fail before execution.",
    "reviewed_line": "handler = getattr(self, handler_name, None)"
   },
-  "app/backend/tiangong-backend/omni_body_skill/tools/omni_capability.py:79": {
+  "app/backend/tiangong-backend/omni_body_skill/tools/omni_capability.py:80": {
    "category": "structural_field_access",
    "reason": "Fixed composition profile extractor reads only execution_profile_id and execution_profile_sha256 from a sealed contract; it does not resolve an import or action handler.",
    "reviewed_line": "get = value.get if isinstance(value, Mapping) else lambda key: getattr(value, key, None)"
@@ -26,7 +31,7 @@
    "reason": "1 hit: getattr for dynamic daemon component loading",
    "reviewed_line": "function = getattr(target, name, None)"
   },
-  "app/backend/tiangong-backend/v3/duihua_qiaojie.py:4548": {
+  "app/backend/tiangong-backend/v3/duihua_qiaojie.py:4569": {
    "category": "structural_field_access",
    "reason": "Explicit opt-in compatibility catalog flag; default is disabled and no module is loaded from this value.",
    "reviewed_line": "include_learned_catalog = str(os.getenv(\"TIANGONG_ENABLE_LEARNED_SKILL_CATALOG\") or \"\").strip().lower() in {\"1\", \"true\", \"yes\", \"on\"}"
@@ -136,9 +141,9 @@
    "reason": "Reads fixed emotional/state fields or probes named confirmation/lifecycle methods; it does not resolve model-supplied tool authority.",
    "reviewed_line": "current = getattr(target, key)"
   },
-  "src/capability_dictionary/__init__.py:126": {
-   "category": "optional_dependency",
-   "reason": "Checks executable availability declared by the pinned dictionary; missing dependencies block execution.",
+  "src/capability_dictionary/__init__.py:131": {
+   "category": "structural_field_access",
+   "reason": "Reviewed v1.55 readiness: the attribute name is the executable dependency from the published dictionary. Reads a runtime dependency field without invoking it; installed dependency probe is the fallback. This descriptive readiness does not grant task/account/target authority. Covered by test_ontology_connection_and_observation.py.",
    "reviewed_line": "available = bool(kind == \"executable\" and runtime and getattr(runtime, name, None)) or _dependency_available(dependency)"
   },
   "src/communication_service/feishu_outbound.py:641": {
@@ -271,12 +276,17 @@
    "reason": "Loads a fixed internal runtime module; the Omni loader additionally pins the resolved source path.",
    "reviewed_line": "module = importlib.import_module(module_name)"
   },
-  "src/omni_body_skill/tools/omni_body_tool.py:907": {
+  "src/omni_body_skill/tools/omni_body_tool.py:1622": {
+   "category": "optional_dependency",
+   "reason": "Reviewed fixed installed-library probe list: docx, pptx, openpyxl, PIL, pypdf, reportlab, imageio_ffmpeg. No model-supplied import name. Returns dependency availability only; does not claim application execution or grant authority.",
+   "reviewed_line": "__import__(mod)"
+  },
+  "src/omni_body_skill/tools/omni_body_tool.py:909": {
    "category": "tool_handler_dispatch",
-   "reason": "Resolves the method bound by the pinned dictionary after readiness and authorization checks.",
+   "reason": "Reviewed for ontology v1.55: handler name comes from the validated published dictionary binding after lifecycle/readiness checks, never arbitrary model attribute text. The generated mirror is checked against src/omni_body_skill/tools/omni_body_tool.py. Missing handlers fail before execution.",
    "reviewed_line": "handler = getattr(self, handler_name, None)"
   },
-  "src/omni_body_skill/tools/omni_capability.py:79": {
+  "src/omni_body_skill/tools/omni_capability.py:80": {
    "category": "structural_field_access",
    "reason": "Fixed composition profile extractor reads only execution_profile_id and execution_profile_sha256 from a sealed contract; it does not resolve an import or action handler.",
    "reviewed_line": "get = value.get if isinstance(value, Mapping) else lambda key: getattr(value, key, None)"
@@ -351,7 +361,7 @@
    "reason": "Probes the fixed stop/shutdown/close lifecycle methods during backend teardown.",
    "reviewed_line": "function = getattr(target, name, None)"
   },
-  "src/total_gateway/embedded_backend.py:1594": {
+  "src/total_gateway/embedded_backend.py:1600": {
    "category": "lazy_module_import",
    "reason": "Loads a fixed internal runtime module; the Omni loader additionally pins the resolved source path.",
    "reviewed_line": "importlib.import_module(\"v3.knowledge_store\").set_card_enricher(None)"
@@ -456,22 +466,22 @@
    "reason": "Reads only the fixed request, run, generation and optional session fields from the existing typed context or execution ticket to bind reviewer evidence and final delivery. No model-selected attribute or dispatch.",
    "reviewed_line": "identity = {key: getattr(ticket.payload, key) for key in (\"request_id\", \"run_id\", \"generation\")}"
   },
-  "src/total_gateway/omni_grant_authority.py:1235": {
+  "src/total_gateway/omni_grant_authority.py:1236": {
    "category": "structural_field_access",
    "reason": "4 hits: getattr(decision, name) for policy decision field access; documented in the P7C.1 suite",
    "reviewed_line": "if any(not callable(getattr(store, name, None)) for name in required):"
   },
-  "src/total_gateway/omni_grant_authority.py:280": {
+  "src/total_gateway/omni_grant_authority.py:281": {
    "category": "structural_field_access",
    "reason": "4 hits: getattr(decision, name) for policy decision field access; documented in the P7C.1 suite",
    "reviewed_line": "callable(getattr(effect_store, name, None))"
   },
-  "src/total_gateway/omni_grant_authority.py:293": {
+  "src/total_gateway/omni_grant_authority.py:294": {
    "category": "structural_field_access",
    "reason": "4 hits: getattr(decision, name) for policy decision field access; documented in the P7C.1 suite",
    "reviewed_line": "callable(getattr(object_store, name, None))"
   },
-  "src/total_gateway/omni_grant_authority.py:953": {
+  "src/total_gateway/omni_grant_authority.py:954": {
    "category": "structural_field_access",
    "reason": "4 hits: getattr(decision, name) for policy decision field access; documented in the P7C.1 suite",
    "reviewed_line": "if any(not callable(getattr(store, name, None)) for name in required_store_methods):"
@@ -486,27 +496,27 @@
    "reason": "2 hits: getattr for governance field access",
    "reviewed_line": "if str(getattr(checkpoint, name) or \"\") != str(getattr(current, name) or \"\")"
   },
-  "src/total_gateway/server.py:347": {
+  "src/total_gateway/server.py:350": {
    "category": "inline_stdlib_import",
    "reason": "Fixed standard-library import of time; no caller-supplied module name.",
    "reviewed_line": "now_ms=__import__(\"time\").time_ns() // 1_000_000,"
   },
-  "src/total_gateway/server.py:388": {
+  "src/total_gateway/server.py:391": {
    "category": "inline_stdlib_import",
    "reason": "Fixed standard-library import of time; no caller-supplied module name.",
    "reviewed_line": "response = api.submit(body, now_ms=__import__(\"time\").time_ns() // 1_000_000)"
   },
-  "src/total_gateway/server.py:749": {
+  "src/total_gateway/server.py:752": {
    "category": "inline_stdlib_import",
    "reason": "Fixed standard-library import of time; no caller-supplied module name.",
    "reviewed_line": "epoch = store.increment_action_fence(reason=reason, now_ms=__import__(\"time\").time_ns() // 1_000_000)"
   },
-  "src/total_gateway/server.py:763": {
+  "src/total_gateway/server.py:766": {
    "category": "inline_stdlib_import",
    "reason": "Fixed standard-library import of time; no caller-supplied module name.",
    "reviewed_line": "now_ms = __import__(\"time\").time_ns() // 1_000_000"
   },
-  "src/total_gateway/server.py:791": {
+  "src/total_gateway/server.py:794": {
    "category": "inline_stdlib_import",
    "reason": "Fixed standard-library import of time; no caller-supplied module name.",
    "reviewed_line": "now_ms = __import__(\"time\").time_ns() // 1_000_000"
@@ -605,16 +615,6 @@
    "category": "model_field_iteration",
    "reason": "Reads a fixed set of contract fields for identity, uniqueness, or schema validation.",
    "reviewed_line": "values = tuple(getattr(primitive, field))"
-  },
-  "app/backend/tiangong-backend/omni_body_skill/tools/omni_body_tool.py:1620": {
-   "category": "optional_dependency",
-   "reason": "Checks a fixed list of optional parser or document runtime dependencies.",
-   "reviewed_line": "__import__(mod)"
-  },
-  "src/omni_body_skill/tools/omni_body_tool.py:1620": {
-   "category": "optional_dependency",
-   "reason": "Checks a fixed list of optional parser or document runtime dependencies.",
-   "reviewed_line": "__import__(mod)"
   }
  },
  "summary": {

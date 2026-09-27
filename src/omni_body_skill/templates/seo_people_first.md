@@ -18,5 +18,4 @@
 ## 下一步行动
 
 ## 质检
-- qc.seo.people_first_check
-- qc.writing.ai_tone_check
+- 读取实际页面内容和来源，由对抗智能体按用户要求验收；文件元数据不代表内容质量。

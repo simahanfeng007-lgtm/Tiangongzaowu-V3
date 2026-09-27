@@ -112,6 +112,18 @@ def test_tools_list_end_to_end(mcp_setup) -> None:
     assert [tool["name"] for tool in result["tools"]] == ["echo", "fail", "slow"]
 
 
+def test_one_invalid_application_does_not_block_other_configured_services(mcp_setup):
+    config = json.loads(mcp_setup.read_text())
+    config["servers"]["invalid"] = {"transport": "unsupported", "applications": ["canva"]}
+    mcp_setup.write_text(json.dumps(config))
+    rows = mcp_client.list_servers()
+    assert next(r for r in rows if r["server"] == "invalid")["connection_state"] == "configuration_invalid"
+    assert mcp_client.list_tools("fake", timeout_ms=15000)["tools"][0]["name"] == "echo"
+    with pytest.raises(McpClientError) as caught:
+        mcp_client.call_tool("invalid", "create", {})
+    assert caught.value.code == "mcp.config.transport_invalid"
+
+
 def test_tool_call_end_to_end(mcp_setup) -> None:
     result = mcp_client.call_tool("fake", "echo", {"payload": "nihao"}, timeout_ms=15000)
     assert result["text"] == "echo:nihao"
@@ -127,7 +139,23 @@ def test_tool_error_is_reported_not_raised(mcp_setup) -> None:
 def test_timeout_kills_slow_tool(mcp_setup) -> None:
     with pytest.raises(McpClientError) as caught:
         mcp_client.call_tool("fake", "slow", {}, timeout_ms=1500)
-    assert caught.value.code == "mcp.timeout"
+    assert caught.value.code == "mcp.outcome.unknown"
+    assert caught.value.detail == "mcp.timeout"
+
+
+def test_stdin_backpressure_cannot_bypass_the_call_deadline(mcp_setup):
+    import time
+    cfg = json.loads(mcp_setup.read_text())
+    script = Path(cfg["servers"]["fake"]["args"][0])
+    script.write_text("import json,sys,time\nmsg=json.loads(sys.stdin.readline())\n"
+        "print(json.dumps({'jsonrpc':'2.0','id':msg['id'],'result':{'protocolVersion':'2025-11-25'}}),flush=True)\n"
+        "sys.stdin.readline()\ntime.sleep(30)\n")
+    started = time.monotonic()
+    with pytest.raises(McpClientError) as caught:
+        mcp_client.call_tool("fake", "create", {"payload": "X" * (2 * 1024 * 1024)}, timeout_ms=1500)
+    assert caught.value.code == "mcp.outcome.unknown"
+    assert caught.value.detail == "mcp.timeout"
+    assert time.monotonic() - started < 10
 
 
 def test_missing_config_means_empty_not_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

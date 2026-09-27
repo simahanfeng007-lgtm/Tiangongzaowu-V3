@@ -24,7 +24,8 @@ def composition_prompt(release) -> str:
     # Capability names are drawn from actual dictionary definitions; this is
     # protocol guidance, never a prewritten task/industry Skill.
     available = [name for name, row in release.tools.items()
-        if row["runtime"].get("implemented") and row["binding"]["kind"] != "alias"
+        if row["runtime"].get("implemented") and row["runtime"].get("status", "active") == "active"
+        and row["runtime"].get("risk") != "A5" and row["binding"]["kind"] != "alias"
         and not name.startswith(("skill.", "skill_"))]
     return (
         "[字典能力组合]\n"
@@ -45,6 +46,19 @@ def composition_prompt(release) -> str:
         "允许改正 target，宿主会核对同一任务的失败及后续实际结果。不要把无关成功声明为修复。"
         "组合登记不是执行成功，组合成功不是整个任务完成；须核实用户要求的产物与执行事实。"
         "复杂参数先用 system.action_schema 查询。已有正确成果避免重写，取消或结果不明须先核对。\n"
+        "外部应用先用 mcp.servers.list 查询 app_id 对应的已配置服务和环境位置，"
+        "再用 mcp.tools.list 连接、分页读取真实工具契约，经 mcp.tool.call 执行；"
+        "配置存在不等于已连接，缺账号或软件时报告具体缺项，不自造连接命令或密钥。"
+        "OAuth 未授权时使用 mcp.auth.begin 给出登录链接，由账号所有者授权，再读取 mcp.auth.status。"
+        "同一任务内用返回的 connection_id 绑定有状态会话；配置或会话变化先重新观察，不盲目重放写入。"
+        "异步工具必须协商 taskSupport，再传 task；pending 只是受理，记录 taskId 与 connection_fingerprint，"
+        "用 mcp.tasks.get/result 查询真实状态和结果，mcp.tasks.cancel 取消不代表回滚。"
+        "mcp.bindings.list 展示所有字典需求的宿主显式工具绑定；mcp.action.call 先验证真实 schema 摘要，"
+        "未绑定项仍未实现，不能按动作名称猜 API。"
+        "需要媒体内容时用 image.observe、audio.observe、video.observe_frames；视频只观察指定采样帧，"
+        "不覆盖未采样时段或音轨，模型不支持相应模态时必须补观察，不能用元数据替代。"
+        "browser.chrome.goto 是静态抓取；真实渲染使用 browser.playwright.*，"
+        "browser.chrome.click 在独立页面点击一次并观察，不能假定跨调用保留浏览器会话。\n"
         "可组合的已实现原子能力（依赖与权限在执行时检查）：" + ", ".join(available)
     )
 
@@ -133,7 +147,9 @@ def compile_task_composition(proposal, *, release=None) -> dict:
             if type(action_id) is not str or action_id.startswith(("skill.", "skill_")):
                 raise DictionaryError("composition.fixed_skill_forbidden")
             row = release.tools.get(action_id)
-            if row is None or not row["runtime"].get("implemented"):
+            if (row is None or not row["runtime"].get("implemented")
+                    or row["runtime"].get("status", "active") != "active"
+                    or row["runtime"].get("risk") == "A5"):
                 raise DictionaryError("composition.action_unavailable:" + action_id)
             if type(action.get("target", "")) is not str or type(action["args"]) is not dict:
                 raise DictionaryError("composition.invocation_invalid")

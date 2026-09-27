@@ -196,7 +196,11 @@ class OmniBodySkillRouterTests(unittest.TestCase):
         from omni_body_skill.model_adapters.core import _tool_description
         self.assertEqual(_tool_description(), load_dictionary().host_protocol["description"])
         self.assertNotIn("技能选择有双通道", _tool_description())
-        self.assertIn("Never infer `target_words` or `planned_chapters`", managed_skill)
+        self.assertIn(
+            "For a new managed project, use user-declared `planned_chapters` and `target_words`.",
+            managed_skill,
+        )
+        self.assertIn("There is no implicit words-per-chapter formula.", managed_skill)
         description_body = model_contract.split("def _tool_description()", 1)[1].split(
             "def render_tool_schema", 1
         )[0]

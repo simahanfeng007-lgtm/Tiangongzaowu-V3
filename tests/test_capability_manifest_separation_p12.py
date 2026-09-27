@@ -178,6 +178,19 @@ def test_loaded_value_remains_frozen_and_legacy_pickle_names_resolve(manifest_pa
     assert type(restored) is legacy.SkillSelectionError and restored.args == error.args
 
 
+def test_multiple_and_mixed_case_readiness_details_do_not_break_machine_reason(manifest_path, monkeypatch):
+    from types import SimpleNamespace
+    import capability_dictionary
+    details = ["lifecycle:retired_fixed_skill", "missing:python:PIL", "implementation_unavailable"]
+    monkeypatch.setattr(capability_dictionary, "load_dictionary", lambda: SimpleNamespace(
+        readiness=lambda action: {"ready": False, "reasons": details}))
+    loaded = load(manifest_path)
+    assert loaded.manifest.has_valid_sha256()
+    assert all(not action.available and action.unavailable_reason == "dictionary_readiness_unavailable"
+               for action in loaded.manifest.actions)
+    assert details == ["lifecycle:retired_fixed_skill", "missing:python:PIL", "implementation_unavailable"]
+
+
 def test_legacy_static_json_reader_uses_the_same_exception():
     assert legacy._strict_json_pairs is shared._strict_json_pairs
     with pytest.raises(legacy.SkillSelectionError, match="Skill index contains a duplicate JSON key"):

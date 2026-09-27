@@ -23,7 +23,7 @@ def session(client):
         provider_identity="fixture", model_name="fixture", protocol_family="test", config_fingerprint="test"))
 
 
-@pytest.mark.parametrize("mode", [None, "typo", "judge"])
+@pytest.mark.parametrize("mode", [None, "typo", "judge", "off", "shadow", "advisory"])
 def test_default_and_invalid_configuration_require_agent(mode, monkeypatch):
     if mode is None:
         monkeypatch.delenv("TIANGONG_ADVERSARIAL_REVIEW", raising=False)
@@ -89,7 +89,7 @@ def test_reasoning_judge_has_time_to_finish_without_exceeding_parent_budget(monk
     monkeypatch.setattr(reviewer, "_infer", infer)
     result = reviewer.judge(state, observations(), "候选", remaining_seconds=remaining)
     assert result["review"]["decision"] == "complete"
-    assert len(budgets) == 1 and 40 <= budgets[0] <= min(60, remaining - 5)
+    assert len(budgets) == 1 and 40 <= budgets[0] <= remaining - 5
 
 
 def test_large_evidence_gets_larger_reasoning_budget_and_retains_truncation_failure(monkeypatch):
@@ -103,10 +103,94 @@ def test_large_evidence_gets_larger_reasoning_budget_and_retains_truncation_fail
                                     usage={"completion_tokens": 16384})
     monkeypatch.setattr(reviewer, "_infer", infer)
     result = reviewer.judge(state, observations(), "candidate", remaining_seconds=120)
-    assert budgets == [(16384, 90)]
+    assert len(budgets) == 2 and [b[0] for b in budgets] == [16384, 32768]
+    assert 110 < budgets[0][1] <= 115
     assert result["review"]["coverage_gaps"] == ["judge_output_truncated"]
     assert result["review"]["model_calls"][0]["usage"]["completion_tokens"] == 16384
     assert not reviewer.approved(state, observations(), "candidate")
+
+
+def test_truncation_retries_same_judge_and_evidence_with_unspent_deadline(monkeypatch):
+    from v3.model_protocol_contract import ProviderTurnEnvelope
+    reviewer, state = session(Client()), run_state()
+    clock, packets, budgets = [100.0], [], []
+    monkeypatch.setattr(review.time, "monotonic", lambda: clock[0])
+    def infer(endpoint, system, packet, *, seconds, cancel_check):
+        packets.append(deepcopy(packet)); budgets.append(seconds)
+        if len(packets) == 1:
+            clock[0] += 51
+            # Even valid JSON text has no authority when the provider says it
+            # was truncated. The retry must not consume this apparent verdict.
+            return ProviderTurnEnvelope(verdict(), stop_semantics="output_truncated",
+                                        usage={"completion_tokens": 8192})
+        assert packets[0]["candidate_reply"] == packet["candidate_reply"]
+        assert packets[0]["basis_sha256"] == packet["basis_sha256"]
+        assert packets[0]["observations"] == packet["observations"]
+        assert "previous_response" not in packet
+        return verdict("continue", coverage_gaps=["实际结果仍需核对"])
+    monkeypatch.setattr(reviewer, "_infer", infer)
+    result = reviewer.judge(state, observations(), "candidate", remaining_seconds=160)["review"]
+    assert budgets == [155, 104]
+    assert result["decision"] == "continue" and result["output_limit_retries"] == 1
+    assert [c["status"] for c in result["model_calls"]] == ["unavailable", "completed"]
+    assert len({c["model"]["name"] for c in result["model_calls"]}) == 1
+    assert result["model_calls"][0]["usage"] == {"completion_tokens": 8192}
+    assert not reviewer.approved(state, observations(), "candidate")
+
+
+def test_fresh_complete_verdict_after_truncation_binds_exact_current_candidate():
+    from v3.model_protocol_contract import ProviderTurnEnvelope
+    client = Client(lambda packet: ProviderTurnEnvelope(verdict(), stop_semantics="output_truncated")
+                    if len(client.calls) == 1 else verdict())
+    reviewer, state = session(client), run_state()
+    state["original_user_goal"] += " Long evidence " * 10000
+    record = reviewer.judge(state, observations(), "candidate", remaining_seconds=120)["review"]
+    assert record["decision"] == "complete" and len(client.calls) == 2
+    assert [c["max_output_tokens"] for c in record["model_calls"]] == [16384, 32768]
+    assert record["model_calls"][0]["status"] == "unavailable"
+    assert len({c["input_sha256"] for c in record["model_calls"]}) == 2
+    assert reviewer.approved(state, observations(), "candidate")
+    assert not reviewer.approved(state, observations(), "changed candidate")
+
+
+@pytest.mark.parametrize("stop", ["deadline", "cancelled"])
+def test_truncation_does_not_retry_after_deadline_or_cancellation(monkeypatch, stop):
+    from v3.model_protocol_contract import ProviderTurnEnvelope
+    reviewer, state = session(Client()), run_state()
+    clock, calls = [100.0], []
+    cancelled = [False]
+    monkeypatch.setattr(review.time, "monotonic", lambda: clock[0])
+    def infer(*args, **kwargs):
+        calls.append(1)
+        clock[0] += 90 if stop == "deadline" else 1
+        cancelled[0] = stop == "cancelled"
+        return ProviderTurnEnvelope(verdict(), stop_semantics="output_truncated")
+    monkeypatch.setattr(reviewer, "_infer", infer)
+    result = reviewer.judge(state, observations(), "candidate", remaining_seconds=120,
+                            cancel_check=lambda: cancelled[0])["review"]
+    assert len(calls) == 1 and result["decision"] == "unavailable"
+    assert result["coverage_gaps"] == ["judge_output_truncated"]
+    assert not reviewer.approved(state, observations(), "candidate")
+
+
+def test_evidence_retrieval_uses_unspent_parent_time_after_long_reasoning(monkeypatch):
+    reviewer, state = session(Client()), run_state()
+    clock = [100.0]
+    monkeypatch.setattr(review.time, "monotonic", lambda: clock[0])
+    budgets = []
+    candidate = "a" * 20000
+    def infer(endpoint, system, packet, *, seconds, cancel_check):
+        budgets.append(seconds)
+        if len(budgets) == 1:
+            clock[0] += 91
+            return verdict("continue", evidence_requests=[{
+                "ref": packet["candidate_ref"], "start": 12000, "length": 8000}])
+        return verdict()
+    monkeypatch.setattr(reviewer, "_infer", infer)
+    result = reviewer.judge(state, observations(), candidate, remaining_seconds=200)
+    assert budgets == [195, 104]
+    assert result["review"]["decision"] == "complete"
+    assert reviewer.approved(state, observations(), candidate)
 
 
 @pytest.mark.parametrize("bad", ["extra_authority", "contradiction", "duplicate", "forged_ref", "invented_requirement"])

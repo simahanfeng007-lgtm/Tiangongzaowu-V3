@@ -207,7 +207,7 @@ class OmniBodyOfficeContractTests(unittest.TestCase):
             )
             self.assertTrue(accepted["ok"], accepted["issues"])
 
-    def test_managed_long_document_qc_is_manifest_bound_and_rejects_partial_delivery(self) -> None:
+    def test_managed_document_observes_manifest_without_approving_content(self) -> None:
         qc = _load_delivery_methods("_qc_managed_long_document")["_qc_managed_long_document"]
         with tempfile.TemporaryDirectory() as temporary:
             workspace = Path(temporary).resolve()
@@ -250,7 +250,9 @@ class OmniBodyOfficeContractTests(unittest.TestCase):
                 complete_text,
                 {"project_manifest": str(manifest)},
             )
-            self.assertTrue(passed["result"]["acceptance"], passed["result"]["issues"])
+            self.assertTrue(passed["result"]["manifest_valid"], passed["result"]["issues"])
+            self.assertEqual(passed["result"]["content_quality"], "unassessed")
+            self.assertNotIn("acceptance", passed["result"])
             self.assertEqual(passed["result"]["chapter_file_count"], 3)
 
             broken_manifest = project / "broken_manifest.json"
@@ -267,11 +269,12 @@ class OmniBodyOfficeContractTests(unittest.TestCase):
                 "第 1 章\n局部内容",
                 {"project_manifest": str(broken_manifest)},
             )
-            self.assertFalse(failed["result"]["acceptance"])
+            self.assertFalse(failed["result"]["manifest_valid"])
             codes = {item["code"] for item in failed["result"]["issues"]}
             self.assertIn("unsafe_chapter_paths", codes)
             self.assertIn("missing_chapter_files", codes)
-            self.assertIn("document_incomplete", codes)
+            self.assertLess(failed["result"]["effective_chars"], failed["result"]["target_words"])
+            self.assertNotIn("score", failed["result"])
 
     def test_wechat_miniapp_qc_checks_native_file_family_and_page_paths(self) -> None:
         check = _load_delivery_methods("_miniapp_project_issues")["_miniapp_project_issues"]

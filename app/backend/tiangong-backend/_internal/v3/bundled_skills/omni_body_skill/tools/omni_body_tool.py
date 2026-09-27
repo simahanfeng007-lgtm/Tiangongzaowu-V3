@@ -852,6 +852,8 @@ class BodyRuntime:
             if action not in ACTIONS:
                 raise OmniBodyError(f"Unknown action: {action}")
             meta = ACTIONS[action]
+            if meta.get("status", "active") != "active":
+                return self._adapter_or_blocked(action, target, args, reason="action lifecycle: " + str(meta["status"]))
             if meta.get("risk") == "A5":
                 return self._adapter_or_blocked(action, target, args, reason="A5 hard-gate: blocked by default")
             if not meta.get("implemented", False):
@@ -3504,22 +3506,30 @@ class BodyRuntime:
         headers.setdefault("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
         headers.setdefault("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
         parsed = urllib.parse.urlparse(url)
+        truncated = False
+        total_bytes = None
         if parsed.scheme == "data":
             header, _, data = url.partition(",")
             raw = urllib.parse.unquote_to_bytes(data)
             if ";base64" in header:
                 raw = base64.b64decode(data)
+            total_bytes = len(raw)
+            truncated = total_bytes > max_bytes
             raw = raw[:max_bytes]
             final_url = url[:96] + ("..." if len(url) > 96 else "")
             content_type = header.split(":", 1)[1].split(";", 1)[0] if ":" in header else "text/plain"
-            status = 200
+            status = None
         elif parsed.scheme == "file":
             raw_path = urllib.request.url2pathname(parsed.path)
             p = self._resolve(raw_path, must_exist=True)
-            raw = p.read_bytes()[:max_bytes]
+            total_bytes = p.stat().st_size
+            with p.open("rb") as handle:
+                raw = handle.read(max_bytes + 1)
+            truncated = len(raw) > max_bytes
+            raw = raw[:max_bytes]
             final_url = p.as_uri()
             content_type = mimetypes.guess_type(str(p))[0] or "application/octet-stream"
-            status = 200
+            status = None
         elif parsed.scheme in {"http", "https"}:
             req = urllib.request.Request(url, headers=headers)
             with urllib.request.urlopen(req, timeout=timeout) as resp:  # nosec - user-controlled browser fetch tool
@@ -3546,11 +3556,15 @@ class BodyRuntime:
             "url": url,
             "final_url": final_url,
             "status": status,
+            "source_scheme": parsed.scheme,
             "content_type": content_type,
             "encoding": encoding,
             "raw": raw,
             "text": text,
             "bytes": len(raw),
+            "truncated": truncated,
+            "total_bytes": total_bytes if total_bytes is not None else len(raw),
+            "observed_sha256": hashlib.sha256(raw).hexdigest(),
         }
 
     def _action_browser_chrome_goto(self, op_id: str, target: Optional[str], args: Dict[str, Any]) -> Dict[str, Any]:
@@ -3582,6 +3596,10 @@ class BodyRuntime:
         )
         bot_wall = any(marker.casefold() in body_probe for marker in wall_markers)
         result = {
+            "execution_mode": "static_fetch",
+            "browser_executed": False,
+            "body_truncated": fetched["truncated"],
+            "preview_truncated": len(text or fetched["text"]) > int(args.get("preview_chars", 1200)),
             "snapshots": snapshots,
             "url": fetched["url"],
             "final_url": fetched["final_url"],
@@ -3619,6 +3637,8 @@ class BodyRuntime:
             "body": text[:max_chars],
             "text": text[:max_chars],
             "bytes": fetched["bytes"],
+            "body_truncated": fetched["truncated"] or len(text) > max_chars,
+            "observed_sha256": fetched["observed_sha256"],
             "evidence": {
                 "url": fetched["final_url"],
                 "status": fetched["status"],
@@ -3642,14 +3662,22 @@ class BodyRuntime:
             html_text = fetched["text"]
             source = {"url": fetched["final_url"], "status": fetched["status"], "bytes": fetched["bytes"]}
         text, title = self._html_to_text(html_text)
-        return {"title": title, "text": text[: int(args.get("max_chars", 200000))], "source": source, "evidence": source}
+        limit = max(1, min(200000, int(args.get("max_chars", 200000))))
+        return {"title": title, "text": text[:limit], "source": source, "evidence": source,
+                "execution_mode": "static_html_parse", "browser_executed": False,
+                "text_chars": len(text), "truncated": len(text) > limit or bool(not (p and p.exists()) and fetched["truncated"])}
 
     def _action_browser_chrome_extract_dom(self, op_id: str, target: Optional[str], args: Dict[str, Any]) -> Dict[str, Any]:
         fetched = self._browser_fetch(target, args)
-        return {"url": fetched["final_url"], "status": fetched["status"], "html": fetched["text"][: int(args.get("max_chars", 200000))], "content_type": fetched["content_type"]}
+        limit = max(1, min(200000, int(args.get("max_chars", 200000))))
+        return {"url": fetched["final_url"], "status": fetched["status"], "html": fetched["text"][:limit],
+                "content_type": fetched["content_type"], "execution_mode": "static_fetch", "browser_executed": False,
+                "truncated": fetched["truncated"] or len(fetched["text"]) > limit}
 
     def _action_browser_chrome_download(self, op_id: str, target: Optional[str], args: Dict[str, Any]) -> Dict[str, Any]:
         fetched = self._browser_fetch(target, args)
+        if fetched["truncated"]:
+            raise OmniBodyError("download exceeds max_bytes; no partial download was saved")
         filename = args.get("filename")
         if not filename:
             path_name = Path(urllib.parse.urlparse(str(fetched.get("final_url") or fetched.get("url"))).path).name
@@ -3671,34 +3699,23 @@ class BodyRuntime:
         return self._action_browser_chrome_download(op_id, target or args.get("url"), args)
 
     def _action_browser_chrome_pdf_print(self, op_id: str, target: Optional[str], args: Dict[str, Any]) -> Dict[str, Any]:
-        extracted = self._action_browser_chrome_extract_text(op_id, target, args)
-        output = args.get("output") or "browser_page.pdf"
-        return self._action_pdf_create_from_text(op_id, output, {"text": extracted.get("text", ""), "title": extracted.get("title", "Browser page")})
+        from .pro_apps_v34 import _browser_playwright
+        return _browser_playwright(self, "browser.playwright.pdf", target, args, op_id=op_id)
 
     def _action_browser_chrome_screenshot(self, op_id: str, target: Optional[str], args: Dict[str, Any]) -> Dict[str, Any]:
-        Image, ImageDraw, _ = self._pil()
+        from .pro_apps_v34 import _browser_playwright
         source = args.get("url") or args.get("source") or target
-        extracted = self._action_browser_chrome_extract_text(op_id, source, args)
-        # An explicit source separates the input page from the output target.
-        # Legacy callers may still put the page in target and use args.output.
         output_target = target if (args.get("url") or args.get("source")) and target else args.get("output")
-        output = self._resolve(output_target or "browser_snapshot.png")
-        snapshots = self._snapshot(op_id, [output])
-        w, h = int(args.get("width", 1280)), int(args.get("height", 1600))
-        im = Image.new("RGB", (w, h), color=args.get("background", "white"))
-        draw = ImageDraw.Draw(im)
-        y = 30
-        for line in (str(extracted.get("title") or "Browser snapshot") + "\n\n" + str(extracted.get("text") or "")).splitlines():
-            for chunk in [line[i:i+95] for i in range(0, len(line), 95)] or [""]:
-                if y > h - 40:
-                    break
-                draw.text((30, y), chunk, fill=args.get("fill", "black"))
-                y += 22
-            if y > h - 40:
-                break
-        output.parent.mkdir(parents=True, exist_ok=True)
-        im.save(output)
-        return {"snapshots": snapshots, "output": self._file_evidence(output), "source": extracted.get("source"), "evidence": self._file_evidence(output), "note": "Portable text-image screenshot; use browser_driver for real viewport rendering."}
+        options = {**args, "url": source, "output": output_target or "browser_snapshot.png",
+                   "width": args.get("width", 1280), "height": args.get("height", 1600)}
+        result = _browser_playwright(self, "browser.playwright.screenshot", source, options, op_id=op_id)
+        if result.get("success"):
+            result["output"] = result["result"]["screenshot"]
+        return result
+
+    def _action_browser_chrome_click(self, op_id: str, target: Optional[str], args: Dict[str, Any]) -> Dict[str, Any]:
+        from .pro_apps_v34 import _browser_playwright
+        return _browser_playwright(self, "browser.chrome.click", target, args, op_id=op_id)
 
     def _extract_search_results(self, html_text: str) -> List[Dict[str, str]]:
         """Parse common search-result pages into stable title/url/snippet rows."""

@@ -1,7 +1,7 @@
 """Retired legacy keyword scores never create completion or risk authority."""
 from types import SimpleNamespace
 import pytest
-from omni_body_skill.tools import delivery_kernel, delivery_v33
+from omni_body_skill.tools import delivery_kernel
 from v3.jinhua.houxuan_shengcheng import _candidate_type, _candidate_risk
 from v3.jinhua.yanzheng_shenpi import JinhuaYanzhengShenpi
 from v3.jinhua.shuxue_qiaojie import _fenxi_jieguo_wenben
@@ -22,11 +22,10 @@ def test_legacy_descriptions_do_not_set_risk_score_or_completion(text):
     assert 'completion_evidence=missing' not in history
 
 
-SEMANTIC_QC = [delivery_kernel._rubric_evaluate, delivery_kernel._qc_docx,
-               delivery_kernel._qc_research, delivery_kernel._qc_writing,
-               *[getattr(delivery_v33, name) for name in (
-                   '_qc_novel_chapter', '_qc_sheet_analysis', '_qc_meeting_minutes', '_qc_sales_script',
-                   '_qc_course_plan', '_qc_kb_ingestion', '_qc_voice_authorized', '_qc_seo_people_first', '_qc_content_calendar')]]
+# This retained action also has a managed-document structural-check branch.
+# Metadata-only business wrappers are removed; their public entry-point
+# rejection is verified in test_atomic_capability_pruning.py.
+SEMANTIC_QC = [delivery_kernel._qc_docx]
 
 
 @pytest.mark.parametrize('action', SEMANTIC_QC, ids=[x.__name__ for x in SEMANTIC_QC])
@@ -42,8 +41,10 @@ def test_retired_quality_scores_are_unassessed_not_fabricated_pass(tmp_path, act
     runtime = SimpleNamespace(_resolve=resolve, _rel=lambda p:p.name)
     value = action(runtime, path.name, {})
     assert value['success'] is True
-    assert value['result']['assessment_mode'] == 'model_required'
-    assert value['result']['score'] is None and value['result']['acceptance'] is None
+    assert value['result']['assessment_mode'] == 'content_observation_only'
+    assert value['result']['text_preview'] == text
+    assert value['result']['content_quality'] == 'unassessed'
+    assert 'score' not in value['result'] and 'acceptance' not in value['result']
     assert value['evidence']['bytes'] == len(text.encode())
     with pytest.raises(FileNotFoundError):
         action(runtime, 'missing.md', {})

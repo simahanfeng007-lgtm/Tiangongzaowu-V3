@@ -278,7 +278,7 @@ class FilesystemSkillCatalogTests(unittest.TestCase):
             expected_sha256=self.CAPABILITY_SHA256,
             component_manifest_hash=HASH_C, generated_at_ms=100,
         )
-        self.assertEqual(model_capabilities.executable_count, 285)
+        self.assertEqual(model_capabilities.executable_count, 297)
         for query in ("请制作商业方案 Word 文档", "继续受管长篇小说工程",
                       "创建超长文档并交付 DOCX", "设计 Mermaid 脑图",
                       "微信小程序 WXML WXSS 离线工程"):

@@ -111,6 +111,11 @@ class DictionaryRelease:
         if row is None:
             return {"ready": False, "status": "unknown", "reasons": ["not_in_dictionary"]}
         reasons = []
+        lifecycle = row["runtime"].get("status", "active")
+        if lifecycle != "active":
+            reasons.append("lifecycle:" + lifecycle)
+        if row["runtime"].get("risk") == "A5":
+            reasons.append("disabled_by_default")
         if row["binding"]["kind"] == "alias":
             readiness = self.readiness(row["binding"]["target"], runtime=runtime)
             reasons.extend(readiness["reasons"])
@@ -128,6 +133,17 @@ class DictionaryRelease:
                 reasons.append("missing:" + dependency)
         # Readiness is descriptive. It never grants workspace/side-effect rights.
         return {"ready": not reasons, "status": "ready" if not reasons else "unavailable",
+                "readiness_scope": "definition_binding_and_dependencies_only",
+                "lifecycle": lifecycle,
+                "checks": {
+                    "implementation": "declared" if row["runtime"].get("implemented") else "unavailable",
+                    "binding": ("not_checked" if runtime is None else
+                                "unavailable" if "execution_binding_unavailable" in reasons else "resolved"),
+                    "dependencies": "missing" if any(r.startswith("missing:") for r in reasons) else "present",
+                    "authorization": "evaluated_per_invocation_by_gateway",
+                    "target_access": "not_observed",
+                    "recent_execution": "read_from_scoped_execution_evidence",
+                },
                 "reasons": sorted(set(reasons)), "dictionary_version": self.version, "dictionary_sha256": self.sha256,
                 "optional_available": [item for item in row.get("optional_dependencies", []) if _dependency_available(item)],
                 "optional_unavailable": [item for item in row.get("optional_dependencies", []) if not _dependency_available(item)]}
@@ -159,6 +175,8 @@ def load_dictionary(root: Path | None = None) -> DictionaryRelease:
         app_ids.add(app["app_id"])
     for name, row in tools.items():
         binding = row.get("binding") or {}
+        if row.get("runtime", {}).get("status", "active") not in {"active", "retired_fixed_skill", "disabled"}:
+            raise DictionaryError("dictionary_lifecycle_invalid:" + name)
         if row.get("effect") not in {"read", "verify", "create", "write", "update", "execute"}:
             raise DictionaryError("dictionary_effect_invalid:" + name)
         if row.get("budget", {}).get("profile") not in profiles:

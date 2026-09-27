@@ -8,6 +8,23 @@ from pathlib import Path
 import sys
 
 
+def validate_application_connections(release) -> None:
+    associated = {}
+    for app in release.applications["apps"]:
+        for name in app["actions"]:
+            associated.setdefault(name, set()).add(app["app_id"])
+    for name, row in release.tools.items():
+        runtime = row["runtime"]
+        if (runtime.get("status", "active") == "active"
+                and not runtime.get("implemented")
+                and row["budget"]["profile"] == "external-adapter"
+                and name not in associated):
+            raise ValueError("dictionary_pending_application_missing:" + name)
+    for name, owners in associated.items():
+        if release.tools[name]["runtime"].get("app_id") not in owners:
+            raise ValueError("dictionary_application_projection_mismatch:" + name)
+
+
 def build(root: Path, *, check: bool = False) -> dict:
     sys.path[:0] = [str(root / "src"), str(root / "app/backend/tiangong-backend")]
     from capability_dictionary import load_dictionary
@@ -16,6 +33,17 @@ def build(root: Path, *, check: bool = False) -> dict:
     from v3.fact_kernel import compile_manifest
 
     release = load_dictionary(root / "dictionaries")
+    validate_application_connections(release)
+    for name, row in release.tools.items():
+        if row["binding"]["kind"] != "alias":
+            continue
+        target = release.tools[row["binding"]["target"]]
+        for field in ("effect", "retry", "required_dependencies", "optional_dependencies", "budget"):
+            if row[field] != target[field]:
+                raise ValueError("dictionary_alias_contract_drift:" + name + ":" + field)
+        for field in ("risk", "implemented", "status"):
+            if row["runtime"].get(field, "active" if field == "status" else None) != target["runtime"].get(field, "active" if field == "status" else None):
+                raise ValueError("dictionary_alias_contract_drift:" + name + ":" + field)
     compiled = compile_manifest(ACTIONS, BodyRuntime, dynamic_actions=set(DELIVERY_ACTIONS),
                                 action_schema_catalog=build_action_schema_catalog(ACTIONS))
     manifest = compiled.to_gateway_dict()

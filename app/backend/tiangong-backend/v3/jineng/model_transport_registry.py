@@ -50,25 +50,62 @@ def parse_sse_data_line(raw_line: str) -> dict[str, Any] | None:
     return parsed
 
 
-def probe_endpoint(client: Any, endpoint: ModelEndpointConfig, api_key: str, *, timeout: float = 20.0) -> dict[str, Any]:
-    """Protocol-specific, side-effect-free capability probe.
+def _probe_response_valid(protocol: str, body: Any) -> bool:
+    if not isinstance(body, dict) or body.get("error"):
+        return False
+    if protocol == ProtocolFamily.OPENAI_CHAT_COMPLETIONS.value:
+        choices = body.get("choices")
+        return bool(isinstance(choices, list) and choices and
+                    isinstance(choices[0], dict) and isinstance(choices[0].get("message"), dict))
+    if protocol == ProtocolFamily.OPENAI_RESPONSES.value:
+        return (body.get("object") == "response" and isinstance(body.get("output"), list)
+                and body.get("status") in {"completed", "incomplete"})
+    return body.get("type") == "message" and isinstance(body.get("content"), list)
 
-    The probe never upgrades unknown capabilities unless the endpoint actually
-    accepts the tested shape. Tool support remains false until a dedicated tool
-    probe succeeds; a text success alone does not imply function calling.
+
+def _probe_usage(body: Any) -> dict[str, Any] | None:
+    raw = body.get("usage") if isinstance(body, dict) else None
+    if not isinstance(raw, dict):
+        return None
+    names = {"input_tokens", "output_tokens", "prompt_tokens", "completion_tokens", "total_tokens",
+             "prompt_cache_hit_tokens", "prompt_cache_miss_tokens", "cached_input_tokens",
+             "cache_read_input_tokens", "cache_creation_input_tokens", "cached_tokens",
+             "cache_read_tokens", "reasoning_tokens"}
+    clean = {key: value for key, value in raw.items()
+             if key in names and type(value) is int and 0 <= value <= 2**53 - 1}
+    for name in ("prompt_tokens_details", "completion_tokens_details", "input_tokens_details"):
+        if isinstance(raw.get(name), dict):
+            clean[name] = {key: value for key, value in raw[name].items()
+                           if key in names and type(value) is int and 0 <= value <= 2**53 - 1}
+    return clean or None
+
+
+def probe_endpoint(client: Any, endpoint: ModelEndpointConfig, api_key: str, *, timeout: float = 20.0) -> dict[str, Any]:
+    """One bounded request using the execution transport and endpoint authority.
+
+    A provider may bill this text request. It does not prove streaming, tools,
+    task quality or completion; failed/unknown usage stays separate from zero.
     """
+    import httpx
+    from ..endpoint_security import EndpointSecurityError, validate_model_endpoint
+    from .model_call_lifecycle import ModelCallStopped, run_model_call
+    from .model_transport_executor import _pinned_request
+
     transport = get_model_transport(endpoint.protocol_family)
     payload = transport.probe_payload(endpoint)
-    # probe_payload() is already native for its protocol. Do not feed it back
-    # through a canonical-request converter, otherwise Responses/Anthropic
-    # fields would be accidentally rewritten as Chat input.
     url = transport.build_url(endpoint)
     headers = transport.build_headers(endpoint, api_key)
     payload["stream"] = False
     started = time.monotonic()
     result = {
+        "ok": False,
+        "provider_identity": endpoint.provider_identity,
+        "service_preset": endpoint.service_preset,
+        "protocol_family": endpoint.protocol_family,
+        "http_status": None,
+        "usage": None,
         "endpoint_reachable": False,
-        "auth_valid": False,
+        "auth_valid": None,
         "protocol_valid": False,
         "model_valid": False,
         "streaming_supported": False,
@@ -79,26 +116,71 @@ def probe_endpoint(client: Any, endpoint: ModelEndpointConfig, api_key: str, *, 
         "continuation_supported": False,
         "probe_evidence": {
             "protocol_family": endpoint.protocol_family,
-            "url": url,
             "http_status": None,
             "latency_ms": None,
         },
     }
+
+    def request(lifecycle):
+        binding = validate_model_endpoint(endpoint.provider_identity, endpoint.base_url, resolve_dns=True)
+        lifecycle.check()
+        pinned_url, host_headers, sni = _pinned_request(url, binding)
+        request = client.build_request(
+            "POST", pinned_url, headers={**headers, **host_headers}, json=payload,
+            extensions={"sni_hostname": sni}, timeout=lifecycle.remaining,
+        )
+        lifecycle.check()
+        response = client.send(request, stream=True, follow_redirects=False)
+        try:
+            with lifecycle.response(response.close):
+                chunks = []
+                size = 0
+                for chunk in response.iter_bytes():
+                    lifecycle.check()
+                    size += len(chunk)
+                    if size > 256 * 1024:
+                        return response.status_code, None, "provider_response_too_large"
+                    chunks.append(chunk)
+                lifecycle.check()
+                try:
+                    body = json.loads(b"".join(chunks))
+                except (ValueError, UnicodeError):
+                    return response.status_code, None, "provider_response_invalid"
+                return response.status_code, body, ""
+        finally:
+            response.close()
+
     try:
-        response = client.post(url, headers=headers, json=payload, timeout=timeout)
-        status = int(getattr(response, "status_code", 0) or 0)
+        status, body, body_error = run_model_call(request, seconds=min(20.0, max(0.01, timeout)), child=True)
+        result["http_status"] = status
         result["probe_evidence"]["http_status"] = status
         result["endpoint_reachable"] = status > 0
-        result["auth_valid"] = status not in {401, 403}
-        result["protocol_valid"] = status not in {404, 405, 415, 422} and status < 500
-        result["model_valid"] = status < 400
-        result["streaming_supported"] = status < 400
-        if status >= 400:
-            result["probe_evidence"]["error_preview"] = str(getattr(response, "text", ""))[:500]
+        result["usage"] = _probe_usage(body)
+        valid = 200 <= status < 300 and not body_error and _probe_response_valid(endpoint.protocol_family, body)
+        result.update(ok=bool(valid), model_valid=bool(valid), protocol_valid=bool(valid),
+                      configured_model_available=True if valid else None,
+                      auth_valid=True if valid else False if status in {401, 403} else None)
+        if not valid:
+            result["error"] = (
+                "provider_auth_failed" if status == 401 else
+                "provider_permission_denied" if status == 403 else
+                "provider_endpoint_or_model_not_found" if status == 404 else
+                "provider_rate_limited_or_quota_exhausted" if status == 429 else
+                "provider_unavailable" if status >= 500 else
+                "provider_redirect_refused" if 300 <= status < 400 else
+                "provider_request_rejected" if status >= 400 else
+                body_error or "provider_response_invalid"
+            )
+    except EndpointSecurityError as exc:
+        result["error"] = str(exc)
+    except (httpx.TimeoutException, ModelCallStopped):
+        result["error"] = "provider_request_timeout"
     except Exception as exc:
-        result["probe_evidence"]["error"] = f"{type(exc).__name__}:{str(exc)[:240]}"
+        result["error"] = "provider_transport_failed"
+        result["error_type"] = type(exc).__name__
     finally:
-        result["probe_evidence"]["latency_ms"] = int((time.monotonic() - started) * 1000)
+        result["latency_ms"] = int((time.monotonic() - started) * 1000)
+        result["probe_evidence"]["latency_ms"] = result["latency_ms"]
     return result
 
 

@@ -40,6 +40,7 @@ from contracts import (
 )
 
 from runtime_security.path_identity import resolve_existing_path
+from contracts.native_json import native_json_sha256
 
 from .action_registry import ActionRegistryError, ActionSchemaCatalog
 from .composition_activation_adapter import (
@@ -356,7 +357,7 @@ class OmniGrantAuthority:
 
     @staticmethod
     def _invocation_hash(action: str, target: str, args: Mapping[str, Any]) -> str:
-        return canonical_sha256({"action": action, "args": dict(args), "target": target})
+        return native_json_sha256({"action": action, "args": dict(args), "target": target})
 
     @staticmethod
     def _derive_run_sequence(request_id: str, run_id: str) -> int:
@@ -2968,7 +2969,10 @@ class OmniGrantAuthority:
         if self._contains_destructive_overwrite(args) and "destructive" not in permission.allowed_side_effects:
             raise OmniGrantAuthorityError("omni.overwrite.not_authorized", status=403)
 
-        arguments_sha256 = self._invocation_hash(action, target, args)
+        try:
+            arguments_sha256 = self._invocation_hash(action, target, args)
+        except (TypeError, ValueError) as exc:
+            raise OmniGrantAuthorityError("omni.grant_request.invalid_json_arguments", status=400) from exc
         cache_key = (active.ticket.payload.ticket_id, call_id)
         with self._lock:
             cached = self._issued.get(cache_key)

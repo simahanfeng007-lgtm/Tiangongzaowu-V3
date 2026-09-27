@@ -77,6 +77,7 @@ _ROUTES = (
     _route("GET", "/api/v1/llm/optimization", "backend"),
     _route("GET", "/api/v1/llm/settings", "backend"),
     _route("POST", "/api/v1/llm/settings", "backend"),
+    _route("POST", "/api/v1/llm/probe", "backend"),
     _route("GET", "/api/v1/character/state", "backend"),
     _route("GET", "/api/v1/body/settings", "backend"),
     _route("POST", "/api/v1/body/settings", "backend"),

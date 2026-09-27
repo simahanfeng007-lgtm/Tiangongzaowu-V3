@@ -1,0 +1,850 @@
+{
+  "schema": "tiangong.ontology.batch-evidence.v1",
+  "product_commit": "6c71107ea239098388d830d67220bb4d86d1361b",
+  "dictionary_version": "2026.09.27.3",
+  "verification_plane": "1.55",
+  "all_retained_capabilities_complete": false,
+  "application_connections": {
+    "registered": 100,
+    "host_configured_servers": 0,
+    "vendor_apps_verified": 0
+  },
+  "model_tasks": [
+    {
+      "case": "local",
+      "request_id": "req_19383483e62ccd701ab1a4cd5ee03ab8f8028be0e1912fc738e0070198d6df1b",
+      "base_commit": "6c71107ea239098388d830d67220bb4d86d1361b",
+      "source_snapshot_sha256": "15fd654f8f50f644e33d91bc8aef802b96f982a02cc8ff9a5d35a91787e1b6b6",
+      "product_files_compared": 1442,
+      "ledger_events": 109,
+      "ledger_types": {
+        "chain.started": 1,
+        "composition.registered": 5,
+        "step.planned": 17,
+        "step.prepared": 17,
+        "step.dispatched": 17,
+        "step.observed": 17,
+        "step.committed": 18,
+        "frontier.updated": 17
+      },
+      "ledger_hash_chain_valid": true,
+      "database_unchanged": true,
+      "completion_identity_valid": true,
+      "judge_approved_current_versions": true,
+      "artifact_versions": [
+        {
+          "path": "workspace/totals.json",
+          "sha256": "daebc5b6d84184011060bbcf73f7937abbfa9b20e0014425d9954273e782cf2e",
+          "size_bytes": 27
+        },
+        {
+          "path": "workspace/totals.json",
+          "sha256": "daebc5b6d84184011060bbcf73f7937abbfa9b20e0014425d9954273e782cf2e",
+          "size_bytes": 27
+        },
+        {
+          "path": "workspace/report.md",
+          "sha256": "7d57b60088fdfeb4d76b7f2f9841b758dd6002cbe4e6d50403d824fae0e8cddc",
+          "size_bytes": 1315
+        }
+      ],
+      "model_generated_compositions": 5,
+      "wire_server_models": [
+        "deepseek-flash"
+      ],
+      "metrics": {
+        "calls": 12,
+        "failed_calls": 0,
+        "unknown_usage_calls": 0,
+        "tokens": {
+          "prompt_tokens": 305904,
+          "completion_tokens": 15328,
+          "total_tokens": 321232,
+          "prompt_cache_hit_tokens": 206848,
+          "prompt_cache_miss_tokens": 99056
+        }
+      },
+      "wall_seconds": 70.868,
+      "independent_readback": {
+        "totals": {
+          "杭州": 12,
+          "上海": 6
+        },
+        "sum": 18,
+        "before_repair": {
+          "杭州": 0,
+          "上海": -2
+        },
+        "actual_compute_runs": 3
+      },
+      "graceful_shutdown": true,
+      "fact_audit_passed": true
+    },
+    {
+      "case": "browser",
+      "request_id": "req_f4e21fcf973d8a6fb69dca6000d50458ecf8581312f32950a00dd5465d35c6c7",
+      "base_commit": "6c71107ea239098388d830d67220bb4d86d1361b",
+      "source_snapshot_sha256": "15fd654f8f50f644e33d91bc8aef802b96f982a02cc8ff9a5d35a91787e1b6b6",
+      "product_files_compared": 1442,
+      "ledger_events": 132,
+      "ledger_types": {
+        "chain.started": 1,
+        "composition.registered": 10,
+        "step.planned": 20,
+        "step.prepared": 20,
+        "step.dispatched": 20,
+        "step.observed": 20,
+        "step.committed": 17,
+        "frontier.updated": 20,
+        "step.failed": 4
+      },
+      "ledger_hash_chain_valid": true,
+      "database_unchanged": true,
+      "completion_identity_valid": true,
+      "judge_approved_current_versions": true,
+      "artifact_versions": [
+        {
+          "path": "workspace/result.json",
+          "sha256": "aee530d3d9d9b40575ca7964e2d672e888b67990412d1fb3e6e23220671f057a",
+          "size_bytes": 12
+        },
+        {
+          "path": "workspace/screenshot.png",
+          "sha256": "8354a7265ecf13ebb439b091c11ff12b064967e75a2298ad1400d36efdcd4a6c",
+          "size_bytes": 14845
+        },
+        {
+          "path": "workspace/report.md",
+          "sha256": "3180bdc0e2a144d2cf6e4b26d5c73f9e9a9302c69dc53776db83192273e852ec",
+          "size_bytes": 1587
+        }
+      ],
+      "model_generated_compositions": 10,
+      "wire_server_models": [
+        "deepseek-flash"
+      ],
+      "metrics": {
+        "calls": 19,
+        "failed_calls": 0,
+        "unknown_usage_calls": 0,
+        "tokens": {
+          "prompt_tokens": 867543,
+          "completion_tokens": 26766,
+          "total_tokens": 894309,
+          "prompt_cache_hit_tokens": 712448,
+          "prompt_cache_miss_tokens": 155095
+        }
+      },
+      "wall_seconds": 131.744,
+      "independent_readback": {
+        "total": 73,
+        "download": "workspace/result.json",
+        "png_files": [
+          "workspace/screenshot.png",
+          "workspace/browser_out/screenshot.png"
+        ]
+      },
+      "graceful_shutdown": true,
+      "fact_audit_passed": true
+    },
+    {
+      "case": "mcp",
+      "request_id": "req_5d9e9ef0b7ca788819941fa18180c5cf7c18079a365e0300bc8a44b8fa075b7e",
+      "base_commit": "6c71107ea239098388d830d67220bb4d86d1361b",
+      "source_snapshot_sha256": "15fd654f8f50f644e33d91bc8aef802b96f982a02cc8ff9a5d35a91787e1b6b6",
+      "product_files_compared": 1442,
+      "ledger_events": 63,
+      "ledger_types": {
+        "chain.started": 1,
+        "composition.registered": 7,
+        "step.planned": 9,
+        "step.prepared": 9,
+        "step.dispatched": 9,
+        "step.observed": 9,
+        "step.committed": 10,
+        "frontier.updated": 9
+      },
+      "ledger_hash_chain_valid": true,
+      "database_unchanged": true,
+      "completion_identity_valid": true,
+      "judge_approved_current_versions": true,
+      "artifact_versions": [
+        {
+          "path": "workspace/report.md",
+          "sha256": "95badd192e230bd3ff66e54aeaead1fa193c24caa02fa971f76006367b4f0661",
+          "size_bytes": 3394
+        }
+      ],
+      "model_generated_compositions": 7,
+      "wire_server_models": [
+        "deepseek-flash"
+      ],
+      "metrics": {
+        "calls": 16,
+        "failed_calls": 0,
+        "unknown_usage_calls": 0,
+        "tokens": {
+          "prompt_tokens": 375719,
+          "completion_tokens": 18463,
+          "total_tokens": 394182,
+          "prompt_cache_hit_tokens": 268800,
+          "prompt_cache_miss_tokens": 106919
+        }
+      },
+      "wall_seconds": 81.906,
+      "independent_readback": {
+        "records_created": 1,
+        "real_read_id": "7202a771275c618e",
+        "value": 41,
+        "version": 1,
+        "tools_pagination_observed": true
+      },
+      "graceful_shutdown": true,
+      "fact_audit_passed": true
+    },
+    {
+      "case": "quality",
+      "request_id": "req_7cd51af14e6586e9bbf57b63ffb3eaaa024bc98236739431df41d56fc5538d1f",
+      "base_commit": "6c71107ea239098388d830d67220bb4d86d1361b",
+      "source_snapshot_sha256": "15fd654f8f50f644e33d91bc8aef802b96f982a02cc8ff9a5d35a91787e1b6b6",
+      "product_files_compared": 1442,
+      "ledger_events": 28,
+      "ledger_types": {
+        "chain.started": 1,
+        "composition.registered": 2,
+        "step.planned": 4,
+        "step.prepared": 4,
+        "step.dispatched": 4,
+        "step.observed": 4,
+        "step.committed": 5,
+        "frontier.updated": 4
+      },
+      "ledger_hash_chain_valid": true,
+      "database_unchanged": true,
+      "completion_identity_valid": true,
+      "judge_approved_current_versions": true,
+      "artifact_versions": [
+        {
+          "path": "workspace/report.md",
+          "sha256": "18f8b290db55b5c9f42c4dda7caaaf8741a58fd2587539c6578252f220854ebe",
+          "size_bytes": 2229
+        }
+      ],
+      "model_generated_compositions": 2,
+      "wire_server_models": [
+        "deepseek-flash"
+      ],
+      "metrics": {
+        "calls": 9,
+        "failed_calls": 0,
+        "unknown_usage_calls": 2,
+        "tokens": {
+          "prompt_tokens": 89428,
+          "completion_tokens": 4939,
+          "total_tokens": 94367,
+          "prompt_cache_hit_tokens": 45696,
+          "prompt_cache_miss_tokens": 43732
+        }
+      },
+      "wall_seconds": 28.291,
+      "independent_readback": {
+        "project_execution_marker_absent": true,
+        "report_sha256": "18f8b290db55b5c9f42c4dda7caaaf8741a58fd2587539c6578252f220854ebe"
+      },
+      "graceful_shutdown": true,
+      "fact_audit_passed": true
+    },
+    {
+      "case": "document",
+      "request_id": "req_7102ddea453e720197ab4cab48a5ddeb287657bc02012852ef602d93d4925a5d",
+      "base_commit": "6c71107ea239098388d830d67220bb4d86d1361b",
+      "source_snapshot_sha256": "15fd654f8f50f644e33d91bc8aef802b96f982a02cc8ff9a5d35a91787e1b6b6",
+      "product_files_compared": 1442,
+      "ledger_events": 53,
+      "ledger_types": {
+        "chain.started": 1,
+        "composition.registered": 3,
+        "step.planned": 8,
+        "step.prepared": 8,
+        "step.dispatched": 8,
+        "step.observed": 8,
+        "step.committed": 8,
+        "frontier.updated": 8,
+        "step.failed": 1
+      },
+      "ledger_hash_chain_valid": true,
+      "database_unchanged": true,
+      "completion_identity_valid": true,
+      "judge_approved_current_versions": true,
+      "artifact_versions": [
+        {
+          "path": "workspace/report.md",
+          "sha256": "be83653201ef189ea59e4769ca5d9f4865e6ac986bfd70a294a1084904c5cb0b",
+          "size_bytes": 1091
+        }
+      ],
+      "model_generated_compositions": 3,
+      "wire_server_models": [
+        "deepseek-flash"
+      ],
+      "metrics": {
+        "calls": 13,
+        "failed_calls": 1,
+        "unknown_usage_calls": 0,
+        "tokens": {
+          "prompt_tokens": 238509,
+          "completion_tokens": 15758,
+          "total_tokens": 254267,
+          "prompt_cache_hit_tokens": 146688,
+          "prompt_cache_miss_tokens": 91821
+        }
+      },
+      "wall_seconds": 67.68,
+      "independent_readback": {
+        "independent_XML_values": [
+          "库存盘点记录",
+          "商品",
+          "数量",
+          "SKU-A",
+          "7",
+          "SKU-B",
+          "11"
+        ],
+        "known_total": 18,
+        "corrupt_read_failure_retained": true
+      },
+      "graceful_shutdown": true,
+      "fact_audit_passed": true
+    }
+  ],
+  "controlled_real_judge": {
+    "scope": "CONTROLLED_REAL_MODEL_JUDGE",
+    "base_commit": "42fcf3311246cb6fa39c49005a294ccf4aa8f111",
+    "source_hashes": {
+      "app/backend/tiangong-backend/v3/adversarial_review.py": "8d76d97c82b737c178d05d3e8dee3256545a019f3ec07694d2f549323c2206a0",
+      "app/backend/tiangong-backend/v3/review_evidence.py": "3741e8323309313359213f6b008c4c2d40af5fd6e85c9b6b2de3f372459ba57f"
+    },
+    "cases": [
+      {
+        "name": "correct",
+        "expected": "complete",
+        "actual": "complete",
+        "passed": true,
+        "approved": true
+      },
+      {
+        "name": "incorrect",
+        "expected": "continue",
+        "actual": "continue",
+        "passed": true,
+        "approved": false
+      },
+      {
+        "name": "insufficient",
+        "expected": "continue",
+        "actual": "continue",
+        "passed": true,
+        "approved": false
+      },
+      {
+        "name": "injection",
+        "expected": "continue",
+        "actual": "continue",
+        "passed": true,
+        "approved": false
+      }
+    ],
+    "passed": true
+  },
+  "usage": {
+    "scope": "five_independent_controlled_local_tasks",
+    "source_commit": "6c71107",
+    "cases": [
+      {
+        "case": "local",
+        "task_wall_seconds": 70.868,
+        "roles": {
+          "executor": {
+            "calls": 6,
+            "failed_calls": 0,
+            "unknown_usage_calls": 0,
+            "unknown_cache_calls": 0,
+            "prompt_tokens": 270973,
+            "completion_tokens": 6990,
+            "cache_hit_tokens": 200192,
+            "latency_ms_sum": 30545
+          },
+          "auxiliary": {
+            "calls": 5,
+            "failed_calls": 0,
+            "unknown_usage_calls": 0,
+            "unknown_cache_calls": 0,
+            "prompt_tokens": 14552,
+            "completion_tokens": 5591,
+            "cache_hit_tokens": 6016,
+            "latency_ms_sum": 27475
+          },
+          "judge": {
+            "calls": 1,
+            "failed_calls": 0,
+            "unknown_usage_calls": 0,
+            "unknown_cache_calls": 0,
+            "prompt_tokens": 20379,
+            "completion_tokens": 2747,
+            "cache_hit_tokens": 640,
+            "latency_ms_sum": 13589
+          }
+        },
+        "passed": true
+      },
+      {
+        "case": "browser",
+        "task_wall_seconds": 131.744,
+        "roles": {
+          "executor": {
+            "calls": 12,
+            "failed_calls": 0,
+            "unknown_usage_calls": 0,
+            "unknown_cache_calls": 0,
+            "prompt_tokens": 799779,
+            "completion_tokens": 13902,
+            "cache_hit_tokens": 701312,
+            "latency_ms_sum": 68863
+          },
+          "auxiliary": {
+            "calls": 5,
+            "failed_calls": 0,
+            "unknown_usage_calls": 0,
+            "unknown_cache_calls": 0,
+            "prompt_tokens": 13598,
+            "completion_tokens": 5784,
+            "cache_hit_tokens": 6016,
+            "latency_ms_sum": 28366
+          },
+          "judge": {
+            "calls": 2,
+            "failed_calls": 0,
+            "unknown_usage_calls": 0,
+            "unknown_cache_calls": 0,
+            "prompt_tokens": 54166,
+            "completion_tokens": 7080,
+            "cache_hit_tokens": 5120,
+            "latency_ms_sum": 31880
+          }
+        },
+        "passed": true
+      },
+      {
+        "case": "mcp",
+        "task_wall_seconds": 81.906,
+        "roles": {
+          "executor": {
+            "calls": 8,
+            "failed_calls": 0,
+            "unknown_usage_calls": 0,
+            "unknown_cache_calls": 0,
+            "prompt_tokens": 297646,
+            "completion_tokens": 3787,
+            "cache_hit_tokens": 243072,
+            "latency_ms_sum": 22314
+          },
+          "auxiliary": {
+            "calls": 5,
+            "failed_calls": 0,
+            "unknown_usage_calls": 0,
+            "unknown_cache_calls": 0,
+            "prompt_tokens": 13560,
+            "completion_tokens": 5613,
+            "cache_hit_tokens": 6016,
+            "latency_ms_sum": 29341
+          },
+          "judge": {
+            "calls": 3,
+            "failed_calls": 0,
+            "unknown_usage_calls": 0,
+            "unknown_cache_calls": 0,
+            "prompt_tokens": 64513,
+            "completion_tokens": 9063,
+            "cache_hit_tokens": 19712,
+            "latency_ms_sum": 42353
+          }
+        },
+        "passed": true
+      },
+      {
+        "case": "quality",
+        "task_wall_seconds": 28.291,
+        "roles": {
+          "executor": {
+            "calls": 3,
+            "failed_calls": 0,
+            "unknown_usage_calls": 0,
+            "unknown_cache_calls": 0,
+            "prompt_tokens": 68951,
+            "completion_tokens": 2874,
+            "cache_hit_tokens": 42112,
+            "latency_ms_sum": 12795
+          },
+          "auxiliary": {
+            "calls": 5,
+            "failed_calls": 0,
+            "unknown_usage_calls": 2,
+            "unknown_cache_calls": 2,
+            "prompt_tokens": 6636,
+            "completion_tokens": 1266,
+            "cache_hit_tokens": 2944,
+            "latency_ms_sum": 7326
+          },
+          "judge": {
+            "calls": 1,
+            "failed_calls": 0,
+            "unknown_usage_calls": 0,
+            "unknown_cache_calls": 0,
+            "prompt_tokens": 13841,
+            "completion_tokens": 799,
+            "cache_hit_tokens": 640,
+            "latency_ms_sum": 4490
+          }
+        },
+        "passed": true
+      },
+      {
+        "case": "document",
+        "task_wall_seconds": 67.68,
+        "roles": {
+          "auxiliary": {
+            "calls": 5,
+            "failed_calls": 0,
+            "unknown_usage_calls": 0,
+            "unknown_cache_calls": 0,
+            "prompt_tokens": 13562,
+            "completion_tokens": 4345,
+            "cache_hit_tokens": 6016,
+            "latency_ms_sum": 23754
+          },
+          "executor": {
+            "calls": 6,
+            "failed_calls": 1,
+            "unknown_usage_calls": 0,
+            "unknown_cache_calls": 0,
+            "prompt_tokens": 181929,
+            "completion_tokens": 4773,
+            "cache_hit_tokens": 137600,
+            "latency_ms_sum": 15915
+          },
+          "judge": {
+            "calls": 2,
+            "failed_calls": 0,
+            "unknown_usage_calls": 0,
+            "unknown_cache_calls": 0,
+            "prompt_tokens": 43018,
+            "completion_tokens": 6640,
+            "cache_hit_tokens": 3072,
+            "latency_ms_sum": 30708
+          }
+        },
+        "passed": true
+      }
+    ],
+    "monetary_cost": "not_reported_by_provider_usage",
+    "cache_is_acceptance_gate": false,
+    "total": {
+      "calls": 69,
+      "failed_calls": 1,
+      "unknown_usage_calls": 2,
+      "unknown_cache_calls": 2,
+      "prompt_tokens": 1877103,
+      "completion_tokens": 81254,
+      "cache_hit_tokens": 1380480
+    },
+    "known_prompt_cache_hit_fraction": 0.735431
+  },
+  "all_attempt_usage": {
+    "scope": "all_recorded_attempts_in_this_batch_including_prior_candidates_and_failures",
+    "attempts": [
+      {
+        "attempt": "browser-1",
+        "source_commit": "b699b904a03a70075eb175d895a09ed61e4645e6",
+        "scope": "MODEL_LIVE_LOCAL",
+        "request_status": "COMPLETED",
+        "original_driver_passed": false,
+        "metrics": {
+          "calls": 15,
+          "failed_calls": 0,
+          "unfinished_calls": 0,
+          "unknown_usage_calls": 0,
+          "prompt_tokens": 400719,
+          "completion_tokens": 24955,
+          "prompt_cache_hit_tokens": 310144,
+          "total_tokens": 425674
+        }
+      },
+      {
+        "attempt": "browser-final",
+        "source_commit": "041a39b69da3a50056ad801b7fad58928258e1c8",
+        "scope": "MODEL_LIVE_LOCAL",
+        "request_status": "COMPLETED",
+        "original_driver_passed": false,
+        "metrics": {
+          "calls": 14,
+          "failed_calls": 0,
+          "unfinished_calls": 0,
+          "unknown_usage_calls": 0,
+          "prompt_tokens": 447248,
+          "completion_tokens": 30667,
+          "prompt_cache_hit_tokens": 313088,
+          "total_tokens": 477915
+        }
+      },
+      {
+        "attempt": "browser-release",
+        "source_commit": "6c71107ea239098388d830d67220bb4d86d1361b",
+        "scope": "MODEL_LIVE_LOCAL",
+        "request_status": "COMPLETED",
+        "original_driver_passed": true,
+        "metrics": {
+          "calls": 19,
+          "failed_calls": 0,
+          "unfinished_calls": 0,
+          "unknown_usage_calls": 0,
+          "prompt_tokens": 867543,
+          "completion_tokens": 26766,
+          "prompt_cache_hit_tokens": 712448,
+          "total_tokens": 894309
+        }
+      },
+      {
+        "attempt": "document-release",
+        "source_commit": "6c71107ea239098388d830d67220bb4d86d1361b",
+        "scope": "MODEL_LIVE_LOCAL",
+        "request_status": "COMPLETED",
+        "original_driver_passed": true,
+        "metrics": {
+          "calls": 13,
+          "failed_calls": 1,
+          "unfinished_calls": 0,
+          "unknown_usage_calls": 0,
+          "prompt_tokens": 238509,
+          "completion_tokens": 15758,
+          "prompt_cache_hit_tokens": 146688,
+          "total_tokens": 254267
+        }
+      },
+      {
+        "attempt": "local-1",
+        "source_commit": "b699b904a03a70075eb175d895a09ed61e4645e6",
+        "scope": "MODEL_LIVE_LOCAL",
+        "request_status": "COMPLETED",
+        "original_driver_passed": true,
+        "metrics": {
+          "calls": 11,
+          "failed_calls": 0,
+          "unfinished_calls": 0,
+          "unknown_usage_calls": 0,
+          "prompt_tokens": 196884,
+          "completion_tokens": 18015,
+          "prompt_cache_hit_tokens": 90624,
+          "total_tokens": 214899
+        }
+      },
+      {
+        "attempt": "local-final",
+        "source_commit": "041a39b69da3a50056ad801b7fad58928258e1c8",
+        "scope": "MODEL_LIVE_LOCAL",
+        "request_status": "COMPLETED",
+        "original_driver_passed": true,
+        "metrics": {
+          "calls": 12,
+          "failed_calls": 0,
+          "unfinished_calls": 0,
+          "unknown_usage_calls": 0,
+          "prompt_tokens": 251482,
+          "completion_tokens": 20936,
+          "prompt_cache_hit_tokens": 137472,
+          "total_tokens": 272418
+        }
+      },
+      {
+        "attempt": "local-release",
+        "source_commit": "6c71107ea239098388d830d67220bb4d86d1361b",
+        "scope": "MODEL_LIVE_LOCAL",
+        "request_status": "COMPLETED",
+        "original_driver_passed": true,
+        "metrics": {
+          "calls": 12,
+          "failed_calls": 0,
+          "unfinished_calls": 0,
+          "unknown_usage_calls": 0,
+          "prompt_tokens": 305904,
+          "completion_tokens": 15328,
+          "prompt_cache_hit_tokens": 206848,
+          "total_tokens": 321232
+        }
+      },
+      {
+        "attempt": "mcp-1",
+        "source_commit": "1db0c2277e494324f4e4c5d4f9a0d94bb15123bc",
+        "scope": "MODEL_LIVE_LOCAL",
+        "request_status": "COMPLETED",
+        "original_driver_passed": true,
+        "metrics": {
+          "calls": 18,
+          "failed_calls": 0,
+          "unfinished_calls": 0,
+          "unknown_usage_calls": 0,
+          "prompt_tokens": 532161,
+          "completion_tokens": 25660,
+          "prompt_cache_hit_tokens": 390528,
+          "total_tokens": 557821
+        }
+      },
+      {
+        "attempt": "mcp-final",
+        "source_commit": "041a39b69da3a50056ad801b7fad58928258e1c8",
+        "scope": "MODEL_LIVE_LOCAL",
+        "request_status": "COMPLETED",
+        "original_driver_passed": true,
+        "metrics": {
+          "calls": 17,
+          "failed_calls": 0,
+          "unfinished_calls": 0,
+          "unknown_usage_calls": 0,
+          "prompt_tokens": 455254,
+          "completion_tokens": 18374,
+          "prompt_cache_hit_tokens": 344832,
+          "total_tokens": 473628
+        }
+      },
+      {
+        "attempt": "mcp-portable",
+        "source_commit": "6c71107ea239098388d830d67220bb4d86d1361b",
+        "scope": "MODEL_LIVE_LOCAL",
+        "request_status": "FAILED",
+        "original_driver_passed": false,
+        "metrics": {}
+      },
+      {
+        "attempt": "mcp-portable-fixed",
+        "source_commit": "6c71107ea239098388d830d67220bb4d86d1361b",
+        "scope": "MODEL_LIVE_LOCAL",
+        "request_status": "COMPLETED",
+        "original_driver_passed": true,
+        "metrics": {
+          "calls": 18,
+          "failed_calls": 0,
+          "unfinished_calls": 0,
+          "unknown_usage_calls": 0,
+          "prompt_tokens": 517352,
+          "completion_tokens": 15636,
+          "prompt_cache_hit_tokens": 397824,
+          "total_tokens": 532988
+        }
+      },
+      {
+        "attempt": "mcp-release",
+        "source_commit": "6c71107ea239098388d830d67220bb4d86d1361b",
+        "scope": "MODEL_LIVE_LOCAL",
+        "request_status": "COMPLETED",
+        "original_driver_passed": true,
+        "metrics": {
+          "calls": 16,
+          "failed_calls": 0,
+          "unfinished_calls": 0,
+          "unknown_usage_calls": 0,
+          "prompt_tokens": 375719,
+          "completion_tokens": 18463,
+          "prompt_cache_hit_tokens": 268800,
+          "total_tokens": 394182
+        }
+      },
+      {
+        "attempt": "quality-final",
+        "source_commit": "42fcf3311246cb6fa39c49005a294ccf4aa8f111",
+        "scope": "MODEL_LIVE_LOCAL",
+        "request_status": "COMPLETED",
+        "original_driver_passed": true,
+        "metrics": {
+          "calls": 13,
+          "failed_calls": 0,
+          "unfinished_calls": 0,
+          "unknown_usage_calls": 0,
+          "prompt_tokens": 268791,
+          "completion_tokens": 10061,
+          "prompt_cache_hit_tokens": 198528,
+          "total_tokens": 278852
+        }
+      },
+      {
+        "attempt": "quality-release",
+        "source_commit": "6c71107ea239098388d830d67220bb4d86d1361b",
+        "scope": "MODEL_LIVE_LOCAL",
+        "request_status": "COMPLETED",
+        "original_driver_passed": true,
+        "metrics": {
+          "calls": 9,
+          "failed_calls": 0,
+          "unfinished_calls": 2,
+          "unknown_usage_calls": 2,
+          "prompt_tokens": 89428,
+          "completion_tokens": 4939,
+          "prompt_cache_hit_tokens": 45696,
+          "total_tokens": 94367
+        }
+      }
+    ],
+    "controlled_judge": {
+      "calls": 4,
+      "failed_calls": 0,
+      "unfinished_calls": 0,
+      "unknown_usage_calls": 0,
+      "prompt_tokens": 6119,
+      "completion_tokens": 3787,
+      "prompt_cache_hit_tokens": 2560,
+      "total_tokens": 9906
+    },
+    "total_known_usage": {
+      "calls": 191,
+      "failed_calls": 1,
+      "unfinished_calls": 2,
+      "unknown_usage_calls": 2,
+      "prompt_tokens": 4953113,
+      "completion_tokens": 249345,
+      "prompt_cache_hit_tokens": 3566080,
+      "total_tokens": 5202458
+    },
+    "monetary_cost": "provider_billing_not_available"
+  },
+  "checks": {
+    "node": {
+      "passed": 260,
+      "skipped": 2,
+      "failed": 0
+    },
+    "focused": {
+      "passed": 87
+    },
+    "intermediate_full_python": {
+      "passed": 6463,
+      "failed": 3,
+      "skipped": 93,
+      "subtests_passed": 1141
+    },
+    "derived_contract_recheck": {
+      "passed": 29,
+      "skipped": 5
+    },
+    "final_full_regression": "must_read_exact_PR_commit_checks; not_inferred_from_intermediate_or_targeted_runs"
+  },
+  "evidence_sha256": {
+    "audit-release-source-driver.json": "fc5ea9fba41b63fe118af3fd1d57f16d5dbb28de4f8dcc554ffc0faf5c8c7236",
+    "node-release.log": "58723a0891b0253fe52c7685b1ae921dd67e821146fe192c607167d41823e515",
+    "python-release.log": "df0402e71911a534926122183c9e14c3c38a238dea55fed6e22e7923fa9afd19",
+    "typed-reason-preview-checked.log": "8d94a930d8731af7d719653236fbe70a2fd52a94ebd74676a85d4116f6edf659",
+    "derived-contract-recheck-final.log": "b4d12fd8fcbf91862ca9a05aec466cdff782c83664bae6cbdaed9a97e734c25e",
+    "model-usage-release.json": "932d8a008c0c3971ae24834f517f2e9f25012a630bb625490b73566088c576a4",
+    "model-usage-all-attempts.json": "167240dec1ddf332b2b4f9de5ca31da34b4e860cf92e632a4a020acce484768e",
+    "judge-controlled/summary.json": "e10e5cb0553e56f21eb6e366ff47e13adcaae3c88a192551a09f3aa91d058b27"
+  },
+  "local_evidence_relative_path": "acceptance/ontology-unified-2026-09-27",
+  "interpretation": "Source/runtime/controlled model evidence only. No vendor application, native Office installation, or all-capability acceptance claimed."
+}

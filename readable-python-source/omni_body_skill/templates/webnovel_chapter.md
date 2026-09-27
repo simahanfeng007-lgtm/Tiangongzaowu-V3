@@ -24,5 +24,4 @@
 - 下一章承诺：
 
 ## 质检
-- qc.novel.chapter_check
-- qc.writing.ai_tone_check
+- 读取实际章节和必要的前文，由对抗智能体按用户要求验收；文件元数据不代表叙事质量。

@@ -333,7 +333,9 @@ def test_file_browser_fetch_is_confined_to_workspace() -> None:
         runtime = _body_runtime(root)
 
         fetched = runtime._browser_fetch(inside.as_uri(), {})
-        assert fetched["status"] == 200
+        # A file URL has no HTTP response status; retain the real content and
+        # outside-workspace rejection assertions below.
+        assert fetched["status"] is None
         assert "正文" in fetched["text"]
         with pytest.raises(OmniBodyError):
             runtime._browser_fetch(outside.as_uri(), {})

@@ -1590,6 +1590,12 @@ class EmbeddedBackendRuntime:
                 core_lock.release()
         if errors:
             raise RuntimeError("embedded backend failed to close") from errors[0]
+        # The execution lane has stopped; detach pointers before Gateway closes
+        # their stores. A failed/busy close must retain them for live recovery.
+        # The _closed guard also prevents an old instance from clearing a later
+        # owner's bindings when close is called again.
+        self.set_continuity_checkpoint_provider(None)
+        self.set_regenerative_execution_provider(None)
         try:
             importlib.import_module("v3.knowledge_store").set_card_enricher(None)
         except Exception:

@@ -12,25 +12,6 @@ from pathlib import Path
 from typing import Any
 
 
-BLACKLIST = [
-    "浮现出一抹",
-    "嘴角勾起",
-    "深吸一口气",
-    "死死盯着",
-    "瞳孔收缩",
-    "握紧拳头",
-    "倒吸一口凉气",
-    "电光火石之间",
-    "时间仿佛静止",
-    "空气仿佛凝固",
-    "命运齿轮",
-    "灵魂深处",
-    "心中一震",
-    "心头一震",
-    "脑海中回荡",
-    "不知为何",
-]
-
 TRACKING_FILES = [
     "角色关系.json",
     "时间线.json",
@@ -78,14 +59,10 @@ def write_json(path: Path, data: dict[str, Any]) -> None:
 def read_json(path: Path, default: dict[str, Any] | None = None) -> dict[str, Any]:
     if not path.exists():
         return dict(default or {})
-    try:
-        data = json.loads(read_text(path))
-        return data if isinstance(data, dict) else dict(default or {})
-    except Exception as exc:
-        # A corrupt file silently resetting the contract to defaults is worse
-        # than a loud warning; keep the default-return behavior but report it.
-        print(f"[novel_tool] read_json failed ({path}): {exc}", file=sys.stderr)
-        return dict(default or {})
+    data = json.loads(read_text(path))
+    if not isinstance(data, dict):
+        raise ValueError(f"Expected a JSON object: {path}")
+    return data
 
 
 def chinese_chars(text: str) -> int:
@@ -103,27 +80,6 @@ def dialogue_chars(text: str) -> int:
         for match in re.findall(pattern, text):
             total += chinese_chars(match)
     return total
-
-
-def blacklist_hits(text: str) -> list[dict[str, Any]]:
-    hits: list[dict[str, Any]] = []
-    for item in BLACKLIST:
-        count = text.count(item)
-        if count:
-            hits.append({"phrase": item, "count": count})
-    return hits
-
-
-def ending_strength(text: str) -> dict[str, Any]:
-    clean = text.strip()
-    tail = clean[-120:] if clean else ""
-    hook_marks = ["？", "!", "！", "却", "忽然", "突然", "门外", "身后", "下一刻", "真相", "秘密"]
-    score = sum(1 for mark in hook_marks if mark in tail)
-    return {
-        "tail": tail,
-        "score": score,
-        "ok": score > 0,
-    }
 
 
 def chapter_number_from_name(path: Path) -> int:
@@ -223,18 +179,10 @@ def command_init(args: argparse.Namespace) -> int:
 - 计划章节：{args.chapters}
 - 模式：{args.mode}
 
-## 读者契约
+## 内容要求
 
-1. 每章至少推进一个剧情、关系或信息状态。
-2. 角色不能知道自己没有获知的信息。
-3. 伏笔必须记录，回收必须有因果。
-4. 章节结尾避免完全闭环。
-
-## 风格红线
-
-1. 避免模板化AI腔。
-2. 少用空泛情绪标签，多用动作和场景承压。
-3. 设定服务冲突，不做说明书堆砌。
+依据用户目标记录内容、风格与连续性要求。尚未声明的规则不自动成为验收条件。
+工具只观察文件与记录；内容质量和任务完成由最终对抗裁判判断。
 
 ## 项目备注
 
@@ -305,56 +253,27 @@ def missing_for_stage(project_dir: Path, stage: str) -> list[str]:
 
 
 def command_gate(args: argparse.Namespace) -> int:
+    # Legacy command name retained as an observation entry point, not a gate.
     project_dir = Path(args.project_dir).expanduser().resolve()
     stage = args.stage.upper()
-    missing = missing_for_stage(project_dir, stage)
-    errors = [f"missing:{item}" for item in missing]
-
-    if stage == "L4" and args.chapter_num:
-        chapter = int(args.chapter_num)
-        if chapter > 1:
-            prev_status = status_path(project_dir, chapter - 1)
-            data = read_json(prev_status)
-            if data.get("status") != "passed":
-                errors.append(f"previous_chapter_not_passed:{prev_status}")
-
-    ok = not errors
-    print(json.dumps({"ok": ok, "stage": stage, "errors": errors}, ensure_ascii=False, indent=2))
-    return 0 if ok else 1
+    print(json.dumps({"ok": True, "schema": "novel.observation.v2", "stage": stage,
+        "missing_stage_files": missing_for_stage(project_dir, stage),
+        "content_quality": "unassessed", "completion_authority": "adversarial_judge"}, ensure_ascii=False, indent=2))
+    return 0
 
 
-def audit_text(text: str, min_chars: int) -> dict[str, Any]:
-    total = chinese_chars(text)
-    dchars = dialogue_chars(text)
-    ratio = dchars / total if total else 0
-    hits = blacklist_hits(text)
-    dashes = text.count("——")
-    ending = ending_strength(text)
-    errors: list[str] = []
-    warnings: list[str] = []
-    if total < min_chars:
-        errors.append(f"word_count_below_min:{total}<{min_chars}")
-    if len(hits) >= 5:
-        errors.append(f"too_many_blacklist_hits:{len(hits)}")
-    elif hits:
-        warnings.append(f"blacklist_hits:{len(hits)}")
-    if dashes > 3:
-        warnings.append(f"too_many_em_dashes:{dashes}")
-    if ratio < 0.18:
-        warnings.append(f"low_dialogue_ratio:{ratio:.1%}")
-    if not ending["ok"]:
-        warnings.append("weak_ending_hook")
+def audit_text(text: str, min_chars: int | None = None) -> dict[str, Any]:
+    total, dchars = chinese_chars(text), dialogue_chars(text)
     return {
-        "status": "passed" if not errors else "failed",
-        "chinese_chars": total,
-        "dialogue_chars": dchars,
-        "dialogue_ratio": round(ratio, 4),
-        "blacklist_hits": hits,
-        "em_dashes": dashes,
-        "ending": ending,
-        "errors": errors,
-        "warnings": warnings,
-        "audited_at": now(),
+        "schema": "novel.observation.v2", "status": "observed",
+        "sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+        "chinese_chars": total, "dialogue_chars": dchars,
+        "dialogue_ratio": round(dchars / total, 4) if total else 0,
+        "configured_min_chars": min_chars,
+        "meets_configured_count": total >= min_chars if min_chars is not None else None,
+        "ending_excerpt": text.strip()[-120:],
+        "content_quality": "unassessed", "completion_authority": "adversarial_judge",
+        "observed_at": now(),
     }
 
 
@@ -363,107 +282,51 @@ def command_audit(args: argparse.Namespace) -> int:
     chapter_path = Path(args.chapter).expanduser().resolve()
     chapter_num = int(args.chapter_num or chapter_number_from_name(chapter_path))
     if chapter_num <= 0:
-        print(json.dumps({"ok": False, "error": "chapter_num_required"}, ensure_ascii=False, indent=2))
+        print(json.dumps({"ok": False, "error": "chapter_num_required"}))
         return 2
-    text = read_text(chapter_path)
-    result = audit_text(text, int(args.min_chars))
+    result = audit_text(read_text(chapter_path), args.min_chars)
     result.update({"chapter": chapter_num, "chapter_path": str(chapter_path)})
-
-    report_lines = [
-        f"# 第{chapter_num:02d}章审核报告",
-        "",
-        f"- 状态：{result['status']}",
-        f"- 中文字数：{result['chinese_chars']}",
-        f"- 对话占比：{result['dialogue_ratio']:.1%}",
-        f"- 破折号：{result['em_dashes']}",
-        f"- 黑名单命中：{len(result['blacklist_hits'])}",
-        f"- 结尾钩子分：{result['ending']['score']}",
-        "",
-        "## Errors",
-        *(f"- {item}" for item in result["errors"]),
-        "",
-        "## Warnings",
-        *(f"- {item}" for item in result["warnings"]),
-    ]
-    report_path = project_dir / "审核报告" / f"第{chapter_num:02d}章-审核报告.md"
-    write_text(report_path, "\n".join(report_lines).strip() + "\n")
-    write_json(status_path(project_dir, chapter_num), result)
-
-    print(json.dumps({"ok": result["status"] == "passed", "status": result["status"], "report": str(report_path), "status_file": str(status_path(project_dir, chapter_num)), "errors": result["errors"], "warnings": result["warnings"]}, ensure_ascii=False, indent=2))
-    return 0 if result["status"] == "passed" else 1
+    report_path = project_dir / "审核报告" / f"第{chapter_num:02d}章-观察.json"
+    write_json(report_path, result)
+    # Keep old passed/failed status files as historical records.
+    print(json.dumps({"ok": True, "report": str(report_path), **result}, ensure_ascii=False, indent=2))
+    return 0
 
 
 def contract_check_text(project_dir: Path, chapter_path: Path, chapter_num: int) -> dict[str, Any]:
     text = read_text(chapter_path)
-    story = read_json(story_contract_path(project_dir))
-    card = read_json(chapter_card_path(project_dir, chapter_num))
-    errors: list[str] = []
-    warnings: list[str] = []
-    evidence: dict[str, Any] = {
-        "heading": first_heading(text),
-        "story_contract": str(story_contract_path(project_dir)),
-        "chapter_card": str(chapter_card_path(project_dir, chapter_num)),
-    }
-
-    if not story:
-        errors.append(f"missing_story_contract:{story_contract_path(project_dir)}")
-    if not card:
-        errors.append(f"missing_chapter_card:{chapter_card_path(project_dir, chapter_num)}")
-    if errors:
-        return {
-            "status": "failed",
-            "errors": errors,
-            "warnings": warnings,
-            "evidence": evidence,
-            "checked_at": now(),
-        }
-
-    title = str(card.get("title") or "").strip()
-    heading = evidence["heading"]
-    if title and title not in heading and title not in text[:300]:
-        errors.append(f"chapter_title_mismatch:expected={title};heading={heading}")
-
-    required_terms: list[str] = []
-    required_terms.extend(split_terms(card.get("characters")))
-    required_terms.extend(split_terms(card.get("must_include")))
-    for term in required_terms:
-        if term and term not in text:
-            errors.append(f"required_term_missing:{term}")
-
-    forbidden_terms: list[str] = []
-    forbidden_terms.extend(split_terms(story.get("forbidden_drift")))
-    forbidden_terms.extend(split_terms(card.get("must_not_include")))
-    for term in forbidden_terms:
-        if term and term in text:
-            errors.append(f"forbidden_term_present:{term}")
-
-    for field in ["pov", "time", "location"]:
-        value = str(card.get(field) or "").strip()
-        if value and value not in text:
-            warnings.append(f"chapter_card_field_not_explicit:{field}={value}")
-
+    story_path, card_path = story_contract_path(project_dir), chapter_card_path(project_dir, chapter_num)
+    story, card = read_json(story_path), read_json(card_path)
+    fields = [("title", card.get("title")), ("characters", card.get("characters")),
+              ("must_include", card.get("must_include")), ("must_not_include", card.get("must_not_include")),
+              ("forbidden_drift", story.get("forbidden_drift"))]
+    fields.extend((field, card.get(field)) for field in ("pov", "time", "location"))
     return {
-        "status": "passed" if not errors else "failed",
-        "errors": errors,
-        "warnings": warnings,
-        "evidence": evidence,
-        "checked_at": now(),
+        "schema": "novel.contract-observation.v2", "status": "observed",
+        "sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+        "heading": first_heading(text),
+        "sources": [{"path": str(path), "exists": path.is_file(),
+                     "sha256": hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None}
+                    for path in (story_path, card_path)],
+        "literal_matches": [{"field": field, "term": term, "present": term in text}
+                            for field, value in fields for term in split_terms(value)],
+        "scope": "literal presence only; no inference about plot or compliance",
+        "content_quality": "unassessed", "completion_authority": "adversarial_judge", "observed_at": now(),
     }
 
 
 def command_contract_check(args: argparse.Namespace) -> int:
-    project_dir = Path(args.project_dir).expanduser().resolve()
-    chapter_path = Path(args.chapter).expanduser().resolve()
+    project_dir, chapter_path = Path(args.project_dir).expanduser().resolve(), Path(args.chapter).expanduser().resolve()
     chapter_num = int(args.chapter_num or chapter_number_from_name(chapter_path))
     if chapter_num <= 0:
-        print(json.dumps({"ok": False, "error": "chapter_num_required"}, ensure_ascii=False, indent=2))
+        print(json.dumps({"ok": False, "error": "chapter_num_required"}))
         return 2
     result = contract_check_text(project_dir, chapter_path, chapter_num)
     result.update({"chapter": chapter_num, "chapter_path": str(chapter_path)})
-    report_path = project_dir / "审核报告" / f"第{chapter_num:02d}章-契约检查.json"
+    report_path = project_dir / "审核报告" / f"第{chapter_num:02d}章-契约观察-v2.json"
     write_json(report_path, result)
-    print(json.dumps({"ok": result["status"] == "passed", "status": result["status"], "report": str(report_path), "errors": result["errors"], "warnings": result["warnings"]}, ensure_ascii=False, indent=2))
-    return 0 if result["status"] == "passed" else 1
+    print(json.dumps({"ok": True, "report": str(report_path), **result}, ensure_ascii=False, indent=2))
+    return 0
 
 
 def command_status(args: argparse.Namespace) -> int:
@@ -486,8 +349,9 @@ def command_status(args: argparse.Namespace) -> int:
         "genre": project.get("genre"),
         "chapters": len(chapter_files),
         "status_files": len(statuses),
-        "passed": passed,
-        "failed": failed,
+        "historical_passed": passed,
+        "historical_failed": failed,
+        "content_quality": "unassessed", "completion_authority": "adversarial_judge",
         "missing_by_stage": {stage: missing_for_stage(project_dir, stage) for stage in ("L0", "L1", "L2", "L3")},
         "story_contract": str(story_contract_path(project_dir)) if story_contract_path(project_dir).exists() else None,
         "chapter_cards": len(list((project_dir / "章节卡").glob("第*章.json"))) if (project_dir / "章节卡").exists() else 0,
@@ -505,18 +369,16 @@ def command_package(args: argparse.Namespace) -> int:
         num = chapter_number_from_name(chapter_path)
         if num <= 0:
             continue
-        status = read_json(status_path(project_dir, num))
-        if status.get("status") == "passed":
-            chapters.append((num, chapter_path, status))
+        chapters.append((num, chapter_path, audit_text(read_text(chapter_path))))
     if not chapters:
-        print(json.dumps({"ok": False, "error": "no_passed_chapters"}, ensure_ascii=False, indent=2))
+        print(json.dumps({"ok": False, "error": "no_chapter_files"}, ensure_ascii=False, indent=2))
         return 1
     output = Path(args.output).expanduser().resolve() if args.output else project_dir / "发布" / f"{title}_发布包_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
     lines = [
-        "===== 发布包 =====",
+        "===== 待审阅章节汇编 =====",
         f"作品：{title}",
         f"生成时间：{now()}",
-        f"通过章节：{len(chapters)}",
+        f"收录章节：{len(chapters)}",
         "",
     ]
     for num, path, status in chapters:
@@ -528,11 +390,13 @@ def command_package(args: argparse.Namespace) -> int:
             read_text(path).strip(),
             "",
         ])
+    if output.exists() or output.with_suffix(output.suffix + ".sha256.txt").exists():
+        raise FileExistsError(f"Package output exists: {output}")
     write_text(output, "\n".join(lines))
     digest = hashlib.sha256(output.read_bytes()).hexdigest()
     sha_path = output.with_suffix(output.suffix + ".sha256.txt")
     write_text(sha_path, digest + "\n")
-    print(json.dumps({"ok": True, "package": str(output), "sha256": str(sha_path), "digest": digest, "chapters": len(chapters)}, ensure_ascii=False, indent=2))
+    print(json.dumps({"ok": True, "package": str(output), "sha256": str(sha_path), "digest": digest, "chapters": len(chapters), "content_quality": "unassessed", "completion_authority": "adversarial_judge"}, ensure_ascii=False, indent=2))
     return 0
 
 
@@ -585,7 +449,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--project-dir", required=True)
     p.add_argument("--chapter", required=True)
     p.add_argument("--chapter-num", type=int)
-    p.add_argument("--min-chars", type=int, default=2500)
+    p.add_argument("--min-chars", type=int, default=None, help="Optional count observation; never a content approval gate")
     p.set_defaults(func=command_audit)
 
     p = sub.add_parser("contract-check")

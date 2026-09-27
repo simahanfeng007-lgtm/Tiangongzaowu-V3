@@ -165,14 +165,20 @@ const WEB_QA_MODE = Boolean(WEB_QA_TARGET && WEB_QA_WORKSPACE);
 // 7174/7175/7176 are retired listener ports, never a selectable deployment
 // mode.  Startup only clears a verified stale listener left by an old build.
 
-// The application runtime (and legacy diagnostic child processes, when explicitly enabled)
-// must call provider APIs directly. Proxy variables inherited from the host shell can
-// break TLS handshakes and loopback connections.
-for (const key of ["HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"]) {
-  delete process.env[key];
+// Direct networking remains the default. Honour the existing explicit model
+// proxy opt-in while keeping the authenticated loopback gateway off proxies.
+function configureModelNetworkEnvironment(env) {
+  const enabled = /^(1|true|yes|on)$/i.test(String(env.TIANGONG_HTTP_TRUST_ENV || "").trim());
+  if (!enabled) {
+    for (const key of ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"]) delete env[key];
+    env.NO_PROXY = env.no_proxy = "*";
+    return;
+  }
+  const exclusions = new Set([...(String(env.NO_PROXY || "") + "," + String(env.no_proxy || "")).split(",")
+    .map(value => value.trim()).filter(Boolean), "127.0.0.1", "localhost", "::1"]);
+  env.NO_PROXY = env.no_proxy = Array.from(exclusions).join(",");
 }
-process.env.NO_PROXY = "*";
-process.env.no_proxy = "*";
+configureModelNetworkEnvironment(process.env);
 
 let mainWindow = null;
 let backendProcess = null;
@@ -1571,172 +1577,15 @@ function hydrateProviderApiKeys() {
   return { ok: true, count };
 }
 
-function safeProviderErrorCode(value, fallback = "provider_request_failed") {
-  const normalized = String(value || "").replace(/[^A-Za-z0-9_.:-]/g, "").slice(0, 120);
-  return normalized || fallback;
-}
-
-function providerProbeEndpoint(baseUrl, suffix) {
-  const target = new URL(String(baseUrl || "").trim());
-  target.pathname = `${target.pathname.replace(/\/+$/, "")}/${String(suffix || "").replace(/^\/+/, "")}`;
-  target.search = "";
-  target.hash = "";
-  return target;
-}
-
-
-
-
-function requestProviderProbe(url, { method = "GET", apiKey = "", payload = null, headers = {} } = {}) {
-  return new Promise((resolve, reject) => {
-    const started = Date.now();
-    const body = payload ? JSON.stringify(payload) : "";
-    const transport = url.protocol === "http:" ? http : https;
-    const mergedHeaders = {
-      ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
-      ...(headers || {}),
-      ...(body ? { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body) } : {}),
-    };
-    const request = transport.request(url, {
-      method,
-      headers: mergedHeaders,
-      timeout: 15000,
-      rejectUnauthorized: true,
-    }, (response) => {
-      let responseBody = "";
-      response.on("data", (chunk) => {
-        const remaining = 256 * 1024 - responseBody.length;
-        if (remaining > 0) responseBody += String(chunk).slice(0, remaining);
-      });
-      response.on("end", () => resolve({
-        statusCode: response.statusCode || 0,
-        body: responseBody,
-        latencyMs: Date.now() - started,
-      }));
-    });
-    request.on("timeout", () => request.destroy(Object.assign(new Error("request_timeout"), { code: "ETIMEDOUT" })));
-    request.on("error", reject);
-    if (body) request.write(body);
-    request.end();
-  });
-}
-
-// The probe deliberately accepts no renderer-supplied URL or credential.
-// Both come from the committed configuration and OS vault; only bounded,
-// non-secret status is returned to the renderer.
-
-
-
+// Probe through the running backend, which owns saved endpoint identity,
+// migration-compatible credentials, protocol headers and pinned networking.
+// No renderer-supplied endpoint/key or provider response body crosses this IPC.
 async function probeProviderApiConnection() {
-  const settings = await desktopModelSettingsRequest("GET");
-  if (!settings || settings.ok === false) {
-    return { ok: false, error: settings?.error || "model_settings_unavailable" };
+  const result = await backendControlJsonRequest("POST", "/api/v1/llm/probe", {}, 30000);
+  if (result.statusCode < 200 || result.statusCode >= 300 || !result.payload || typeof result.payload !== "object" || Array.isArray(result.payload)) {
+    return { ok: false, error: "model_probe_backend_unavailable", http_status: result.statusCode || null };
   }
-  const provider = String(settings.provider_identity || settings.configured_provider || settings.provider || "custom").trim().toLowerCase();
-  const servicePreset = String(settings.service_preset || settings.modelService || "custom").trim().toLowerCase();
-  const protocolFamily = String(settings.protocol_family || settings.modelProtocol || "openai_chat_completions").trim();
-  const baseUrl = String(settings.base_url || settings.configured_base_url || "").trim();
-  const modelName = String(settings.model_name || settings.configured_model_name || settings.model || "").trim();
-  if (!baseUrl || !modelName) return { ok: false, error: "provider_endpoint_or_model_missing" };
-  if (String(settings.credential_state || "") !== "configured") {
-    return { ok: false, error: "provider_api_key_missing", protocol_family: protocolFamily };
-  }
-
-  let credentialId;
-  let apiKey;
-  try {
-    credentialId = modelCredentialBindingId(provider, baseUrl);
-    const envelope = readDesktopCredentialEnvelope(desktopProviderCredentialsPath());
-    const item = envelope.providers?.[credentialId];
-    if (!item || item.scheme !== "electron-safe-storage-v1" || !safeStorage.isEncryptionAvailable()) {
-      return { ok: false, error: "provider_api_key_missing", protocol_family: protocolFamily };
-    }
-    apiKey = safeStorage.decryptString(Buffer.from(String(item.value || ""), "base64"));
-  } catch (error) {
-    return { ok: false, error: String(error?.message || error || "credential_read_failed"), protocol_family: protocolFamily };
-  }
-  if (!apiKey) return { ok: false, error: "provider_api_key_missing", protocol_family: protocolFamily };
-
-  let suffix;
-  let payload;
-  let requestApiKey = apiKey;
-  let headers = {};
-  if (protocolFamily === "openai_responses") {
-    suffix = "responses";
-    payload = { model: modelName, input: "ping", max_output_tokens: 1, store: false, stream: false };
-  } else if (protocolFamily === "anthropic_messages") {
-    suffix = "v1/messages";
-    payload = { model: modelName, messages: [{ role: "user", content: "ping" }], max_tokens: 1, stream: false };
-    headers = { "anthropic-version": "2023-06-01" };
-    if (servicePreset !== "scnet") {
-      requestApiKey = "";
-      headers["x-api-key"] = apiKey;
-    }
-  } else if (protocolFamily === "openai_chat_completions") {
-    suffix = "chat/completions";
-    payload = { model: modelName, messages: [{ role: "user", content: "ping" }], max_tokens: 1, stream: false };
-  } else {
-    return { ok: false, error: "unsupported_protocol_family", protocol_family: protocolFamily };
-  }
-
-  const endpoint = providerProbeEndpoint(baseUrl, suffix);
-  try {
-    const response = await requestProviderProbe(endpoint, {
-      method: "POST",
-      apiKey: requestApiKey,
-      payload,
-      headers,
-    });
-    const status = Number(response.statusCode || 0);
-    const authValid = ![401, 403].includes(status);
-    const protocolValid = status > 0 && ![404, 405, 415, 422].includes(status) && status < 500;
-    const modelValid = status > 0 && status < 400;
-    return {
-      ok: modelValid,
-      provider_identity: provider,
-      service_preset: servicePreset,
-      protocol_family: protocolFamily,
-      endpoint_reachable: status > 0,
-      auth_valid: authValid,
-      protocol_valid: protocolValid,
-      model_valid: modelValid,
-      streaming_supported: false,
-      native_tools_supported: false,
-      reasoning_control_supported: false,
-      parallel_tool_calls_supported: false,
-      structured_output_supported: false,
-      continuation_supported: false,
-      configured_model_available: modelValid ? true : null,
-      http_status: status,
-      latency_ms: response.latencyMs,
-      probe_evidence: {
-        protocol_family: protocolFamily,
-        endpoint: endpoint.toString(),
-        http_status: status,
-        latency_ms: response.latencyMs,
-        conservative_tool_capability: true,
-      },
-      response_preview: modelValid ? "" : String(response.body || "").slice(0, 500),
-    };
-  } catch (error) {
-    return {
-      ok: false,
-      provider_identity: provider,
-      service_preset: servicePreset,
-      protocol_family: protocolFamily,
-      endpoint_reachable: false,
-      auth_valid: false,
-      protocol_valid: false,
-      model_valid: false,
-      streaming_supported: false,
-      native_tools_supported: false,
-      reasoning_control_supported: false,
-      parallel_tool_calls_supported: false,
-      structured_output_supported: false,
-      continuation_supported: false,
-      error: String(error?.message || error || "provider_probe_failed"),
-    };
-  }
+  return result.payload;
 }
 
 function modelRuntimeServiceName() {
@@ -3561,12 +3410,6 @@ function totalGatewayEnvironment(entry) {
     TIANGONG_ARTIFACT_OPEN_TOKEN: ARTIFACT_OPEN_TOKEN,
     HOME: isolatedHome,
     USERPROFILE: isolatedHome,
-    HTTP_PROXY: "",
-    HTTPS_PROXY: "",
-    http_proxy: "",
-    https_proxy: "",
-    NO_PROXY: "*",
-    no_proxy: "*",
     TIANGONG_GATEWAY_URL: TOTAL_GATEWAY_URL,
     TIANGONG_DESKTOP_STATE_DIR: stateDir,
     TIANGONG_RUN_STATE_DIR: stateDir,
@@ -4162,14 +4005,6 @@ async function startBackend() {
       ...process.env,
       HOME: isolatedHome,
       USERPROFILE: isolatedHome,
-      // Backend must call provider APIs directly; proxy variables inherited
-      // from the host shell can break TLS handshakes (SSL: UNEXPECTED_EOF).
-      HTTP_PROXY: "",
-      HTTPS_PROXY: "",
-      http_proxy: "",
-      https_proxy: "",
-      NO_PROXY: "*",
-      no_proxy: "*",
       HOST: "127.0.0.1",
       PORT: backendPort(),
       TIANGONG_DESKTOP_STATE_DIR: stateDir,

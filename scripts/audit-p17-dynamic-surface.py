@@ -57,12 +57,15 @@ def _classify_env(name: str) -> str:
 
 def scan() -> dict:
     hits: list[dict] = []
+    source_lines: dict[str, list[str]] = {}
     for path in sorted(ROOT.rglob("*.py")):
         if not _authoritative(path):
             continue
         rel = path.relative_to(ROOT).as_posix()
         try:
-            tree = ast.parse(path.read_text(encoding="utf-8"))
+            source = path.read_text(encoding="utf-8")
+            tree = ast.parse(source)
+            source_lines[rel] = source.splitlines()
         except SyntaxError:
             continue
         for node in ast.walk(tree):
@@ -147,7 +150,10 @@ def scan() -> dict:
         verified = ledger.get("annotations", {})
     for hit in hits:
         key = f"{hit['path']}:{hit['line']}"
-        if key in verified:
+        # A moved or changed call cannot inherit review solely from its old
+        # line number. The recorded source line must still be the reviewed one.
+        if (key in verified and verified[key].get("reviewed_line")
+                == source_lines[hit["path"]][hit["line"] - 1].strip()):
             hit["classification"] = "verified"
             hit["verified_category"] = verified[key]["category"]
 
