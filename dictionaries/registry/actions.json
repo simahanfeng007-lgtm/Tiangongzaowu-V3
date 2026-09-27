@@ -14252,7 +14252,7 @@
       "implemented": true,
       "risk": "A2",
       "status": "active",
-      "summary": "Validate the whole story graph and freeze the immutable original blueprint."
+      "summary": "Validate record shapes and references, freeze the original blueprint, and return advisory story observations."
     },
     "novel.blueprint.patch": {
       "effect": "update",
@@ -14307,7 +14307,7 @@
       "implemented": true,
       "risk": "A2",
       "status": "active",
-      "summary": "Validate, score, settle, and atomically commit a chapter and its factual delta."
+      "summary": "Record chapter bytes and caller annotations with version checks and recoverable transactions; content remains unassessed."
     },
     "novel.context.query": {
       "effect": "read",
@@ -14318,7 +14318,7 @@
       "implemented": true,
       "risk": "A1",
       "status": "active",
-      "summary": "Retrieve authoritative character, event, relationship, foreshadow, chapter, or emotion context."
+      "summary": "Retrieve recorded character, event, relationship, foreshadow, chapter, or emotion context with caller provenance."
     },
     "novel.mobility.align_initial_many": {
       "effect": "update",
@@ -14340,7 +14340,7 @@
       "implemented": true,
       "risk": "A2",
       "status": "active",
-      "summary": "Replan future events and chapters against accepted facts while preserving protected anchors."
+      "summary": "Replan future events and chapters against recorded state while preserving protected anchors."
     },
     "novel.project.audit": {
       "effect": "read",
@@ -14406,7 +14406,7 @@
       "implemented": true,
       "risk": "A2",
       "status": "active",
-      "summary": "Score 2-3 emotional payoff candidates and bind the strongest valid scene to a chapter."
+      "summary": "Record the caller-selected scene using selected_index and expected_state_hash; no score or quality decision."
     },
     "novel.timeline.calculate": {
       "effect": "read",
@@ -14428,7 +14428,7 @@
       "implemented": true,
       "risk": "A2",
       "status": "active",
-      "summary": "Atomically resolve all currently deterministic overlap and travel-gap conflicts with strictly improving suffix shifts."
+      "summary": "Atomically resolve all currently deterministic overlap and travel-gap conflicts using explicit suffix shifts; report remaining observations."
     },
     "novel.timeline.shift_suffix": {
       "effect": "update",

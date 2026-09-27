@@ -17864,10 +17864,10 @@
       "runtime": {
         "implemented": false,
         "risk": "A2",
-        "status": "active",
-        "summary": "Native Excel chart requirement retained, backend not implemented. A PDF export script is not a chart operation. Discover a configured Excel MCP backend.",
+        "rollback_status": "not_implemented",
         "rollback_supported": false,
-        "rollback_status": "not_implemented"
+        "status": "active",
+        "summary": "Native Excel chart requirement retained, backend not implemented. A PDF export script is not a chart operation. Discover a configured Excel MCP backend."
       },
       "summary": "Native Excel chart requirement retained, backend not implemented. A PDF export script is not a chart operation. Discover a configured Excel MCP backend.",
       "version": "2.0.0"
@@ -18773,10 +18773,10 @@
       "runtime": {
         "implemented": true,
         "risk": "A2",
-        "status": "active",
-        "summary": "Export PPTX using native Windows PowerPoint COM with args.execute=true and a fresh args.output PDF, then reopen the result. Missing native environment fails.",
+        "rollback_status": "external_effect_requires_reconciliation",
         "rollback_supported": false,
-        "rollback_status": "external_effect_requires_reconciliation"
+        "status": "active",
+        "summary": "Export PPTX using native Windows PowerPoint COM with args.execute=true and a fresh args.output PDF, then reopen the result. Missing native environment fails."
       },
       "summary": "Export PPTX using native Windows PowerPoint COM with args.execute=true and a fresh args.output PDF, then reopen the result. Missing native environment fails.",
       "version": "2.0.0"
@@ -19598,10 +19598,10 @@
       "runtime": {
         "implemented": true,
         "risk": "A2",
-        "status": "active",
-        "summary": "Export DOCX using native Windows Word COM with args.execute=true and a fresh args.output PDF, then reopen the result. Missing native environment fails; no generated-script success.",
+        "rollback_status": "external_effect_requires_reconciliation",
         "rollback_supported": false,
-        "rollback_status": "external_effect_requires_reconciliation"
+        "status": "active",
+        "summary": "Export DOCX using native Windows Word COM with args.execute=true and a fresh args.output PDF, then reopen the result. Missing native environment fails; no generated-script success."
       },
       "summary": "Export DOCX using native Windows Word COM with args.execute=true and a fresh args.output PDF, then reopen the result. Missing native environment fails; no generated-script success.",
       "version": "2.0.0"
@@ -20321,7 +20321,7 @@
         "summary": "Calculate dependency-ordered repair batches, error energy, ages, and reference suggestions."
       },
       "summary": "Calculate dependency-ordered repair batches, error energy, ages, and reference suggestions.",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "novel.blueprint.compile": {
       "binding": {
@@ -20340,10 +20340,10 @@
         "implemented": true,
         "risk": "A2",
         "status": "active",
-        "summary": "Validate the whole story graph and freeze the immutable original blueprint."
+        "summary": "Validate record shapes and references, freeze the original blueprint, and return advisory story observations."
       },
-      "summary": "Validate the whole story graph and freeze the immutable original blueprint.",
-      "version": "1.0.0"
+      "summary": "Validate record shapes and references, freeze the original blueprint, and return advisory story observations.",
+      "version": "2.0.0"
     },
     "novel.blueprint.patch": {
       "binding": {
@@ -20365,7 +20365,7 @@
         "summary": "Merge one staged blueprint object or selected item without replacing its whole section."
       },
       "summary": "Merge one staged blueprint object or selected item without replacing its whole section.",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "novel.blueprint.update": {
       "binding": {
@@ -20387,7 +20387,7 @@
         "summary": "Replace one strongly typed staged blueprint section before compilation."
       },
       "summary": "Replace one strongly typed staged blueprint section before compilation.",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "novel.blueprint.upsert_many": {
       "binding": {
@@ -20409,7 +20409,7 @@
         "summary": "Merge a batch of blueprint list items by canonical id or chapter number without dropping existing items."
       },
       "summary": "Merge a batch of blueprint list items by canonical id or chapter number without dropping existing items.",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "novel.chapter.checkout": {
       "binding": {
@@ -20431,7 +20431,7 @@
         "summary": "Issue a state-hash-bound chapter lease and compiled writing context."
       },
       "summary": "Issue a state-hash-bound chapter lease and compiled writing context.",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "novel.chapter.submit": {
       "binding": {
@@ -20450,10 +20450,10 @@
         "implemented": true,
         "risk": "A2",
         "status": "active",
-        "summary": "Validate, score, settle, and atomically commit a chapter and its factual delta."
+        "summary": "Record chapter bytes and caller annotations with version checks and recoverable transactions; content remains unassessed."
       },
-      "summary": "Validate, score, settle, and atomically commit a chapter and its factual delta.",
-      "version": "1.0.0"
+      "summary": "Record chapter bytes and caller annotations with version checks and recoverable transactions; content remains unassessed.",
+      "version": "2.0.0"
     },
     "novel.context.query": {
       "binding": {
@@ -20472,10 +20472,10 @@
         "implemented": true,
         "risk": "A1",
         "status": "active",
-        "summary": "Retrieve authoritative character, event, relationship, foreshadow, chapter, or emotion context."
+        "summary": "Retrieve recorded character, event, relationship, foreshadow, chapter, or emotion context with caller provenance."
       },
-      "summary": "Retrieve authoritative character, event, relationship, foreshadow, chapter, or emotion context.",
-      "version": "1.0.0"
+      "summary": "Retrieve recorded character, event, relationship, foreshadow, chapter, or emotion context with caller provenance.",
+      "version": "2.0.0"
     },
     "novel.mobility.align_initial_many": {
       "binding": {
@@ -20497,7 +20497,7 @@
         "summary": "Atomically align multiple character initial locations to their calculated first physical scenes."
       },
       "summary": "Atomically align multiple character initial locations to their calculated first physical scenes.",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "novel.plan.rebase": {
       "binding": {
@@ -20516,10 +20516,10 @@
         "implemented": true,
         "risk": "A2",
         "status": "active",
-        "summary": "Replan future events and chapters against accepted facts while preserving protected anchors."
+        "summary": "Replan future events and chapters against recorded state while preserving protected anchors."
       },
-      "summary": "Replan future events and chapters against accepted facts while preserving protected anchors.",
-      "version": "1.0.0"
+      "summary": "Replan future events and chapters against recorded state while preserving protected anchors.",
+      "version": "2.0.0"
     },
     "novel.project.audit": {
       "binding": {
@@ -20541,7 +20541,7 @@
         "summary": "Audit blueprint integrity, state hashes, event deadlines, and accepted chapter files."
       },
       "summary": "Audit blueprint integrity, state hashes, event deadlines, and accepted chapter files.",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "novel.project.create": {
       "binding": {
@@ -20563,7 +20563,7 @@
         "summary": "Create a managed long-form novel project and its canonical state directories."
       },
       "summary": "Create a managed long-form novel project and its canonical state directories.",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "novel.project.recover": {
       "binding": {
@@ -20585,7 +20585,7 @@
         "summary": "Finish idempotent prepared chapter transactions after interruption."
       },
       "summary": "Finish idempotent prepared chapter transactions after interruption.",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "novel.project.status": {
       "binding": {
@@ -20607,7 +20607,7 @@
         "summary": "Read canonical novel progress, open event debt, and emotional triggers."
       },
       "summary": "Read canonical novel progress, open event debt, and emotional triggers.",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "novel.reference.resolve": {
       "binding": {
@@ -20629,7 +20629,7 @@
         "summary": "Resolve human labels to exact canonical ids or ranked non-authoritative suggestions."
       },
       "summary": "Resolve human labels to exact canonical ids or ranked non-authoritative suggestions.",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "novel.scene.design": {
       "binding": {
@@ -20648,10 +20648,10 @@
         "implemented": true,
         "risk": "A2",
         "status": "active",
-        "summary": "Score 2-3 emotional payoff candidates and bind the strongest valid scene to a chapter."
+        "summary": "Record the caller-selected scene using selected_index and expected_state_hash; no score or quality decision."
       },
-      "summary": "Score 2-3 emotional payoff candidates and bind the strongest valid scene to a chapter.",
-      "version": "1.0.0"
+      "summary": "Record the caller-selected scene using selected_index and expected_state_hash; no score or quality decision.",
+      "version": "2.0.0"
     },
     "novel.timeline.calculate": {
       "binding": {
@@ -20673,7 +20673,7 @@
         "summary": "Calculate age, earliest route arrival, or interval overlap without changing the story."
       },
       "summary": "Calculate age, earliest route arrival, or interval overlap without changing the story.",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "novel.timeline.normalize": {
       "binding": {
@@ -20692,10 +20692,10 @@
         "implemented": true,
         "risk": "A2",
         "status": "active",
-        "summary": "Atomically resolve all currently deterministic overlap and travel-gap conflicts with strictly improving suffix shifts."
+        "summary": "Atomically resolve all currently deterministic overlap and travel-gap conflicts using explicit suffix shifts; report remaining observations."
       },
-      "summary": "Atomically resolve all currently deterministic overlap and travel-gap conflicts with strictly improving suffix shifts.",
-      "version": "1.0.0"
+      "summary": "Atomically resolve all currently deterministic overlap and travel-gap conflicts using explicit suffix shifts; report remaining observations.",
+      "version": "2.0.0"
     },
     "novel.timeline.shift_suffix": {
       "binding": {
@@ -20717,7 +20717,7 @@
         "summary": "Atomically insert time before a pivot event by shifting its chronological suffix and recomputing chapter intervals."
       },
       "summary": "Atomically insert time before a pivot event by shifting its chronological suffix and recomputing chapter intervals.",
-      "version": "1.0.0"
+      "version": "2.0.0"
     },
     "obsidian.graph.export": {
       "binding": {
@@ -28087,5 +28087,5 @@
       "version": "1.0.0"
     }
   },
-  "version": "2026.09.27.3"
+  "version": "2026.09.27.4"
 }

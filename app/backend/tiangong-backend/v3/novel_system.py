@@ -1,8 +1,10 @@
 """Authoritative managed-novel transaction engine for Tiangong v3.
 
 The language model proposes prose and structured deltas.  This module owns the
-canonical project graph, validates deterministic continuity constraints, issues
-state-bound leases, and commits accepted chapters atomically.  It deliberately
+canonical project records, validates record shape and versions, issues
+state-bound leases, and records chapters with recoverable transactions. Story
+annotations are supplied by the caller; only the adversarial judge decides
+whether prose meets the user's goal. This module deliberately
 uses only the Python standard library so the Windows desktop source runtime and
 frozen backend share the same authority semantics.
 """
@@ -26,7 +28,7 @@ from typing import Any, Iterable, Iterator, Mapping, MutableMapping, Sequence
 import uuid
 
 
-SYSTEM_VERSION = "3.0.3-reconstructed-authoritative"
+SYSTEM_VERSION = "3.1.0-observation-and-transaction"
 BLUEPRINT_SECTIONS = (
     "story",
     "characters",
@@ -61,18 +63,6 @@ LIST_SECTIONS = frozenset(
 OBJECT_SECTIONS = frozenset({"story", "world", "calendar", "settings"})
 STATE_FIELDS = frozenset({"alive", "location", "realm", "injuries", "inventory", "knowledge"})
 EVENT_STATUSES = frozenset({"progressed", "turned", "closed"})
-REQUIRED_SCENE_SCORES = (
-    "surprise",
-    "retrospective_inevitability",
-    "consequence",
-    "character_relevance",
-    "causality_support",
-    "attachment",
-    "agency",
-    "irreversibility",
-    "callbacks",
-    "restraint",
-)
 _SAFE_TITLE_RE = re.compile(r"[^\w\-\u4e00-\u9fff]+", re.UNICODE)
 _GLOBAL_LOCKS: dict[str, threading.RLock] = {}
 _GLOBAL_LOCKS_GUARD = threading.Lock()
@@ -376,22 +366,16 @@ class NovelSystemEngine:
 
     @staticmethod
     def _success(status: str, **values: Any) -> dict[str, Any]:
-        return {"success": True, "ok": True, "status": status, **values}
+        return {"success": True, "ok": True, "status": status,
+                "content_quality": "unassessed", "completion_authority": "adversarial_judge", **values}
 
     def create_project(self, args: Mapping[str, Any]) -> dict[str, Any]:
         title = str(args.get("title") or "").strip()
         genre = str(args.get("genre") or "").strip()
         planned = _safe_int(args.get("planned_chapters"), 0)
         target_words = _safe_int(args.get("target_words"), 0)
-        if not title or not genre or planned < 1 or target_words < 1000:
+        if not title or not genre or planned < 1 or target_words < 1:
             raise NovelSystemError("INVALID_PROJECT_ARGUMENTS", "title, genre, planned_chapters, and target_words are required")
-        minimum = math.ceil(target_words / 5000)
-        if planned < minimum:
-            raise NovelSystemError(
-                "INVALID_FULL_BOOK_PLAN",
-                "planned_chapters must describe the full book",
-                details={"planned_chapters": planned, "target_words": target_words, "minimum_chapters": minimum},
-            )
         with self._thread_lock:
             if self.manifest_path.exists():
                 raise NovelSystemError("NOVEL_PROJECT_ALREADY_EXISTS", "Managed novel project already exists", details={"project_root": str(self.root)})
@@ -477,7 +461,8 @@ class NovelSystemEngine:
             active_leases=leases,
             prepared_transactions=prepared,
             recovery_required=bool(prepared),
-            complete=bool(state and _safe_int(state.get("next_chapter"), 1) > _safe_int(manifest.get("planned_chapters"), 0)),
+            all_planned_chapters_recorded=bool(state and _safe_int(state.get("next_chapter"), 1) > _safe_int(manifest.get("planned_chapters"), 0)),
+            content_quality="unassessed", completion_authority="adversarial_judge",
         )
 
     def update_blueprint(self, args: Mapping[str, Any]) -> dict[str, Any]:
@@ -597,23 +582,6 @@ class NovelSystemEngine:
                 rows.sort(key=lambda row: _safe_int(row.get("number"), 0) if isinstance(row, Mapping) else 0)
             blueprint[section] = rows
             after_report = self._blueprint_report(blueprint)
-            full_before = not before_report["coverage_incomplete"]
-            if full_before and section == "plot_events":
-                chapter_ids = {
-                    event_id
-                    for chapter in blueprint.get("chapters") or []
-                    if isinstance(chapter, Mapping)
-                    for event_id in chapter.get("event_ids") or []
-                }
-                unreferenced = [value for value in assigned if value not in chapter_ids]
-                if unreferenced:
-                    raise NovelSystemError("UNREFERENCED_EVENT_FORBIDDEN", "New plot events must be referenced by an existing chapter after coverage is complete", details={"event_ids": unreferenced})
-            if full_before and after_report["energy"] > before_report["energy"]:
-                raise NovelSystemError(
-                    "BLUEPRINT_ENERGY_REGRESSION",
-                    "Repair batch increased deterministic blueprint error energy",
-                    details={"energy_before": before_report["energy"], "energy_after": after_report["energy"], "issues": after_report["issues"]},
-                )
             revision = self._commit_blueprint(manifest, blueprint)
         return self._success(
             "BLUEPRINT_BATCH_UPSERTED",
@@ -634,12 +602,11 @@ class NovelSystemEngine:
         target_words = _safe_int(project.get("target_words"), 0)
         for section in REQUIRED_SECTIONS:
             value = blueprint.get(section)
-            if not value:
-                issues.append(_Issue("MISSING_SECTION", f"Required section is empty: {section}", section, 40, {"action": "novel.blueprint.update", "section": section}))
-        if planned < 1 or target_words < 1000:
+            expected_type = list if section in LIST_SECTIONS else dict
+            if not isinstance(value, expected_type):
+                issues.append(_Issue("INVALID_SECTION_TYPE", f"{section} must be a {expected_type.__name__}", section, 40))
+        if planned < 1 or target_words < 1:
             issues.append(_Issue("INVALID_PROJECT_SCOPE", "Project scope is missing", "project", 100))
-        elif planned < math.ceil(target_words / 5000):
-            issues.append(_Issue("CHAPTER_SCOPE_TOO_SMALL", "Full-book chapter count is too small for target words", "project.planned_chapters", 100))
 
         def indexed(section: str, key: str = "id") -> tuple[dict[Any, Mapping[str, Any]], list[Any]]:
             mapping: dict[Any, Mapping[str, Any]] = {}
@@ -653,7 +620,7 @@ class NovelSystemEngine:
                     issues.append(_Issue("INVALID_ITEM", f"{section}[{position}] must be an object", f"{section}[{position}]", 30))
                     continue
                 value = item.get(key)
-                if value in (None, ""):
+                if (key == "number" and (type(value) is not int or value < 1)) or (key == "id" and (not isinstance(value, str) or not value)):
                     issues.append(_Issue("MISSING_CANONICAL_KEY", f"{section}[{position}] is missing {key}", f"{section}[{position}].{key}", 20))
                     continue
                 if value in mapping:
@@ -678,8 +645,8 @@ class NovelSystemEngine:
         referenced_event_ids: set[str] = set()
         for number, chapter in chapters.items():
             event_ids = chapter.get("event_ids") or []
-            if not isinstance(event_ids, list) or not event_ids:
-                issues.append(_Issue("CHAPTER_WITHOUT_EVENTS", f"Chapter {number} has no event_ids", f"chapters.{number}.event_ids", 30))
+            if not isinstance(event_ids, list) or any(not isinstance(item, str) for item in event_ids):
+                issues.append(_Issue("INVALID_EVENT_LIST", f"Chapter {number} event_ids must be a string array", f"chapters.{number}.event_ids", 30))
                 continue
             for event_id in event_ids:
                 referenced_event_ids.add(str(event_id))
@@ -792,8 +759,15 @@ class NovelSystemEngine:
         }
         coverage_incomplete = bool(missing_chapters or extra_chapters or len(chapters) != planned)
         sorted_issues = sorted(issues, key=lambda item: (-item.weight, item.code, item.path))
+        advisory_codes = {"UNREFERENCED_EVENT", "INITIAL_LOCATION_MISMATCH", "PARTICIPANT_EVENT_OVERLAP",
+                          "MISSING_ROUTE", "INSUFFICIENT_TRAVEL_TIME", "AGE_MISMATCH"}
+        contract_issues = [item.to_dict() for item in sorted_issues if item.code not in advisory_codes]
+        observations = [item.to_dict() for item in sorted_issues if item.code in advisory_codes]
         return {
             "energy": sum(item.weight for item in sorted_issues),
+            "energy_scope": "legacy_diagnostic_only_not_a_quality_gate",
+            "contract_issues": contract_issues, "observations": observations,
+            "content_quality": "unassessed", "completion_authority": "adversarial_judge",
             "issues": [item.to_dict() for item in sorted_issues],
             "coverage": coverage,
             "coverage_incomplete": coverage_incomplete,
@@ -803,12 +777,6 @@ class NovelSystemEngine:
         self._manifest()
         blueprint = self._blueprint(rolling=False)
         report = self._blueprint_report(blueprint)
-        if report["coverage_incomplete"]:
-            raise NovelSystemError(
-                "BLUEPRINT_BUILDING",
-                "Full-book chapter coverage must be completed before deterministic assistance",
-                details={**report, "convergence": "building", "next_action": "novel.blueprint.upsert_many"},
-            )
         previous = args.get("previous_energy")
         if previous is None:
             convergence = "baseline"
@@ -828,12 +796,13 @@ class NovelSystemEngine:
             energy=report["energy"],
             previous_energy=previous,
             convergence=convergence,
-            ready_for_compile=report["energy"] == 0,
+            ready_for_compile=not report["contract_issues"],
+            observations=report["observations"], content_quality="unassessed",
             issues=report["issues"],
             repair_batch=repair_batch,
             repair_sequence=[item["repair"] for item in repair_batch],
             coverage=report["coverage"],
-            next_action="novel.blueprint.compile" if report["energy"] == 0 else (repair_batch[0]["repair"].get("action") if repair_batch else "novel.blueprint.patch"),
+            next_action="novel.blueprint.compile" if not report["contract_issues"] else (repair_batch[0]["repair"].get("action") if repair_batch else "novel.blueprint.patch"),
         )
 
     @staticmethod
@@ -1019,8 +988,6 @@ class NovelSystemEngine:
                 shifts.append({"pivot_event_id": pivot_id, "delta_ticks": delta})
             after_report = self._blueprint_report(blueprint)
             after = after_report["energy"]
-            if shifts and after >= before:
-                raise NovelSystemError("NORMALIZATION_NOT_IMPROVING", "Deterministic normalization did not reduce error energy", details={"energy_before": before, "energy_after": after})
             revision = self._commit_blueprint(manifest, blueprint) if shifts else _safe_int(manifest.get("blueprint_revision"), 0)
         return self._success("TIMELINE_NORMALIZED", revision=revision, reason=reason, shifts=shifts, energy_before=before, energy_after=after, convergence="improving" if after < before else "stable", remaining_issues=after_report["issues"])
 
@@ -1048,8 +1015,6 @@ class NovelSystemEngine:
                 initial["location"] = location
                 changed.append({"character_id": character_id, "location": location})
             after_report = self._blueprint_report(blueprint)
-            if after_report["energy"] >= before:
-                raise NovelSystemError("INITIAL_ALIGNMENT_NOT_IMPROVING", "Initial-location alignment must strictly reduce error energy", details={"energy_before": before, "energy_after": after_report["energy"]})
             revision = self._commit_blueprint(manifest, blueprint)
         return self._success("INITIAL_LOCATIONS_ALIGNED", revision=revision, items=changed, energy_before=before, energy_after=after_report["energy"], convergence="improving")
 
@@ -1062,8 +1027,8 @@ class NovelSystemEngine:
             self._check_revision(manifest, args.get("expected_revision"))
             blueprint = self._blueprint(rolling=False)
             report = self._blueprint_report(blueprint)
-            if report["coverage_incomplete"] or report["energy"]:
-                raise NovelSystemError("BLUEPRINT_COMPILE_REJECTED", "Blueprint has unresolved deterministic issues", details=report)
+            if report["contract_issues"]:
+                raise NovelSystemError("BLUEPRINT_COMPILE_REJECTED", "Blueprint has invalid record shapes or references", details=report)
             original = deepcopy(blueprint)
             rolling = deepcopy(blueprint)
             characters_state = {}
@@ -1182,13 +1147,16 @@ class NovelSystemEngine:
             state = self._state()
             expected = _safe_int(state.get("next_chapter"), 1)
             planned = _safe_int(manifest.get("planned_chapters"), 0)
-            if expected > planned:
-                raise NovelSystemError("NOVEL_ALREADY_COMPLETE", "All planned chapters are accepted")
-            if chapter_number != expected:
+            revision_of = args.get("revision_of")
+            ledger = self._ledger()
+            revising = bool(revision_of)
+            if revising and (not ledger or chapter_number != expected - 1 or ledger[-1].get("sha256") != revision_of):
+                raise NovelSystemError("CHAPTER_REVISION_CONFLICT", "Only the latest recorded chapter can be revised against its current byte hash")
+            if expected > planned and not revising:
+                raise NovelSystemError("CHAPTER_PLAN_EXHAUSTED", "All planned slots are recorded; use revision_of for a last-chapter repair")
+            if chapter_number != expected and not revising:
                 raise NovelSystemError("OUT_OF_ORDER_CHAPTER", "Only the canonical next chapter may be checked out", details={"requested": chapter_number, "next_chapter": expected})
             trigger = self._active_trigger_due(state, chapter_number)
-            if trigger:
-                raise NovelSystemError("EMOTIONAL_SCENE_DESIGN_REQUIRED", "A due emotional trigger must be designed before checkout", details={"trigger": dict(trigger), "next_action": "novel.scene.design"})
             blueprint = self._blueprint()
             chapter = next((item for item in blueprint.get("chapters") or [] if isinstance(item, Mapping) and item.get("number") == chapter_number), None)
             if chapter is None:
@@ -1203,10 +1171,11 @@ class NovelSystemEngine:
             lease_id = f"lease_{uuid.uuid4().hex}"
             expires_epoch = time.time() + 4 * 60 * 60
             lease = {
-                "schema": "tiangong.novel.chapter-lease.v1",
+                "schema": "tiangong.novel.chapter-lease.v2",
                 "lease_id": lease_id,
                 "chapter_number": chapter_number,
                 "pre_state_hash": state["state_hash"],
+                "revision_of": revision_of if revising else None,
                 "rolling_blueprint_hash": _blueprint_hash(blueprint),
                 "issued_at": _utc_now(),
                 "expires_at": datetime.fromtimestamp(expires_epoch, timezone.utc).isoformat().replace("+00:00", "Z"),
@@ -1222,98 +1191,83 @@ class NovelSystemEngine:
             rolling_blueprint_hash=lease["rolling_blueprint_hash"],
             expires_at=lease["expires_at"],
             chapter_card=dict(chapter),
+            revision_of=lease.get("revision_of"),
+            revision_scope="latest chapter prose only; use empty actual; prior annotations retained" if revising else None,
             relevant={"events": events, "characters": characters, "locations": locations, "character_state": {key: value for key, value in (state.get("characters") or {}).items() if key in participant_ids}},
             due_open_events=due_events,
+            historical_emotional_trigger=dict(trigger) if trigger else None,
+            content_quality="unassessed", completion_authority="adversarial_judge",
             selected_scenes=selected_scenes,
             recent_summaries=list(state.get("recent_summaries") or [])[-3:],
             next_action="novel.chapter.submit",
         )
 
-    @staticmethod
-    def _deviation_score(chapter: Mapping[str, Any], actual: Mapping[str, Any]) -> int:
-        planned_events = set(str(item) for item in chapter.get("event_ids") or [])
-        actual_events = {str(item.get("id")) for item in actual.get("events") or [] if isinstance(item, Mapping)}
-        planned_participants = set(str(item) for item in chapter.get("participants") or [])
-        actual_participants = {str(participant) for event in actual.get("events") or [] if isinstance(event, Mapping) for participant in event.get("participants") or []}
-        planned_locations = set(str(item) for item in chapter.get("locations") or [])
-        actual_locations = {str(event.get("location")) for event in actual.get("events") or [] if isinstance(event, Mapping) and event.get("location")}
-        planned_outcomes = set(str(item) for item in chapter.get("required_outcomes") or [])
-        actual_outcomes = {str(tag) for event in actual.get("events") or [] if isinstance(event, Mapping) for tag in event.get("outcome_tags") or []}
-        planned_themes = set(str(item) for item in chapter.get("theme_tags") or [])
-        actual_themes = set(str(item) for item in actual.get("theme_tags") or [])
-
-        def distance(left: set[str], right: set[str]) -> float:
-            if not left and not right:
-                return 0.0
-            return len(left ^ right) / max(1, len(left | right))
-
-        weighted = (
-            0.35 * distance(planned_events, actual_events)
-            + 0.15 * distance(planned_participants, actual_participants)
-            + 0.10 * distance(planned_locations, actual_locations)
-            + 0.25 * distance(planned_outcomes, actual_outcomes)
-            + 0.15 * distance(planned_themes, actual_themes)
-        )
-        return min(100, round(weighted * 100))
-
     def _validate_submission(
-        self,
-        *,
-        blueprint: Mapping[str, Any],
-        state: Mapping[str, Any],
-        chapter: Mapping[str, Any],
-        content: str,
-        actual: Mapping[str, Any],
-    ) -> tuple[int, list[dict[str, Any]]]:
+        self, *, blueprint: Mapping[str, Any], state: Mapping[str, Any],
+        chapter: Mapping[str, Any], content: str, actual: Mapping[str, Any],
+    ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        """Validate record shape/CAS; prose quality belongs to the final judge."""
         problems: list[dict[str, Any]] = []
-        settings = blueprint.get("settings") if isinstance(blueprint.get("settings"), Mapping) else {}
-        minimum = max(200, _safe_int(settings.get("min_chapter_chars"), 2500))
-        cjk_chars = _count_cjk(content)
-        if cjk_chars < minimum:
-            problems.append({"code": "CHAPTER_TOO_SHORT", "actual": cjk_chars, "minimum": minimum})
-        planned_ids = set(str(item) for item in chapter.get("event_ids") or [])
-        actual_events = [item for item in actual.get("events") or [] if isinstance(item, Mapping)]
-        actual_by_id = {str(item.get("id")): item for item in actual_events}
-        missing = sorted(planned_ids - set(actual_by_id))
-        if missing:
-            problems.append({"code": "PLANNED_EVENTS_MISSING", "event_ids": missing})
-        known_events = {str(item.get("id")): item for item in blueprint.get("plot_events") or [] if isinstance(item, Mapping)}
-        for event_id, event in actual_by_id.items():
-            if event_id not in known_events and not event.get("unplanned"):
-                problems.append({"code": "UNPLANNED_EVENT_NOT_DECLARED", "event_id": event_id})
-            if event.get("status") not in EVENT_STATUSES:
-                problems.append({"code": "INVALID_EVENT_STATUS", "event_id": event_id})
-            for term in event.get("evidence_terms") or []:
-                if str(term) not in content:
-                    problems.append({"code": "MISSING_EVENT_EVIDENCE", "event_id": event_id, "term": term})
-        current_chapter = _safe_int(chapter.get("number"), 0)
-        for event_id, event_state in (state.get("events") or {}).items():
-            if not isinstance(event_state, Mapping) or event_state.get("status") == "closed":
-                continue
-            due = _safe_int(event_state.get("deadline_chapter"), 10**9)
-            if event_state.get("closure_required") and due <= current_chapter:
-                actual_event = actual_by_id.get(str(event_id))
-                if not actual_event or actual_event.get("status") != "closed":
-                    problems.append({"code": "OVERDUE_EVENT_NOT_CLOSED", "event_id": event_id, "deadline_chapter": due})
-        for change in actual.get("state_changes") or []:
-            if not isinstance(change, Mapping):
-                continue
-            character_id, field = str(change.get("character_id") or ""), str(change.get("field") or "")
-            if character_id not in (state.get("characters") or {}):
+        for field in ("events", "state_changes", "relationship_changes", "foreshadow_ops", "emotional_transactions"):
+            values = actual.get(field, [])
+            if not isinstance(values, list) or any(not isinstance(item, Mapping) for item in values):
+                problems.append({"code": "INVALID_DELTA_LIST", "field": field})
+        if problems:
+            return {}, problems
+        events = actual.get("events", [])
+        event_ids = [event.get("id") for event in events]
+        if any(not isinstance(value, str) or not value.strip() for value in event_ids):
+            problems.append({"code": "INVALID_EVENT_ID"})
+        elif len(event_ids) != len(set(event_ids)):
+            problems.append({"code": "DUPLICATE_EVENT_ID"})
+        for event in events:
+            if not isinstance(event.get("status"), str) or event["status"] not in EVENT_STATUSES:
+                problems.append({"code": "INVALID_EVENT_STATUS", "event_id": event.get("id")})
+            for field in ("participants", "outcome_tags", "evidence_terms"):
+                value = event.get(field, [])
+                if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
+                    problems.append({"code": "INVALID_EVENT_LIST", "field": field})
+            for field in ("start_tick", "duration_ticks"):
+                if field in event and (type(event[field]) is not int or (field == "duration_ticks" and event[field] < 1)):
+                    problems.append({"code": "INVALID_EVENT_TIME", "field": field})
+        for change in actual.get("state_changes", []):
+            character_id, field = change.get("character_id"), change.get("field")
+            if not isinstance(character_id, str) or character_id not in state.get("characters", {}):
                 problems.append({"code": "UNKNOWN_STATE_CHARACTER", "character_id": character_id})
-            if field not in STATE_FIELDS:
+                continue
+            if not isinstance(field, str) or field not in STATE_FIELDS:
                 problems.append({"code": "UNSUPPORTED_STATE_FIELD", "field": field})
-            current = (state.get("characters") or {}).get(character_id, {}).get(field)
-            if "from" in change and change.get("from") != current:
-                problems.append({"code": "STATE_PRECONDITION_MISMATCH", "character_id": character_id, "field": field, "expected": change.get("from"), "actual": current})
-        deviation = self._deviation_score(chapter, actual)
-        if deviation >= 65:
-            proof = actual.get("convergence_proof")
-            protected = set(str(item) for item in state.get("protected_anchor_ids") or [])
-            maintained = set(str(item) for item in (proof or {}).get("maintained_anchor_ids") or []) if isinstance(proof, Mapping) else set()
-            if not isinstance(proof, Mapping) or not protected.issubset(maintained) or not _non_empty(proof.get("return_path")):
-                problems.append({"code": "HIGH_DEVIATION_REQUIRES_CONVERGENCE_PROOF", "deviation_score": deviation, "missing_anchor_ids": sorted(protected - maintained)})
-        return deviation, problems
+                continue
+            current = state["characters"][character_id].get(field)
+            if "from" in change and change["from"] != current:
+                problems.append({"code": "STATE_PRECONDITION_MISMATCH", "character_id": character_id, "field": field})
+            operation = change.get("op", "set")
+            list_field = field in {"injuries", "inventory", "knowledge"}
+            if not isinstance(operation, str) or operation not in {"set", "add", "remove"}:
+                problems.append({"code": "INVALID_STATE_OPERATION"})
+            elif operation in {"add", "remove"}:
+                if not list_field or not isinstance(change.get("items"), list) or not isinstance(current, list):
+                    problems.append({"code": "INVALID_STATE_LIST_CHANGE", "field": field})
+            elif ("to" not in change or (list_field and not isinstance(change["to"], list))
+                  or (field == "alive" and type(change["to"]) is not bool)
+                  or (field in {"location", "realm"} and not isinstance(change["to"], str))):
+                problems.append({"code": "INVALID_STATE_VALUE", "field": field})
+        if problems:
+            return {}, problems
+        settings = blueprint.get("settings") if isinstance(blueprint.get("settings"), Mapping) else {}
+        planned_ids = {str(value) for value in chapter.get("event_ids", [])}
+        supplied_ids = set(event_ids)
+        observations = {
+            "cjk_chars": _count_cjk(content), "content_sha256": _sha256(content),
+            "configured_min_chapter_chars": settings.get("min_chapter_chars"),
+            "planned_event_ids_not_reported": sorted(planned_ids - supplied_ids),
+            "reported_event_ids_outside_plan": sorted(supplied_ids - planned_ids),
+            "literal_evidence_matches": [{"event_id": event["id"], "term": term, "present": term in content}
+                for event in events for term in event.get("evidence_terms", [])],
+            "reported_delta_source": "caller_supplied_story_annotations_not_verified_prose_facts",
+            "content_quality": "unassessed", "completion_authority": "adversarial_judge",
+        }
+        return observations, []
 
     @staticmethod
     def _apply_state_changes(state: MutableMapping[str, Any], changes: Sequence[Any]) -> None:
@@ -1337,43 +1291,15 @@ class NovelSystemEngine:
                     current = [item for item in current if item not in items]
                 character[field] = current
 
-    def _apply_emotions(self, state: MutableMapping[str, Any], actual: Mapping[str, Any], chapter_number: int, content: str, settings: Mapping[str, Any]) -> list[dict[str, Any]]:
-        created_triggers = []
-        accounts = state.setdefault("emotional_accounts", {})
-        triggers = state.setdefault("emotional_triggers", {})
-        threshold = float(settings.get("emotional_trigger_threshold") or 70)
-        for transaction in actual.get("emotional_transactions") or []:
-            if not isinstance(transaction, Mapping):
-                continue
-            account_id = str(transaction.get("account_id") or "")
-            account = accounts.get(account_id)
-            if not isinstance(account, MutableMapping):
-                continue
-            evidence = [str(item) for item in transaction.get("evidence_terms") or []]
-            if not evidence or any(term not in content for term in evidence):
-                continue
-            factors = transaction.get("factors") if isinstance(transaction.get("factors"), Mapping) else {}
-            positive = sum(max(0.0, min(1.0, float(factors.get(name) or 0))) for name in ("attachment", "duration", "sacrifice", "expectation", "foreshadow", "importance"))
-            negative = sum(max(0.0, min(1.0, float(factors.get(name) or 0))) for name in ("leakage", "repetition"))
-            amount = min(25.0, max(0.0, positive * 5.0 - negative * 4.0))
-            if transaction.get("kind") == "withdraw":
-                amount = -amount
-            account["balance"] = max(0.0, min(100.0, float(account.get("balance") or 0) + amount))
-            account["last_transaction_chapter"] = chapter_number
-            if account["balance"] >= threshold and not any(isinstance(item, Mapping) and item.get("account_id") == account_id and item.get("status") == "pending" for item in triggers.values()):
-                trigger_id = f"trigger_{account_id}_{chapter_number}_{_sha256(account)[:8]}"
-                trigger = {
-                    "trigger_id": trigger_id,
-                    "account_id": account_id,
-                    "balance": round(account["balance"], 3),
-                    "status": "pending",
-                    "created_chapter": chapter_number,
-                    "target_chapter_min": chapter_number + 1,
-                    "target_chapter_max": chapter_number + max(1, _safe_int(settings.get("emotional_payoff_window"), 3)),
-                }
-                triggers[trigger_id] = trigger
-                created_triggers.append(trigger)
-        return created_triggers
+    @staticmethod
+    def _record_emotion_annotations(state: MutableMapping[str, Any], actual: Mapping[str, Any], chapter_number: int) -> None:
+        # Preserve the caller's creative notes, without scoring prose, updating
+        # inferred emotional balances, or imposing a mandatory payoff scene.
+        for annotation in actual.get("emotional_transactions", []):
+            state.setdefault("emotion_annotations", []).append({
+                "chapter_number": chapter_number, "source": "caller_supplied",
+                "content_quality": "unassessed", "annotation": deepcopy(annotation),
+            })
 
     def submit_chapter(self, args: Mapping[str, Any]) -> dict[str, Any]:
         lease_id = str(args.get("lease_id") or "")
@@ -1383,18 +1309,31 @@ class NovelSystemEngine:
         actual = args.get("actual")
         if not lease_id or chapter_number < 1 or not title or not content.strip() or not isinstance(actual, Mapping):
             raise NovelSystemError("INVALID_CHAPTER_SUBMISSION", "lease_id, chapter_number, title, content, and actual are required")
+        if not re.fullmatch(r"lease_[0-9a-f]{32}", lease_id):
+            raise NovelSystemError("INVALID_CHAPTER_LEASE", "Use the lease identifier returned by checkout")
         with self._locked():
             manifest = self._manifest()
             if not manifest.get("compiled"):
                 raise NovelSystemError("BLUEPRINT_NOT_COMPILED", "Compile the blueprint before submission")
+            if any(self.prepared_dir.glob("*.json")):
+                raise NovelSystemError("RECOVERY_REQUIRED", "Reconcile the prepared transaction before another submission")
             state = self._state()
             lease_path = self.leases_dir / f"{lease_id}.json"
             lease = _read_json(lease_path, {})
             if not isinstance(lease, dict) or lease.get("lease_id") != lease_id:
                 raise NovelSystemError("LEASE_NOT_FOUND", "Chapter lease is missing or already consumed")
+            if lease.get("schema") != "tiangong.novel.chapter-lease.v2":
+                raise NovelSystemError("LEASE_VERSION_CHANGED", "Obtain a new v2 checkout; old acceptance semantics are not reinterpreted")
             if float(lease.get("expires_at_epoch") or 0) <= time.time():
                 raise NovelSystemError("LEASE_EXPIRED", "Chapter lease expired; check out the canonical next chapter again", retryable=True)
-            if lease.get("chapter_number") != chapter_number or chapter_number != _safe_int(state.get("next_chapter"), 1):
+            ledger = self._ledger()
+            revision_of = lease.get("revision_of")
+            revising = bool(revision_of)
+            previous_record = ledger[-1] if revising and ledger else None
+            if revising and (not previous_record or previous_record.get("sha256") != revision_of or actual):
+                raise NovelSystemError("CHAPTER_REVISION_CONFLICT", "Prose revision needs unchanged prior hash and empty actual; historical state deltas are retained")
+            expected = _safe_int(state.get("next_chapter"), 1) - (1 if revising else 0)
+            if lease.get("chapter_number") != chapter_number or chapter_number != expected:
                 raise NovelSystemError("STALE_CHAPTER_LEASE", "Lease no longer targets the canonical next chapter", details={"next_chapter": state.get("next_chapter")}, retryable=True)
             if lease.get("pre_state_hash") != state.get("state_hash"):
                 raise NovelSystemError("STALE_STATE", "Canonical state changed after checkout", details={"lease_state_hash": lease.get("pre_state_hash"), "actual_state_hash": state.get("state_hash")}, retryable=True)
@@ -1404,47 +1343,57 @@ class NovelSystemEngine:
             chapter = next((item for item in blueprint.get("chapters") or [] if isinstance(item, Mapping) and item.get("number") == chapter_number), None)
             if chapter is None:
                 raise NovelSystemError("CHAPTER_PLAN_NOT_FOUND", f"Chapter plan {chapter_number} does not exist")
-            deviation, problems = self._validate_submission(blueprint=blueprint, state=state, chapter=chapter, content=content, actual=actual)
+            observations, problems = self._validate_submission(blueprint=blueprint, state=state, chapter=chapter, content=content, actual=actual)
             if problems:
-                raise NovelSystemError("CHAPTER_SUBMISSION_REJECTED", "Chapter failed deterministic acceptance gates", details={"chapter_number": chapter_number, "deviation_score": deviation, "problems": problems, "lease_reusable": True})
+                raise NovelSystemError("CHAPTER_SUBMISSION_REJECTED", "Chapter delta violates the record or state contract", details={"chapter_number": chapter_number, "problems": problems, "lease_reusable": True})
 
             next_state = deepcopy(state)
-            self._apply_state_changes(next_state, actual.get("state_changes") or [])
-            for event in actual.get("events") or []:
-                if not isinstance(event, Mapping):
-                    continue
-                event_id = str(event.get("id"))
-                event_state = next_state.setdefault("events", {}).setdefault(event_id, {"id": event_id})
-                event_state.update({
-                    "status": event.get("status"),
-                    "result": event.get("result"),
-                    "chapter": chapter_number,
-                    "start_tick": event.get("start_tick"),
-                    "duration_ticks": event.get("duration_ticks"),
-                    "location": event.get("location"),
-                    "outcome_tags": list(event.get("outcome_tags") or []),
-                })
-                next_state["current_tick"] = max(_safe_int(next_state.get("current_tick"), 0), _safe_int(event.get("start_tick"), 0) + max(1, _safe_int(event.get("duration_ticks"), 1)))
-            for change in actual.get("relationship_changes") or []:
-                if isinstance(change, Mapping):
-                    key = str(change.get("id") or "") or "|".join(str(item) for item in change.get("character_ids") or [])
-                    next_state.setdefault("relationships", {})[key] = deepcopy(change)
-            for operation in actual.get("foreshadow_ops") or []:
-                if isinstance(operation, Mapping) and operation.get("id"):
-                    next_state.setdefault("foreshadows", {})[str(operation.get("id"))] = deepcopy(operation)
-            settings = blueprint.get("settings") if isinstance(blueprint.get("settings"), Mapping) else {}
-            triggers = self._apply_emotions(next_state, actual, chapter_number, content, settings)
+            if not revising:
+                self._apply_state_changes(next_state, actual.get("state_changes") or [])
+                for event in actual.get("events") or []:
+                    if not isinstance(event, Mapping):
+                        continue
+                    event_id = str(event.get("id"))
+                    event_state = next_state.setdefault("events", {}).setdefault(event_id, {"id": event_id})
+                    event_state.update({
+                        "status": event.get("status"),
+                        "result": event.get("result"),
+                        "chapter": chapter_number,
+                        "start_tick": event.get("start_tick"),
+                        "duration_ticks": event.get("duration_ticks"),
+                        "location": event.get("location"),
+                        "outcome_tags": list(event.get("outcome_tags") or []),
+                    })
+                    next_state["current_tick"] = max(_safe_int(next_state.get("current_tick"), 0), _safe_int(event.get("start_tick"), 0) + max(1, _safe_int(event.get("duration_ticks"), 1)))
+                for change in actual.get("relationship_changes") or []:
+                    if isinstance(change, Mapping):
+                        key = str(change.get("id") or "") or "|".join(str(item) for item in change.get("character_ids") or [])
+                        next_state.setdefault("relationships", {})[key] = deepcopy(change)
+                for operation in actual.get("foreshadow_ops") or []:
+                    if isinstance(operation, Mapping) and operation.get("id"):
+                        next_state.setdefault("foreshadows", {})[str(operation.get("id"))] = deepcopy(operation)
+                self._record_emotion_annotations(next_state, actual, chapter_number)
             next_state["revision"] = _safe_int(next_state.get("revision"), 0) + 1
             next_state["accepted_chapters"] = chapter_number
             next_state["next_chapter"] = chapter_number + 1
-            next_state.setdefault("recent_summaries", []).append({"chapter_number": chapter_number, "title": title, "summary": str(actual.get("summary") or ""), "accepted_at": _utc_now()})
+            if not revising:
+                next_state.setdefault("recent_summaries", []).append({"chapter_number": chapter_number, "title": title, "summary": str(actual.get("summary") or ""), "accepted_at": _utc_now()})
             next_state["recent_summaries"] = next_state["recent_summaries"][-10:]
             next_state["state_hash"] = _state_hash(next_state)
 
             safe_title = _slug(title, f"chapter-{chapter_number}")
-            prose_relative = f"正文/第{chapter_number:04d}章_{safe_title}.md"
+            prose_relative = previous_record["path"] if revising else f"正文/第{chapter_number:04d}章_{safe_title}.md"
             prose_path = self.root / prose_relative
-            ledger = self._ledger()
+            if prose_path.is_symlink() or not prose_path.resolve().is_relative_to(self.root):
+                raise NovelSystemError("CHAPTER_PATH_CONFLICT", "Chapter output leaves the managed project")
+            previous_content = None
+            if revising:
+                if not prose_path.is_file() or _sha256(prose_path.read_bytes()) != revision_of:
+                    raise NovelSystemError("CHAPTER_REVISION_CONFLICT", "Chapter bytes changed after their recorded version")
+                previous_content = prose_path.read_text(encoding="utf-8")
+                observations["prior_annotations_retained"] = True
+            elif prose_path.exists():
+                raise NovelSystemError("CHAPTER_PATH_CONFLICT", "Chapter output exists; reconcile before submitting")
             stored_content = content.rstrip() + "\n"
             chapter_sha = _sha256(stored_content)
             record = {
@@ -1453,22 +1402,26 @@ class NovelSystemEngine:
                 "path": prose_relative,
                 "sha256": chapter_sha,
                 "cjk_chars": _count_cjk(content),
-                "summary": str(actual.get("summary") or ""),
-                "deviation_score": deviation,
+                "summary": previous_record.get("summary", "") if revising else str(actual.get("summary") or ""),
+                "revision_of": revision_of,
+                "observations": observations,
+                "content_quality": "unassessed",
                 "pre_state_hash": state["state_hash"],
                 "post_state_hash": next_state["state_hash"],
                 "accepted_at": _utc_now(),
                 "lease_id": lease_id,
             }
-            next_ledger = ledger + [record]
+            next_ledger = (ledger[:-1] if revising else ledger) + [record]
             transaction_id = f"txn_{chapter_number:04d}_{uuid.uuid4().hex}"
             prepared = {
-                "schema": "tiangong.novel.chapter-transaction.v1",
+                "schema": "tiangong.novel.chapter-transaction.v2",
                 "transaction_id": transaction_id,
                 "status": "prepared",
                 "chapter_number": chapter_number,
                 "prose_relative": prose_relative,
                 "content": stored_content,
+                "previous_record": previous_record,
+                "previous_content": previous_content,
                 "next_state": next_state,
                 "next_ledger": next_ledger,
                 "manifest_updates": {"accepted_chapters": chapter_number, "last_state_hash": next_state["state_hash"]},
@@ -1495,93 +1448,130 @@ class NovelSystemEngine:
                 pass
         complete = chapter_number >= _safe_int(manifest.get("planned_chapters"), 0)
         return self._success(
-            "CHAPTER_ACCEPTED",
-            accepted=True,
+            "CHAPTER_COMMITTED",
+            committed=True, revision_of=revision_of,
             chapter_number=chapter_number,
             chapter_path=str(prose_path),
             chapter_sha256=chapter_sha,
             cjk_chars=record["cjk_chars"],
-            deviation_score=deviation,
+            observations=observations,
+            content_quality="unassessed", completion_authority="adversarial_judge",
             state_hash=next_state["state_hash"],
             next_chapter=next_state["next_chapter"],
-            emotional_triggers_created=triggers,
-            complete=complete,
-            next_action="novel.project.audit" if complete else ("novel.scene.design" if triggers else "novel.chapter.checkout"),
+            all_planned_chapters_recorded=complete,
+            next_action="novel.project.audit" if complete else "novel.chapter.checkout",
         )
 
     def recover(self) -> dict[str, Any]:
+        """Replay only a validated prepared byte transaction, including legacy v1.
+
+        This establishes storage consistency, never historical prose approval.
+        All checks for each transaction precede the first recovery write.
+        """
         self._require_project()
         recovered = []
         with self._locked():
             for path in sorted(self.prepared_dir.glob("*.json")):
                 transaction = _read_json(path, {})
-                if not isinstance(transaction, dict) or transaction.get("schema") != "tiangong.novel.chapter-transaction.v1":
-                    raise NovelSystemError("CORRUPT_PREPARED_TRANSACTION", "Prepared chapter transaction is invalid", details={"path": str(path)})
-                content = str(transaction.get("content") or "")
-                prose_relative = str(transaction.get("prose_relative") or "")
-                if not prose_relative or Path(prose_relative).is_absolute() or ".." in Path(prose_relative).parts:
-                    raise NovelSystemError("UNSAFE_PREPARED_TRANSACTION", "Prepared transaction contains an unsafe prose path")
-                _atomic_text(self.root / prose_relative, content if content.endswith("\n") else content.rstrip() + "\n")
-                _atomic_json(self.ledger_path, transaction.get("next_ledger") or [])
-                next_state = transaction.get("next_state")
+                if (not isinstance(transaction, dict) or transaction.get("schema") not in
+                        ("tiangong.novel.chapter-transaction.v1", "tiangong.novel.chapter-transaction.v2")):
+                    raise NovelSystemError("CORRUPT_PREPARED_TRANSACTION", "Unknown prepared transaction schema")
+                txn_id, lease_id = transaction.get("transaction_id"), transaction.get("lease_id")
+                content, relative = transaction.get("content"), transaction.get("prose_relative")
+                if (not isinstance(txn_id, str) or not re.fullmatch(r"txn_[0-9]+_[0-9a-f]{32}", txn_id)
+                        or path.stem != txn_id or not isinstance(lease_id, str)
+                        or not re.fullmatch(r"lease_[0-9a-f]{32}", lease_id)
+                        or not isinstance(content, str) or not isinstance(relative, str)):
+                    raise NovelSystemError("CORRUPT_PREPARED_TRANSACTION", "Prepared transaction identity or content is invalid")
+                prose_path = self.root / relative
+                if (Path(relative).is_absolute() or ".." in Path(relative).parts
+                        or len(Path(relative).parts) != 2 or Path(relative).parts[0] != "正文"
+                        or prose_path.suffix != ".md" or prose_path.is_symlink()
+                        or not prose_path.resolve().is_relative_to(self.root)):
+                    raise NovelSystemError("UNSAFE_PREPARED_TRANSACTION", "Prepared prose path is outside its chapter directory")
+                next_state, next_ledger = transaction.get("next_state"), transaction.get("next_ledger")
                 if not isinstance(next_state, dict) or next_state.get("state_hash") != _state_hash(next_state):
-                    raise NovelSystemError("CORRUPT_PREPARED_STATE", "Prepared transaction state failed integrity verification")
-                _atomic_json(self.state_path, next_state)
+                    raise NovelSystemError("CORRUPT_PREPARED_STATE", "Prepared state failed integrity verification")
+                if not isinstance(next_ledger, list) or not next_ledger or not all(isinstance(row, dict) for row in next_ledger):
+                    raise NovelSystemError("CORRUPT_PREPARED_TRANSACTION", "Prepared ledger is invalid")
+                last = next_ledger[-1]
+                number = transaction.get("chapter_number")
+                updates = transaction.get("manifest_updates")
+                if (type(number) is not int or number != len(next_ledger)
+                        or [row.get("chapter_number") for row in next_ledger] != list(range(1, number + 1))
+                        or last.get("path") != relative or last.get("sha256") != _sha256(content)
+                        or last.get("lease_id") != lease_id or last.get("post_state_hash") != next_state["state_hash"]
+                        or next_state.get("next_chapter") != number + 1 or next_state.get("accepted_chapters") != number
+                        or updates != {"accepted_chapters": number, "last_state_hash": next_state["state_hash"]}):
+                    raise NovelSystemError("CORRUPT_PREPARED_TRANSACTION", "Prepared content, ledger and state do not agree")
+                previous_record, previous_content = transaction.get("previous_record"), transaction.get("previous_content")
+                before_ledger = next_ledger[:-1]
+                allowed_bytes = [content.encode("utf-8")]
+                if previous_record is not None:
+                    if (transaction["schema"] != "tiangong.novel.chapter-transaction.v2"
+                            or not isinstance(previous_record, dict) or not isinstance(previous_content, str)
+                            or previous_record.get("chapter_number") != number or previous_record.get("path") != relative
+                            or _sha256(previous_content) != previous_record.get("sha256")
+                            or last.get("revision_of") != previous_record.get("sha256")):
+                        raise NovelSystemError("CORRUPT_PREPARED_TRANSACTION", "Revision has inconsistent prior version evidence")
+                    before_ledger = before_ledger + [previous_record]
+                    allowed_bytes.append(previous_content.encode("utf-8"))
+                elif last.get("revision_of"):
+                    raise NovelSystemError("CORRUPT_PREPARED_TRANSACTION", "Revision is missing its prior record")
+                current_state, current_ledger = self._state(), self._ledger()
+                if (current_state.get("state_hash") not in (last.get("pre_state_hash"), last.get("post_state_hash"))
+                        or current_ledger not in (before_ledger, next_ledger)):
+                    raise NovelSystemError("RECOVERY_VERSION_CONFLICT", "Current state or ledger has changed; reconcile before replay")
+                if prose_path.exists() and (not prose_path.is_file() or prose_path.read_bytes() not in allowed_bytes):
+                    raise NovelSystemError("RECOVERY_CONTENT_CONFLICT", "Current chapter bytes differ; recovery will not overwrite them")
                 manifest = self._manifest()
-                manifest.update(transaction.get("manifest_updates") or {})
+                _atomic_text(prose_path, content)
+                _atomic_json(self.ledger_path, next_ledger)
+                _atomic_json(self.state_path, next_state)
+                manifest.update(updates)
                 self._write_manifest(manifest)
-                lease_id = str(transaction.get("lease_id") or "")
-                if lease_id:
-                    try:
-                        (self.leases_dir / f"{lease_id}.json").unlink()
-                    except FileNotFoundError:
-                        pass
+                (self.leases_dir / f"{lease_id}.json").unlink(missing_ok=True)
                 transaction["status"] = "committed"
                 transaction["committed_at"] = _utc_now()
                 _atomic_json(self.committed_dir / path.name, transaction)
                 path.unlink()
-                recovered.append(transaction.get("transaction_id"))
-        return self._success("NOVEL_PROJECT_RECOVERED", recovered_transactions=recovered, recovered_count=len(recovered), state_hash=self._state().get("state_hash") if self.state_path.is_file() else None)
+                recovered.append(txn_id)
+        return self._success("NOVEL_PROJECT_RECOVERED", recovered_transactions=recovered, recovered_count=len(recovered),
+            state_hash=self._state().get("state_hash") if self.state_path.is_file() else None,
+            content_quality="unassessed", completion_authority="adversarial_judge")
 
     def design_scene(self, args: Mapping[str, Any]) -> dict[str, Any]:
+        candidates, selected_index = args.get("candidates"), args.get("selected_index")
+        if (not isinstance(candidates, list) or not candidates or not all(isinstance(item, Mapping) for item in candidates)
+                or type(selected_index) is not int or not 0 <= selected_index < len(candidates)):
+            raise NovelSystemError("INVALID_SCENE_SELECTION", "candidates and an explicit in-range selected_index are required")
+        selected = deepcopy(candidates[selected_index])
+        if not _non_empty(selected.get("title")) or type(selected.get("target_chapter")) is not int:
+            raise NovelSystemError("INVALID_SCENE_SELECTION", "selected candidate requires title and integer target_chapter")
         trigger_id = str(args.get("trigger_id") or "")
-        candidates = args.get("candidates")
-        if not trigger_id or not isinstance(candidates, list) or not 2 <= len(candidates) <= 3 or not all(isinstance(item, Mapping) for item in candidates):
-            raise NovelSystemError("INVALID_SCENE_CANDIDATES", "trigger_id and 2-3 candidate objects are required")
         with self._locked():
-            manifest = self._manifest()
-            if not manifest.get("compiled"):
-                raise NovelSystemError("BLUEPRINT_NOT_COMPILED", "Compile the blueprint before scene design")
+            if not self._manifest().get("compiled"):
+                raise NovelSystemError("BLUEPRINT_NOT_COMPILED", "Compile the blueprint before recording a scene")
             state = self._state()
-            trigger = (state.get("emotional_triggers") or {}).get(trigger_id)
-            if not isinstance(trigger, MutableMapping) or trigger.get("status") != "pending":
-                raise NovelSystemError("EMOTIONAL_TRIGGER_NOT_FOUND", f"Pending trigger not found: {trigger_id}")
-            scored = []
-            for index, candidate in enumerate(candidates):
-                missing = [field for field in REQUIRED_SCENE_SCORES if not isinstance(candidate.get(field), (int, float)) or isinstance(candidate.get(field), bool)]
-                required_text = [field for field in ("title", "payoff_type", "core_choice", "irreversible_cost", "permanent_consequence") if not _non_empty(candidate.get(field))]
-                target_chapter = _safe_int(candidate.get("target_chapter"), 0)
-                if missing or required_text or not _safe_int(trigger.get("target_chapter_min"), 0) <= target_chapter <= _safe_int(trigger.get("target_chapter_max"), 0):
-                    scored.append({"index": index, "score": 0.0, "eligible": False, "missing_scores": missing, "missing_fields": required_text, "target_chapter": target_chapter})
-                    continue
-                values = []
-                for field in REQUIRED_SCENE_SCORES:
-                    raw = float(candidate[field])
-                    values.append(max(0.0, min(100.0, raw * 100 if raw <= 1 else raw)))
-                score = round(sum(values) / len(values), 3)
-                scored.append({"index": index, "score": score, "eligible": score >= 70, "target_chapter": target_chapter})
-            eligible = [item for item in scored if item["eligible"]]
-            if not eligible:
-                raise NovelSystemError("SCENE_DESIGN_REJECTED", "No scene candidate reached the minimum causal-emotional score", details={"candidates": scored, "minimum_score": 70})
-            selected_meta = max(eligible, key=lambda item: (item["score"], -item["index"]))
-            selected = deepcopy(candidates[selected_meta["index"]])
-            selected.update({"trigger_id": trigger_id, "score": selected_meta["score"], "selected_at": _utc_now(), "status": "selected"})
-            state.setdefault("selected_scenes", {})[trigger_id] = selected
-            trigger["status"] = "designed"
-            trigger["selected_score"] = selected_meta["score"]
+            if args.get("expected_state_hash") != state["state_hash"]:
+                raise NovelSystemError("STALE_STATE", "Scene selection requires the current state hash", retryable=True)
+            chapters = {item.get("number") for item in self._blueprint().get("chapters", [])}
+            if selected["target_chapter"] not in chapters or selected["target_chapter"] < state["next_chapter"]:
+                raise NovelSystemError("INVALID_SCENE_CHAPTER", "Choose an uncommitted chapter in the declared plan")
+            trigger = state.get("emotional_triggers", {}).get(trigger_id) if trigger_id else None
+            if trigger_id and (not isinstance(trigger, MutableMapping) or trigger.get("status") != "pending"):
+                raise NovelSystemError("EMOTIONAL_TRIGGER_NOT_FOUND", "The named historical trigger is not pending")
+            scene_id = trigger_id or "scene_" + uuid.uuid4().hex
+            selected.update({"scene_id": scene_id, "selection_source": "caller", "selected_at": _utc_now(),
+                             "status": "recorded", "content_quality": "unassessed"})
+            state.setdefault("selected_scenes", {})[scene_id] = selected
+            if trigger is not None:
+                trigger["status"] = "caller_selected"
             state["revision"] = _safe_int(state.get("revision"), 0) + 1
             self._write_state(state)
-        return self._success("EMOTIONAL_SCENE_SELECTED", trigger_id=trigger_id, selected=selected, candidates=scored, state_hash=state["state_hash"], next_action="novel.chapter.checkout")
+        return self._success("SCENE_SELECTION_RECORDED", scene_id=scene_id, selected=selected,
+            selected_index=selected_index, state_hash=state["state_hash"], content_quality="unassessed",
+            completion_authority="adversarial_judge", next_action="novel.chapter.checkout")
 
     def context_query(self, args: Mapping[str, Any]) -> dict[str, Any]:
         entity_type = str(args.get("entity_type") or "")
@@ -1604,7 +1594,7 @@ class NovelSystemEngine:
                 number = _safe_int(raw_id, 0)
                 plan = next((item for item in blueprint.get("chapters") or [] if isinstance(item, Mapping) and item.get("number") == number), None)
                 accepted = next((item for item in ledger if item.get("chapter_number") == number), None)
-                results.append({"id": number, "plan": plan, "accepted": accepted})
+                results.append({"id": number, "plan": plan, "recorded": accepted, "content_quality": "unassessed"})
             elif entity_type == "foreshadow":
                 plan = next((item for item in blueprint.get("foreshadows") or [] if isinstance(item, Mapping) and item.get("id") == raw_id), None)
                 results.append({"id": raw_id, "plan": plan, "state": (state.get("foreshadows") or {}).get(str(raw_id))})
@@ -1643,10 +1633,11 @@ class NovelSystemEngine:
             for trigger in pending:
                 if _safe_int(trigger.get("target_chapter_max"), 10**9) < next_chapter:
                     problems.append({"code": "OVERDUE_EMOTIONAL_TRIGGER", "path": f"state.emotional_triggers.{trigger.get('trigger_id')}", "message": "Emotional payoff trigger is overdue", "weight": 40})
-        complete = bool(manifest.get("compiled") and len(ledger) == planned and not problems)
+        recorded = bool(manifest.get("compiled") and len(ledger) == planned)
         return self._success(
             "NOVEL_PROJECT_AUDITED",
-            complete=complete,
+            all_planned_chapters_recorded=recorded,
+            content_quality="unassessed", completion_authority="adversarial_judge",
             compiled=bool(manifest.get("compiled")),
             planned_chapters=planned,
             accepted_chapters=len(ledger),
@@ -1655,5 +1646,5 @@ class NovelSystemEngine:
             blueprint_hash=_blueprint_hash(blueprint),
             energy=sum(_safe_int(item.get("weight"), 0) for item in problems),
             problems=problems,
-            next_action="complete" if complete else ("novel.project.recover" if any(self.prepared_dir.glob("*.json")) else "novel.chapter.checkout" if manifest.get("compiled") else "novel.blueprint.assist"),
+            next_action="preview.generate" if recorded else ("novel.project.recover" if any(self.prepared_dir.glob("*.json")) else "novel.chapter.checkout" if manifest.get("compiled") else "novel.blueprint.assist"),
         )

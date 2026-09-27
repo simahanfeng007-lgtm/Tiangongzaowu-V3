@@ -7,7 +7,7 @@ Guards (M6 §7/§8) — enforced with AST/contract scans:
 - exactly ONE store schema authority constant
 - CompletionDecision construction lives ONLY in completion_gate.py
 - no standalone repair runtime/daemon entry point
-- the single Verification Plane version source exists and is "1.55"
+- the single Verification Plane version source exists and is "1.56"
 
 Freeze guard (M6 §23/§24): the freeze manifest records the authority
 surface hashes; any change fails with VERIFICATION_PLANE_FREEZE_CHANGED
@@ -149,12 +149,12 @@ class ArchitectureGuardTests(unittest.TestCase):
             VERIFICATION_PLANE_VERSION,
         )
 
-        self.assertEqual(VERIFICATION_PLANE_VERSION, "1.55")
+        self.assertEqual(VERIFICATION_PLANE_VERSION, "1.56")
         # the literal must appear in exactly ONE src module
         holders = [
             path.relative_to(ROOT)
             for path in _iter_py_files()
-            if '"1.55"' in (
+            if '"1.56"' in (
                 path.read_text(encoding="utf-8")
             )
             and path.name == "verification_plane.py"
@@ -213,6 +213,18 @@ class VerificationPlaneFreezeGuardTests(unittest.TestCase):
 
     #: The authority surface frozen at 1.33; all inherited entries remain covered.
     AUTHORITY_SURFACE_FILES = (
+        # 1.56 novel observations, transaction recovery and model instructions.
+        "app/backend/tiangong-backend/v3/novel_system.py",
+        "src/omni_body_skill/tools/novel_system.py",
+        "src/bundled_skills/novel-creation/scripts/novel_tool.py",
+        "src/bundled_skills/novel-creation/SKILL.md",
+        "src/bundled_skills/novel-creation/references/action-reference.md",
+        "src/bundled_skills/novel-creation/references/blueprint-schema.md",
+        "src/bundled_skills/novel-creation/references/chapter-transaction.md",
+        "src/bundled_skills/novel-creation/references/emotion-engine.md",
+        "src/bundled_skills/novel-creation/references/quality-rules.md",
+        "src/bundled_skills/novel-creation/references/workflow.md",
+
         # 1.53 MCP transport, browser and content observation boundaries.
         "src/omni_body_skill/tools/mcp_client.py",
         "src/omni_body_skill/tools/pro_apps_v34.py",

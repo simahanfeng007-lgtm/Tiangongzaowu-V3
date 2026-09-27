@@ -23973,7 +23973,7 @@
       "handler": "dynamic",
       "id": "novel.blueprint.compile",
       "implemented": true,
-      "metadata_sha256": "94b7aff458844ab27f723b1ba39b059814098043e8372fb4e46580d1a4f84c6f",
+      "metadata_sha256": "7bdadab65d7f7037b1bff16f348c01e3fcbc20541412b447f3f13af290a2c8cc",
       "reason": "",
       "result_schema": {
         "action": "novel.blueprint.compile",
@@ -23984,7 +23984,7 @@
       "result_schema_sha256": "13a7a3fe46f892fb62e086f143525565cf6e800ab2db6b3119e073137dec3ed1",
       "result_validator_source_sha256": "56b73202aff4666e603253f9e85e238d2b6269e3b8c1395c08e5bfb4ea096564",
       "risk": "A2",
-      "summary": "Validate the whole story graph and freeze the immutable original blueprint.",
+      "summary": "Validate record shapes and references, freeze the original blueprint, and return advisory story observations.",
       "value_schema_kind": "OPAQUE",
       "value_schemas": {},
       "value_validator_source_sha256": "56b73202aff4666e603253f9e85e238d2b6269e3b8c1395c08e5bfb4ea096564"
@@ -24163,7 +24163,8 @@
       "argument_schema": {
         "action": "novel.chapter.checkout",
         "args": {
-          "chapter_number": "positive integer"
+          "chapter_number": "positive integer",
+          "revision_of": "optional current recorded SHA-256: revise latest chapter prose only using empty actual; previous bytes retained"
         },
         "required": [
           "args.chapter_number"
@@ -24171,7 +24172,7 @@
         "target": "managed novel project directory (required)"
       },
       "argument_schema_kind": "EXPLICIT",
-      "argument_schema_sha256": "44573e56bec3f9422dfc63ada87d8811f137043e5080fa9230390d5d86bbc585",
+      "argument_schema_sha256": "114346c85faf3b76270286d1bf1a445d5d8e26eb54df4a800d555123156b8b70",
       "argument_validator_source_sha256": "56b73202aff4666e603253f9e85e238d2b6269e3b8c1395c08e5bfb4ea096564",
       "declared_status": "implemented",
       "dynamic": true,
@@ -24202,25 +24203,7 @@
         "action": "novel.chapter.submit",
         "args": {
           "actual": {
-            "convergence_proof": {
-              "maintained_anchor_ids": [
-                "protected anchor id"
-              ],
-              "reason": "required only for high deviation"
-            },
-            "emotional_transactions": [
-              {
-                "account_id": "declared id",
-                "evidence_terms": [
-                  "exact prose term"
-                ],
-                "factors": "0..1 factor object",
-                "kind": "deposit|withdraw",
-                "related_event_ids": [
-                  "event id"
-                ]
-              }
-            ],
+            "emotional_transactions": "optional array of caller creative annotations; no inferred score, balance or compulsory scene",
             "events": [
               {
                 "duration_ticks": "positive integer",
@@ -24282,7 +24265,7 @@
         "target": "managed novel project directory (required)"
       },
       "argument_schema_kind": "EXPLICIT",
-      "argument_schema_sha256": "fd372a501127cdbb152a1285cbdf40a42d8ca105e828aec9c2d334c14e1dbbb3",
+      "argument_schema_sha256": "0bc59212f21f4009acc0537ad3a2f6b31da0a048111df8a5fe16bd0b1dab41b2",
       "argument_validator_source_sha256": "56b73202aff4666e603253f9e85e238d2b6269e3b8c1395c08e5bfb4ea096564",
       "declared_status": "implemented",
       "dynamic": true,
@@ -24291,7 +24274,7 @@
       "handler": "dynamic",
       "id": "novel.chapter.submit",
       "implemented": true,
-      "metadata_sha256": "803a1d617e2c4993f61245cad54e95abe7c9c96bf62db884d94c2b954acf9f04",
+      "metadata_sha256": "abf573fdd9cf49de196e53238c205944201569db42912d93851e9219ff4c2b38",
       "reason": "",
       "result_schema": {
         "action": "novel.chapter.submit",
@@ -24302,7 +24285,7 @@
       "result_schema_sha256": "9f329f48d4e60744a22e720ab02496a65e3b06920ed9a63e1ff88a40701b1b83",
       "result_validator_source_sha256": "56b73202aff4666e603253f9e85e238d2b6269e3b8c1395c08e5bfb4ea096564",
       "risk": "A2",
-      "summary": "Validate, score, settle, and atomically commit a chapter and its factual delta.",
+      "summary": "Record chapter bytes and caller annotations with version checks and recoverable transactions; content remains unassessed.",
       "value_schema_kind": "OPAQUE",
       "value_schemas": {},
       "value_validator_source_sha256": "56b73202aff4666e603253f9e85e238d2b6269e3b8c1395c08e5bfb4ea096564"
@@ -24331,7 +24314,7 @@
       "handler": "dynamic",
       "id": "novel.context.query",
       "implemented": true,
-      "metadata_sha256": "caefc355cae1cad11fab74ba95e5bb57eb6f5f497f093f6085ddacc076efd930",
+      "metadata_sha256": "4ca678c1387a386f145bb7a0c37ba515372ba959f0508fb97d542d1839332b68",
       "reason": "",
       "result_schema": {
         "action": "novel.context.query",
@@ -24342,7 +24325,7 @@
       "result_schema_sha256": "354a730c07e82d949b60d7e354a5eb1df9089d3327187511efbecc9ddb3941cf",
       "result_validator_source_sha256": "56b73202aff4666e603253f9e85e238d2b6269e3b8c1395c08e5bfb4ea096564",
       "risk": "A1",
-      "summary": "Retrieve authoritative character, event, relationship, foreshadow, chapter, or emotion context.",
+      "summary": "Retrieve recorded character, event, relationship, foreshadow, chapter, or emotion context with caller provenance.",
       "value_schema_kind": "OPAQUE",
       "value_schemas": {},
       "value_validator_source_sha256": "56b73202aff4666e603253f9e85e238d2b6269e3b8c1395c08e5bfb4ea096564"
@@ -24416,7 +24399,7 @@
       "handler": "dynamic",
       "id": "novel.plan.rebase",
       "implemented": true,
-      "metadata_sha256": "459230741f22db7507a942c4b5dfd73f468e5f6bc17ffd86ff245a4c0eadfd40",
+      "metadata_sha256": "c54e4a0bce38bd328eb8f2d53898acefe9ab98d930f0ba8b84c1c5a68bb40e3a",
       "reason": "",
       "result_schema": {
         "action": "novel.plan.rebase",
@@ -24427,7 +24410,7 @@
       "result_schema_sha256": "778bde6aea93a3c8bfd1258364a66fd5c06294adeed28298dd2c49d98f6024f7",
       "result_validator_source_sha256": "56b73202aff4666e603253f9e85e238d2b6269e3b8c1395c08e5bfb4ea096564",
       "risk": "A2",
-      "summary": "Replan future events and chapters against accepted facts while preserving protected anchors.",
+      "summary": "Replan future events and chapters against recorded state while preserving protected anchors.",
       "value_schema_kind": "OPAQUE",
       "value_schemas": {},
       "value_validator_source_sha256": "56b73202aff4666e603253f9e85e238d2b6269e3b8c1395c08e5bfb4ea096564"
@@ -24473,8 +24456,8 @@
         "action": "novel.project.create",
         "args": {
           "genre": "non-empty string",
-          "planned_chapters": "full-book count, integer >= ceil(target_words/5000), never a writing checkpoint",
-          "target_words": "integer >= 1000",
+          "planned_chapters": "positive integer: user-declared plan size; no words-per-chapter formula",
+          "target_words": "positive integer: declared writing target, not an automatic acceptance gate",
           "title": "non-empty string"
         },
         "required": [
@@ -24486,7 +24469,7 @@
         "target": "workspace-relative (or absolute path when the user enabled absolute-path permission) new or empty novel project directory (required)"
       },
       "argument_schema_kind": "EXPLICIT",
-      "argument_schema_sha256": "69051e0f9931749bf0f19c19236ed24589d494e27eab4be12e93ac10dc7aba23",
+      "argument_schema_sha256": "b3073e02b449e332251554acea45548e46fda11755c0fc15a58b208eceb99c67",
       "argument_validator_source_sha256": "56b73202aff4666e603253f9e85e238d2b6269e3b8c1395c08e5bfb4ea096564",
       "declared_status": "implemented",
       "dynamic": true,
@@ -24622,17 +24605,20 @@
       "argument_schema": {
         "action": "novel.scene.design",
         "args": {
-          "candidates": "array of 2-3 structured candidates",
-          "trigger_id": "pending emotion trigger id"
+          "candidates": "non-empty candidate object array; selected candidate requires title and integer target_chapter",
+          "expected_state_hash": "current state hash returned by status or checkout",
+          "selected_index": "zero-based explicit caller selection; no program ranking",
+          "trigger_id": "optional pending historical trigger id; no new mandatory triggers"
         },
         "required": [
-          "args.trigger_id",
-          "args.candidates"
+          "args.candidates",
+          "args.selected_index",
+          "args.expected_state_hash"
         ],
         "target": "managed novel project directory (required)"
       },
       "argument_schema_kind": "EXPLICIT",
-      "argument_schema_sha256": "75a22389ef310f8058bfac4668f265e982ba36f7f298efc8fcca84ebff3e53aa",
+      "argument_schema_sha256": "ef93b4d212cb4ca60695a507c803659291f210b87111b59efc27fb53a537269c",
       "argument_validator_source_sha256": "56b73202aff4666e603253f9e85e238d2b6269e3b8c1395c08e5bfb4ea096564",
       "declared_status": "implemented",
       "dynamic": true,
@@ -24641,7 +24627,7 @@
       "handler": "dynamic",
       "id": "novel.scene.design",
       "implemented": true,
-      "metadata_sha256": "70c8adfd6c2e44aeda207fb2e970a3406c928a95d9d8bbab9a246647442bb10d",
+      "metadata_sha256": "2c9e3be1f514926f14b51d309492e5db0e00505aebb9ddb4564f19da21aec239",
       "reason": "",
       "result_schema": {
         "action": "novel.scene.design",
@@ -24652,7 +24638,7 @@
       "result_schema_sha256": "385c44320b523c5b9c37dfd9f58c6513c2681e6cf60c4d5a09d0f9f3f4dd2496",
       "result_validator_source_sha256": "56b73202aff4666e603253f9e85e238d2b6269e3b8c1395c08e5bfb4ea096564",
       "risk": "A2",
-      "summary": "Score 2-3 emotional payoff candidates and bind the strongest valid scene to a chapter.",
+      "summary": "Record the caller-selected scene using selected_index and expected_state_hash; no score or quality decision.",
       "value_schema_kind": "OPAQUE",
       "value_schemas": {},
       "value_validator_source_sha256": "56b73202aff4666e603253f9e85e238d2b6269e3b8c1395c08e5bfb4ea096564"
@@ -24720,7 +24706,7 @@
       "handler": "dynamic",
       "id": "novel.timeline.normalize",
       "implemented": true,
-      "metadata_sha256": "47fada4b1bea1f6c0fb53929f41ddf3dcc29d953810b80bfd7593b2255615e1b",
+      "metadata_sha256": "42fa0b1ae96b46cc9501b7fbd19175c4e54f0af3a9b54fd8e0159ded8ff7511d",
       "reason": "",
       "result_schema": {
         "action": "novel.timeline.normalize",
@@ -24731,7 +24717,7 @@
       "result_schema_sha256": "790e67d7f4a2923311b2f6c11fcac201a01ca00733016d0c47c4764003d863b5",
       "result_validator_source_sha256": "56b73202aff4666e603253f9e85e238d2b6269e3b8c1395c08e5bfb4ea096564",
       "risk": "A2",
-      "summary": "Atomically resolve all currently deterministic overlap and travel-gap conflicts with strictly improving suffix shifts.",
+      "summary": "Atomically resolve all currently deterministic overlap and travel-gap conflicts using explicit suffix shifts; report remaining observations.",
       "value_schema_kind": "OPAQUE",
       "value_schemas": {},
       "value_validator_source_sha256": "56b73202aff4666e603253f9e85e238d2b6269e3b8c1395c08e5bfb4ea096564"
@@ -33156,12 +33142,12 @@
   },
   "executable": 274,
   "schema": "tiangong.v3.capability_manifest.v1",
-  "source_hash": "915adaf798c5a9fbcc9d4182739935c67b144d64bafa9df09a51e424f743c7ee",
+  "source_hash": "38f7f047a1d123bf17f8d905dcccb39489eafacba0bcd7f4b787c4ef10bab57b",
   "total": 779,
   "unavailable": 505,
   "validation": {
     "executable_without_route": [],
     "ok": true,
-    "source_hash": "915adaf798c5a9fbcc9d4182739935c67b144d64bafa9df09a51e424f743c7ee"
+    "source_hash": "38f7f047a1d123bf17f8d905dcccb39489eafacba0bcd7f4b787c4ef10bab57b"
   }
 }

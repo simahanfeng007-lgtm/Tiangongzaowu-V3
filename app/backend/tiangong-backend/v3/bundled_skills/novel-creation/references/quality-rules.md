@@ -1,27 +1,7 @@
-# Prose Quality Rules
+# Content Review
 
-## Scene construction
+Use the user's actual goal, requested genre/style, continuity requirements and current chapter bytes. Do not invent fixed lengths, phrase bans, dialogue ratios, mandatory cliffhangers or numeric emotional/deviation thresholds.
 
-- Give every scene a goal, pressure, change, and consequence.
-- Make the chapter alter plot, relationship, knowledge, resources, or world state.
-- End local events cleanly while preserving deliberate long arcs.
-- Use concrete action, objects, sensory evidence, and pressured dialogue.
+Tool observations cover file identity, readable content, configured counts and literal terms. They do not prove character motivation, causality, literary merit or whether an omission is intentional. The adversarial judge must examine the relevant prose and goal, distinguish wrong content from insufficient evidence, request a concrete repair when needed, and inspect fresh bytes after the repair. Correct work should not be blocked by an unstated preference.
 
-## Character integrity
-
-- Let characters act from established desire, knowledge, fear, and capability.
-- Keep dialogue voices distinct.
-- Do not use information a viewpoint character does not know.
-- Make major changes arise from choices and paid costs.
-
-## Emotional integrity
-
-- Accumulate attachment, expectation, sacrifice, promises, and callbacks before payoff.
-- Prefer restraint and irreversible consequence over explanatory crying.
-- Do not use arbitrary death, misunderstanding, power loss, or hidden identity as a shortcut.
-- Make a shocking turn surprising before it happens and inevitable in retrospect.
-
-## Mechanical rejection
-
-Treat placeholders, insufficient length, missing event evidence, overdue event closure, impossible time or travel, unsupported progression, stale state, and protected-anchor loss as blocking.
-
+A writer's self-report and a delivered repair suggestion are not independent evidence. Preserve original attempts and distinguish storage failure from a content revision request. Final approval expires when the artifact, goal or recovery generation changes.

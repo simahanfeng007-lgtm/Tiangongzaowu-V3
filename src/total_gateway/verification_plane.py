@@ -29,6 +29,7 @@ from __future__ import annotations
 # 1.53 binds real browser observations, scoped MCP connections and mandatory adversarial completion.
 # 1.54 removes residual rubric authority and hidden execution from content observations.
 # 1.55 preserves typed unavailability and explicit document observation failures/ranges.
-VERIFICATION_PLANE_VERSION = "1.55"
+# 1.56 makes novel content judgments advisory and validates recovery before writes.
+VERIFICATION_PLANE_VERSION = "1.56"
 
 __all__ = ["VERIFICATION_PLANE_VERSION"]

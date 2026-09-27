@@ -26,9 +26,9 @@ BASE=args.output_root.resolve()
 out=BASE/('audit-'+args.attempt+('-'+args.audit_id if args.audit_id else '')+'.json')
 if out.exists(): raise SystemExit('Refusing to replace prior audit')
 summary={'schema':'tiangong.ontology.live-audit.v1','checked_head':subprocess.check_output(['git','rev-parse','HEAD'],cwd=SOURCE,text=True).strip(),'cases':[]}
-for kind in ('local','browser','mcp','quality','document'):
+for kind in ('local','browser','mcp','quality','document','novel'):
     p=BASE/'live'/(kind+'-'+args.attempt)
-    if kind == 'document' and not p.exists():
+    if kind in ('document','novel') and not p.exists():
         continue
     record=json.loads((p/'result.json').read_text())
     snapshot=json.loads((p/'source-files.json').read_text())

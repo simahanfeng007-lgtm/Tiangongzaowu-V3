@@ -65,7 +65,7 @@ NOVEL_SYSTEM_ACTIONS: Dict[str, Dict[str, Any]] = {
     "novel.timeline.normalize": {
         "risk": "A2",
         "implemented": True,
-        "summary": "Atomically resolve all currently deterministic overlap and travel-gap conflicts with strictly improving suffix shifts.",
+        "summary": "Atomically resolve all currently deterministic overlap and travel-gap conflicts using explicit suffix shifts; report remaining observations.",
     },
     "novel.mobility.align_initial_many": {
         "risk": "A2",
@@ -75,12 +75,12 @@ NOVEL_SYSTEM_ACTIONS: Dict[str, Dict[str, Any]] = {
     "novel.blueprint.compile": {
         "risk": "A2",
         "implemented": True,
-        "summary": "Validate the whole story graph and freeze the immutable original blueprint.",
+        "summary": "Validate record shapes and references, freeze the original blueprint, and return advisory story observations.",
     },
     "novel.plan.rebase": {
         "risk": "A2",
         "implemented": True,
-        "summary": "Replan future events and chapters against accepted facts while preserving protected anchors.",
+        "summary": "Replan future events and chapters against recorded state while preserving protected anchors.",
     },
     "novel.chapter.checkout": {
         "risk": "A2",
@@ -90,17 +90,17 @@ NOVEL_SYSTEM_ACTIONS: Dict[str, Dict[str, Any]] = {
     "novel.chapter.submit": {
         "risk": "A2",
         "implemented": True,
-        "summary": "Validate, score, settle, and atomically commit a chapter and its factual delta.",
+        "summary": "Record chapter bytes and caller annotations with version checks and recoverable transactions; content remains unassessed.",
     },
     "novel.scene.design": {
         "risk": "A2",
         "implemented": True,
-        "summary": "Score 2-3 emotional payoff candidates and bind the strongest valid scene to a chapter.",
+        "summary": "Record the caller-selected scene using selected_index and expected_state_hash; no score or quality decision.",
     },
     "novel.context.query": {
         "risk": "A1",
         "implemented": True,
-        "summary": "Retrieve authoritative character, event, relationship, foreshadow, chapter, or emotion context.",
+        "summary": "Retrieve recorded character, event, relationship, foreshadow, chapter, or emotion context with caller provenance.",
     },
     "novel.project.audit": {
         "risk": "A1",
@@ -135,11 +135,12 @@ _PLANNING_SECTION_TYPES = {
 
 
 def _read_json(path: Path) -> Dict[str, Any]:
-    try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-        return value if isinstance(value, dict) else {}
-    except (OSError, UnicodeError, json.JSONDecodeError):
+    if not path.exists():
         return {}
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(value, dict):
+        raise ValueError(f"Workspace source must be an object: {path.name}")
+    return value
 
 
 def _positive_int(value: Any) -> int:
@@ -201,7 +202,7 @@ def _sync_managed_workspace(project_root: Path) -> Dict[str, Any]:
     for name in _PLANNING_SECTIONS:
         value = blueprint.get(name)
         expected = _PLANNING_SECTION_TYPES[name]
-        if not isinstance(value, expected) or not value:
+        if not isinstance(value, expected):
             missing.append(name)
     if not original:
         missing.append("blueprint.original")
@@ -280,7 +281,7 @@ def _sync_managed_workspace(project_root: Path) -> Dict[str, Any]:
         "# 小说工程说明\n\n"
         "- `.novel-system/`：权威蓝图、事实状态、章节事务与断点。\n"
         "- `设定/`、`大纲/`、`追踪数据/`：权威状态的人可读投影。\n"
-        "- `正文/`：已通过章节事务验收的正式正文。\n"
+        "- `正文/`：已通过事务记录的正文；内容质量仍需最终对抗裁判判断。\n"
         "- 继续续写时先调用 `novel.project.status`；规划完整则从 `next_chapter` 继续，不完整则先补齐蓝图并编译。\n",
     )
     _atomic_text(root / "创作宪法.md", _markdown_projection("创作宪法", (("故事契约", blueprint.get("story") or {}), ("质量与连续性设置", blueprint.get("settings") or {}))))
@@ -302,7 +303,7 @@ def _sync_managed_workspace(project_root: Path) -> Dict[str, Any]:
         "missing_planning_sections": missing,
         "state_issues": state_issues,
         "recovery_required": recovery_required,
-        "resume_action": "novel.chapter.checkout" if planning_complete else "novel.project.recover" if recovery_required else "novel.blueprint.update",
+        "resume_action": "novel.project.recover" if recovery_required else "novel.chapter.checkout" if planning_complete else "novel.blueprint.update",
     }
 
 
@@ -367,8 +368,15 @@ def handle_novel_system_action(
             "novel.plan.rebase",
             "novel.chapter.submit",
         }
-        workspace = _sync_managed_workspace(project_root) if action in sync_actions else None
         payload = {"op_id": op_id, "action": action, **result}
+        workspace = None
+        if action in sync_actions:
+            try:
+                workspace = _sync_managed_workspace(project_root)
+            except (OSError, UnicodeError, ValueError) as exc:
+                # Auxiliary projection cannot undo or misreport a committed action.
+                payload["workspace_projection"] = {"status": "unavailable", "error_type": type(exc).__name__}
+        payload["execution_state"] = "completed"
         if workspace is not None:
             payload["workspace"] = workspace
             payload["delivery"] = {
@@ -378,4 +386,14 @@ def handle_novel_system_action(
             }
         return payload
     except NovelSystemError as exc:
-        return {"op_id": op_id, "action": action, **exc.payload()}
+        reconcile = action == "novel.project.recover" or exc.code == "RECOVERY_REQUIRED"
+        return {"op_id": op_id, "action": action, **exc.payload(),
+                "execution_state": "unknown" if reconcile else "not_executed",
+                "ambiguous_effect": reconcile, "reconciliation_required": reconcile}
+    except (OSError, UnicodeError) as exc:
+        mutable = NOVEL_SYSTEM_ACTIONS.get(action, {}).get("risk") == "A2"
+        return {"op_id": op_id, "action": action, "success": False, "ok": False,
+                "status": "NOVEL_STORAGE_ERROR", "error_type": type(exc).__name__,
+                "execution_state": "unknown" if mutable else "failed",
+                "ambiguous_effect": mutable, "reconciliation_required": mutable,
+                "next_action": "novel.project.status"}

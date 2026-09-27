@@ -3,85 +3,39 @@ name: novel-creation
 description: Create, continue, audit, revise, or complete an explicitly managed long-form fiction project through Tiangong's authoritative novel system. Use only when the user asks for a full book, autonomous multi-chapter/long-running serial work, or the target is already a managed novel project. Do not use for a one-off chapter, a few chapters, an outline, character/ clue sheets, or a collaboration/review package; route those to the lightweight webnovel deliverable Skill. All managed prose must use the novel.* tool actions rather than generic file writes.
 ---
 
-# Novel Creation
+# Managed Novel Creation
 
-## Entry gate
+Use the existing novel engine for an explicitly managed book or serial project. For a one-off chapter or outline use the lightweight deliverable workflow. User instructions define the goal and scope.
 
-Enter this workflow only when the request explicitly authorizes a managed full-book or long-running multi-chapter project, or when `novel.project.status` identifies the target as an existing managed project. Never infer `target_words` or `planned_chapters` from a single-chapter request. For a one-off chapter, a few chapters, an outline, character/ clue sheets, collaboration notes, or continuity review documents, use the lightweight deliverable Skill and `file.write`/`docx.create` plus QC instead of `novel.project.create`.
+## Authority
 
-Treat the model as the prose author, never as the source of truth. Treat accepted chapter facts as canon, the immutable original blueprint as intent, the rolling blueprint as the current route, and deterministic tools as the gatekeeper.
+The engine records project data, byte hashes, versions and chapter transactions. Plans, event outcomes and emotional notes are caller-supplied story annotations, not independently verified facts about prose. Only the final adversarial judge decides content quality and task completion using the current user goal and freshly read chapter bytes. `committed=true`, `all_planned_chapters_recorded=true`, `ok=true` and legacy `energy` do not approve a deliverable.
 
-## Project discovery and portable workspace
+## Workflow
 
-Before choosing create or continue, resolve the intended project folder inside the active workspace.
+1. Resolve the project in the authorized workspace. For an existing `.novel-system/manifest.json`, read `novel.project.status`; recover a prepared transaction before another submission. Retain the original failed attempt.
+2. For a new managed project, use user-declared `planned_chapters` and `target_words`. There is no implicit words-per-chapter formula. Stage records with update/patch/upsert. Preserve existing records and respect returned versions.
+3. Read `novel.blueprint.assist`. Missing identities, invalid references and record shapes require correction before compilation. Age, overlap, travel and other story observations are advisory: the model chooses whether and how they matter to this story. Do not blindly execute a suggested repair or optimize its numeric energy.
+4. Compile the declared plan. Checkout the current `next_chapter` to obtain a v2 lease, state hash and relevant context. Query only the additional context needed.
+5. Write prose matching the user's requirements. Submit prose and structured annotations through `novel.chapter.submit`. A transaction refusal identifies a concrete record, version or storage problem; repair that issue and obtain a fresh lease if stale. No default length, keyword match, deviation proof or emotional score blocks prose.
+6. A successful transaction records bytes and advances the chapter sequence. Read the chapter back, inspect observations and ask the final adversarial judge to evaluate the actual requested deliverable. Suggestions delivered to the author do not prove any revision happened.
+7. When creative scene planning helps, submit any non-empty candidate list, an explicit `selected_index` and the current `expected_state_hash` to `novel.scene.design`. The program records the caller's choice; it does not rank candidates or force a scene.
+8. Use future-only `novel.plan.rebase` when changing the remaining plan. Original snapshots and recorded history retain their identities. After any revision, recovery or changed goal, acquire fresh observations and a new final decision.
+9. Before delivery, audit file hashes/ledger continuity, read actual content, and obtain the sole final adversarial decision. Report the managed folder and requested chapter artifact. Do not infer business completion from a chapter count.
 
-- If the folder contains `.novel-system/manifest.json`, call `novel.project.status` first. When `workspace.planning_complete=true`, continue exactly from canonical `next_chapter`; do not recreate the project or regenerate the whole plan.
-- If a managed folder exists but `workspace.planning_complete=false`, repair only `workspace.missing_planning_sections`, then assist and compile. Do not start prose against a partial plan.
-- If the intended folder does not exist, call `novel.project.create`, then build and compile the complete book blueprint before drafting the requested checkpoint chapter.
-- Every managed action synchronizes a portable project view containing `project.json`, `pipeline_state.json`, `创作宪法.md`, `设定/`, `大纲/`, `追踪数据/`, and `正文/`. The `.novel-system/` directory remains authoritative.
-- At the final checkpoint, report both `delivery.project_folder` and `delivery.latest_chapter`. The whole project folder and the accepted prose are the deliverables; do not report only an isolated chapter file.
+## Storage and recovery
 
-## Mandatory workflow
+Use novel transactions for managed `正文/` and `.novel-system/` records; generic file writes would bypass their version and recovery contract. Recovery accepts historical v1 prepared byte transactions after integrity checks, without reinterpreting old approval claims. A v1 checkout must be replaced by a new v2 lease. Conflicting actual bytes or state stop replay and require reconciliation.
 
-1. Call `novel.project.create` for a new project. `planned_chapters` describes the full book, not the requested stopping chapter, and must be at least `ceil(target_words / 5000)`.
-2. Stage every required blueprint section with `novel.blueprint.update` only while that section is empty. Bound batches by payload: at most 30 `plot_events`, but at most 15 `chapters`, in one response or tool call. Send every later contiguous range through `novel.blueprint.upsert_many`, waiting for the accepted result before generating the next range. Never use `replace_all` on a list section.
-3. Call `novel.blueprint.assist` before compilation. Let the system calculate age, reference, travel, and dependency debt.
-4. Use `novel.reference.resolve` and `novel.timeline.calculate` for deterministic questions. The model chooses the creative resolution.
-5. Repair only the returned next dependency batch with its exact `repair_sequence`; use `novel.blueprint.upsert_many` for multi-item batches and never replace a correct whole section.
-   If `novel.blueprint.assist` returns `repair_batch`, execute that exact batch first. It combines independent initial-location alignments or route declarations into one checked transaction.
-   While chapter coverage is incomplete, convergence is `building`, not regression, and `novel.blueprint.assist` will reject the call. For mobility, first-scene mismatches repair `characters.initial.location`; later off-screen movement requires a route plus sufficient calculated time. Dense timing conflicts use `novel.timeline.normalize` to apply all currently deterministic minimal suffix shifts in one strictly improving transaction; never guess and patch individual downstream ticks.
-   Participant overlaps use the same normalization transaction. Recalculate after it finishes because newly declared routes may reveal additional travel-time debt.
-   Every patch returns `energy_before`, `energy_after`, and `convergence`; prefer improving patches and reconsider regressing ones.
-   After full chapter coverage exists, do not insert unreferenced plot events. Update existing canonical ids only; the backend rejects any repair upsert that increases total error energy.
-6. Call `novel.blueprint.compile`. Do not draft until it succeeds.
-7. Call `novel.chapter.checkout` for exactly `next_chapter`.
-8. Draft from the returned chapter card and relevant queried context.
-9. Call `novel.chapter.submit` with final prose and a structured factual delta.
-10. If rejected, change the failed prose or delta and resubmit the same lease unless the tool reports it stale.
-11. If `novel.scene.design` is required, submit 2-3 causal candidates before the indicated chapter.
-12. If accepted facts make future plans inconsistent, call `novel.plan.rebase` for future-only changes while preserving every protected anchor.
-13. Advance only after `accepted=true`.
-14. Call `novel.project.audit` before declaring a volume or book complete.
-
-For a long book, finish every declared `plot_events` batch and every declared `chapters` batch before calling assist or compile. A checkpoint such as chapter 15 limits prose generation, not full-book blueprint coverage.
-
-Never write, append, patch, rename, move, or delete files under a managed project's `正文/` with generic file tools. Never claim a draft is canonical before `novel.chapter.submit` succeeds.
-
-## Authority order
-
-Use this precedence when plans disagree:
-
-1. Protected story anchors and hard world rules.
-2. Accepted factual state and event outcomes.
-3. Current rolling blueprint.
-4. Original blueprint as the divergence baseline.
-5. Unaccepted prose or model memory.
-
-Do not overwrite the original blueprint. Let chapter submission rebase the rolling plan onto accepted facts.
-
-## Required gates
-
-- Reject impossible time, age, travel, progression, knowledge, life/death, or causal prerequisites.
-- Use hour or finer ticks for multiple same-day scenes and never overlap one character's event intervals unless simultaneous participation is explicit and physically possible.
-- For mobility debt, execute `novel.blueprint.assist` calculations in order: create the returned missing route, wait for success, then patch the returned existing event id into a valid travel transition. Do not add an unreferenced event.
-- Close every event whose deadline or chapter contract requires closure.
-- Preserve permanent consequences; do not silently restore the previous state.
-- Use deviation scores to distinguish natural growth from loss of story direction.
-- Require convergence proof for high deviation while preserving all protected anchors.
-- Deposit or withdraw emotional energy only with evidence present in the prose.
-- Design a payoff scene when an emotional account reaches its threshold; do not force death or arbitrary reversal.
-
-## Context discipline
-
-Use the checkout card as the minimum writing context. Call `novel.context.query` only for relevant characters, events, relationships, foreshadows, chapters, or emotional accounts. Do not load the whole novel when targeted facts suffice.
-
-When automatic context compilation archives old blocks at the configured budget, continue from `novel.project.status`, the checkout card, and targeted `novel.context.query` results. Never reconstruct continuity from discarded chat text or reload the whole project into the prompt.
+The legacy `scripts/novel_tool.py` is a file observation/assembly helper. Its `gate`, `audit`, and `contract-check` commands never issue quality approval. It cannot replace managed transactions or the final judge. Historical passed/failed files are preserved and labeled historical.
 
 ## References
 
-- Read [workflow.md](references/workflow.md) before starting or resuming a managed project.
-- Read [blueprint-schema.md](references/blueprint-schema.md) when creating or revising story plans.
-- Read [chapter-transaction.md](references/chapter-transaction.md) before submitting chapters or diagnosing rejection.
-- Read [emotion-engine.md](references/emotion-engine.md) when emotional thresholds or set-piece design are active.
-- Read [quality-rules.md](references/quality-rules.md) while drafting or revising prose.
-- Read [action-reference.md](references/action-reference.md) when an action or argument shape is uncertain.
+- [workflow.md](references/workflow.md): execution and recovery.
+- [blueprint-schema.md](references/blueprint-schema.md): record shapes and caller annotations.
+- [chapter-transaction.md](references/chapter-transaction.md): v2 transaction contract.
+- [emotion-engine.md](references/emotion-engine.md): optional creative notes and explicit scene selection.
+- [quality-rules.md](references/quality-rules.md): judge observations.
+- [action-reference.md](references/action-reference.md): tool arguments.
+
+To repair the latest recorded chapter, read its chapter record and actual bytes, then checkout that chapter with `revision_of` equal to its current SHA-256. Submit the fresh lease with revised prose and `actual={}`. This changes prose only; prior story annotations remain explicitly unverified. Earlier chapter or state-delta corrections are outside this version’s revision support and must not be silently rewritten. Old bytes/records remain in transaction history. Read the new content and obtain a fresh final judge decision.

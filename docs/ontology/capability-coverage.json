@@ -21760,7 +21760,7 @@
         "values": false
       },
       "default_args": {},
-      "definition_sha256": "ce2238aad177713b162d032995928a722154f82df2d698abdebe607dad4a1565",
+      "definition_sha256": "e215140d8e2129fe4c9205effbf7366c5ea30633a72fe3f695b194a1251c7ee2",
       "disposition": "retain_with_contract",
       "effect": "read",
       "implementation_declared": true,
@@ -21771,16 +21771,16 @@
       "retry": "observe_before_retry",
       "review_scope": "source_definition_and_binding_review",
       "runtime_literal_references": [
-        "app/backend/tiangong-backend/v3/novel_system.py:1658",
-        "app/backend/tiangong-backend/v3/novel_system.py:515",
-        "app/backend/tiangong-backend/v3/novel_system.py:627",
+        "app/backend/tiangong-backend/v3/novel_system.py:1649",
+        "app/backend/tiangong-backend/v3/novel_system.py:500",
+        "app/backend/tiangong-backend/v3/novel_system.py:595",
         "src/omni_body_skill/tool_contracts.py:1187",
         "src/omni_body_skill/tool_contracts.py:1628",
         "src/omni_body_skill/tool_contracts.py:34",
-        "src/omni_body_skill/tools/novel_system.py:331",
+        "src/omni_body_skill/tools/novel_system.py:332",
         "src/omni_body_skill/tools/novel_system.py:45"
       ],
-      "semantic_atomicity_review": "not_claimed_complete",
+      "semantic_atomicity_review": "explicit_change_review",
       "summary": "Calculate dependency-ordered repair batches, error energy, ages, and reference suggestions."
     },
     {
@@ -21800,7 +21800,7 @@
         "values": false
       },
       "default_args": {},
-      "definition_sha256": "02a198c734b01dc8adb3a208b729ae10ec91332a4ae7bbccd73218469383ca9f",
+      "definition_sha256": "3e2e722aa5c13a1dcad9110e43fae020656d3a477aec9cbb0c99ac2a4a9b1a74",
       "disposition": "retain_with_contract",
       "effect": "update",
       "implementation_declared": true,
@@ -21811,14 +21811,14 @@
       "retry": "observe_before_retry",
       "review_scope": "source_definition_and_binding_review",
       "runtime_literal_references": [
-        "app/backend/tiangong-backend/v3/novel_system.py:836",
+        "app/backend/tiangong-backend/v3/novel_system.py:805",
         "src/omni_body_skill/tool_contracts.py:40",
-        "src/omni_body_skill/tools/novel_system.py:343",
-        "src/omni_body_skill/tools/novel_system.py:366",
+        "src/omni_body_skill/tools/novel_system.py:344",
+        "src/omni_body_skill/tools/novel_system.py:367",
         "src/omni_body_skill/tools/novel_system.py:75"
       ],
-      "semantic_atomicity_review": "not_claimed_complete",
-      "summary": "Validate the whole story graph and freeze the immutable original blueprint."
+      "semantic_atomicity_review": "explicit_change_review",
+      "summary": "Validate record shapes and references, freeze the original blueprint, and return advisory story observations."
     },
     {
       "action": "novel.blueprint.patch",
@@ -21837,7 +21837,7 @@
         "values": false
       },
       "default_args": {},
-      "definition_sha256": "99a3c1e3f24f1164e520f6a655ccbf2a15ad2fcca95d4a4c4511bd24f29f11a0",
+      "definition_sha256": "a1c6006aba0a0314f18230b7e73a5eb1e1fd8f50db6c725fedaa21ff4322aae1",
       "disposition": "retain_with_contract",
       "effect": "update",
       "implementation_declared": true,
@@ -21848,14 +21848,14 @@
       "retry": "observe_before_retry",
       "review_scope": "source_definition_and_binding_review",
       "runtime_literal_references": [
-        "app/backend/tiangong-backend/v3/novel_system.py:836",
+        "app/backend/tiangong-backend/v3/novel_system.py:805",
         "src/omni_body_skill/tool_contracts.py:1572",
         "src/omni_body_skill/tool_contracts.py:32",
-        "src/omni_body_skill/tools/novel_system.py:327",
+        "src/omni_body_skill/tools/novel_system.py:328",
         "src/omni_body_skill/tools/novel_system.py:35",
-        "src/omni_body_skill/tools/novel_system.py:364"
+        "src/omni_body_skill/tools/novel_system.py:365"
       ],
-      "semantic_atomicity_review": "not_claimed_complete",
+      "semantic_atomicity_review": "explicit_change_review",
       "summary": "Merge one staged blueprint object or selected item without replacing its whole section."
     },
     {
@@ -21875,7 +21875,7 @@
         "values": false
       },
       "default_args": {},
-      "definition_sha256": "cbe07b3ebda3176d63db6299460996eacef18b31fbdf78441e6419d4d8a26fe7",
+      "definition_sha256": "02b2d250917234f42110b596126e069ce9b23814b737ab6751aa5feb757c6215",
       "disposition": "retain_with_contract",
       "effect": "update",
       "implementation_declared": true,
@@ -21886,16 +21886,15 @@
       "retry": "observe_before_retry",
       "review_scope": "source_definition_and_binding_review",
       "runtime_literal_references": [
-        "app/backend/tiangong-backend/v3/novel_system.py:444",
-        "app/backend/tiangong-backend/v3/novel_system.py:638",
+        "app/backend/tiangong-backend/v3/novel_system.py:428",
         "src/omni_body_skill/tool_contracts.py:1493",
         "src/omni_body_skill/tool_contracts.py:31",
         "src/omni_body_skill/tools/novel_system.py:30",
-        "src/omni_body_skill/tools/novel_system.py:305",
-        "src/omni_body_skill/tools/novel_system.py:325",
-        "src/omni_body_skill/tools/novel_system.py:363"
+        "src/omni_body_skill/tools/novel_system.py:306",
+        "src/omni_body_skill/tools/novel_system.py:326",
+        "src/omni_body_skill/tools/novel_system.py:364"
       ],
-      "semantic_atomicity_review": "not_claimed_complete",
+      "semantic_atomicity_review": "explicit_change_review",
       "summary": "Replace one strongly typed staged blueprint section before compilation."
     },
     {
@@ -21915,7 +21914,7 @@
         "values": false
       },
       "default_args": {},
-      "definition_sha256": "f8e2eb9d57b248536eac8fbfc19e05f3c2047c45d7c3010953fc8b64737f3618",
+      "definition_sha256": "cad4399b6b2a1ad3a4ee489946606d381fdae01b86e09c99eb7634e66843f2cb",
       "disposition": "retain_with_contract",
       "effect": "update",
       "implementation_declared": true,
@@ -21926,18 +21925,17 @@
       "retry": "observe_before_retry",
       "review_scope": "source_definition_and_binding_review",
       "runtime_literal_references": [
-        "app/backend/tiangong-backend/v3/novel_system.py:515",
-        "app/backend/tiangong-backend/v3/novel_system.py:627",
-        "app/backend/tiangong-backend/v3/novel_system.py:757",
-        "app/backend/tiangong-backend/v3/novel_system.py:810",
+        "app/backend/tiangong-backend/v3/novel_system.py:500",
+        "app/backend/tiangong-backend/v3/novel_system.py:595",
+        "app/backend/tiangong-backend/v3/novel_system.py:724",
         "src/omni_body_skill/tool_contracts.py:1130",
         "src/omni_body_skill/tool_contracts.py:1601",
         "src/omni_body_skill/tool_contracts.py:33",
-        "src/omni_body_skill/tools/novel_system.py:329",
-        "src/omni_body_skill/tools/novel_system.py:365",
+        "src/omni_body_skill/tools/novel_system.py:330",
+        "src/omni_body_skill/tools/novel_system.py:366",
         "src/omni_body_skill/tools/novel_system.py:40"
       ],
-      "semantic_atomicity_review": "not_claimed_complete",
+      "semantic_atomicity_review": "explicit_change_review",
       "summary": "Merge a batch of blueprint list items by canonical id or chapter number without dropping existing items."
     },
     {
@@ -21957,7 +21955,7 @@
         "values": false
       },
       "default_args": {},
-      "definition_sha256": "507de026aeb34bd5153e6de394246214e49c3f3ffe860ed1ab0e6b2166c54793",
+      "definition_sha256": "a4e27727c24d10a8cd778353065eecd47a2d19a6572fb6376ac8fcfbeca78549",
       "disposition": "retain_with_contract",
       "effect": "update",
       "implementation_declared": true,
@@ -21968,18 +21966,18 @@
       "retry": "observe_before_retry",
       "review_scope": "source_definition_and_binding_review",
       "runtime_literal_references": [
-        "app/backend/tiangong-backend/v3/novel_system.py:1061",
-        "app/backend/tiangong-backend/v3/novel_system.py:1125",
-        "app/backend/tiangong-backend/v3/novel_system.py:1509",
-        "app/backend/tiangong-backend/v3/novel_system.py:1584",
-        "app/backend/tiangong-backend/v3/novel_system.py:1658",
+        "app/backend/tiangong-backend/v3/novel_system.py:1026",
+        "app/backend/tiangong-backend/v3/novel_system.py:1090",
+        "app/backend/tiangong-backend/v3/novel_system.py:1462",
+        "app/backend/tiangong-backend/v3/novel_system.py:1574",
+        "app/backend/tiangong-backend/v3/novel_system.py:1649",
         "src/omni_body_skill/tool_contracts.py:1697",
         "src/omni_body_skill/tool_contracts.py:42",
-        "src/omni_body_skill/tools/novel_system.py:305",
-        "src/omni_body_skill/tools/novel_system.py:347",
+        "src/omni_body_skill/tools/novel_system.py:306",
+        "src/omni_body_skill/tools/novel_system.py:348",
         "src/omni_body_skill/tools/novel_system.py:85"
       ],
-      "semantic_atomicity_review": "not_claimed_complete",
+      "semantic_atomicity_review": "explicit_change_review",
       "summary": "Issue a state-hash-bound chapter lease and compiled writing context."
     },
     {
@@ -21999,7 +21997,7 @@
         "values": false
       },
       "default_args": {},
-      "definition_sha256": "4bf6420a681c6fb1d735589e27e9c750bf6e06c629398382858ff3768fce6f44",
+      "definition_sha256": "902d7239d860706290bcaa5716d875b7376c95b31a684f3fd0f93aa3cec44d28",
       "disposition": "retain_with_contract",
       "effect": "update",
       "implementation_declared": true,
@@ -22010,16 +22008,16 @@
       "retry": "observe_before_retry",
       "review_scope": "source_definition_and_binding_review",
       "runtime_literal_references": [
-        "app/backend/tiangong-backend/v3/novel_system.py:1229",
+        "app/backend/tiangong-backend/v3/novel_system.py:1202",
         "src/omni_body_skill/tool_contracts.py:1204",
         "src/omni_body_skill/tool_contracts.py:1708",
         "src/omni_body_skill/tool_contracts.py:43",
-        "src/omni_body_skill/tools/novel_system.py:349",
-        "src/omni_body_skill/tools/novel_system.py:368",
+        "src/omni_body_skill/tools/novel_system.py:350",
+        "src/omni_body_skill/tools/novel_system.py:369",
         "src/omni_body_skill/tools/novel_system.py:90"
       ],
-      "semantic_atomicity_review": "not_claimed_complete",
-      "summary": "Validate, score, settle, and atomically commit a chapter and its factual delta."
+      "semantic_atomicity_review": "explicit_change_review",
+      "summary": "Record chapter bytes and caller annotations with version checks and recoverable transactions; content remains unassessed."
     },
     {
       "action": "novel.context.query",
@@ -22038,7 +22036,7 @@
         "values": false
       },
       "default_args": {},
-      "definition_sha256": "04b444bd5c2f3970e72f657f4092d312c2a37d397d52d410a9bfb3fa4b5ade86",
+      "definition_sha256": "016ce3a3deb64e2d368a70177d3a6bfdd45042a2529c2a98c26536cc700d23bd",
       "disposition": "retain_with_contract",
       "effect": "read",
       "implementation_declared": true,
@@ -22054,10 +22052,10 @@
         "src/omni_body_skill/tool_contracts.py:1751",
         "src/omni_body_skill/tool_contracts.py:45",
         "src/omni_body_skill/tools/novel_system.py:100",
-        "src/omni_body_skill/tools/novel_system.py:353"
+        "src/omni_body_skill/tools/novel_system.py:354"
       ],
-      "semantic_atomicity_review": "not_claimed_complete",
-      "summary": "Retrieve authoritative character, event, relationship, foreshadow, chapter, or emotion context."
+      "semantic_atomicity_review": "explicit_change_review",
+      "summary": "Retrieve recorded character, event, relationship, foreshadow, chapter, or emotion context with caller provenance."
     },
     {
       "action": "novel.mobility.align_initial_many",
@@ -22076,7 +22074,7 @@
         "values": false
       },
       "default_args": {},
-      "definition_sha256": "061a0ce5c361ca17a7ee1111f5fa0081632bf9f9f7b199f0b0c8983ddf4c4275",
+      "definition_sha256": "13665bae27219c3b882e7f16702ce5f639f3e76524a5cb6255449e2a7a5bc417",
       "disposition": "retain_with_contract",
       "effect": "update",
       "implementation_declared": true,
@@ -22087,13 +22085,13 @@
       "retry": "observe_before_retry",
       "review_scope": "source_definition_and_binding_review",
       "runtime_literal_references": [
-        "app/backend/tiangong-backend/v3/novel_system.py:728",
+        "app/backend/tiangong-backend/v3/novel_system.py:695",
         "src/omni_body_skill/tool_contracts.py:1677",
         "src/omni_body_skill/tool_contracts.py:39",
-        "src/omni_body_skill/tools/novel_system.py:341",
+        "src/omni_body_skill/tools/novel_system.py:342",
         "src/omni_body_skill/tools/novel_system.py:70"
       ],
-      "semantic_atomicity_review": "not_claimed_complete",
+      "semantic_atomicity_review": "explicit_change_review",
       "summary": "Atomically align multiple character initial locations to their calculated first physical scenes."
     },
     {
@@ -22113,7 +22111,7 @@
         "values": false
       },
       "default_args": {},
-      "definition_sha256": "480f900e24e468e1abd0d81623e500e2191468dcc1570f27392f2519b06e0c33",
+      "definition_sha256": "2857f8fad5a0819f52ff7fdc839436663a29a41c094eec3e343654ff7520c130",
       "disposition": "retain_with_contract",
       "effect": "update",
       "implementation_declared": true,
@@ -22126,12 +22124,12 @@
       "runtime_literal_references": [
         "src/omni_body_skill/tool_contracts.py:1701",
         "src/omni_body_skill/tool_contracts.py:41",
-        "src/omni_body_skill/tools/novel_system.py:345",
-        "src/omni_body_skill/tools/novel_system.py:367",
+        "src/omni_body_skill/tools/novel_system.py:346",
+        "src/omni_body_skill/tools/novel_system.py:368",
         "src/omni_body_skill/tools/novel_system.py:80"
       ],
-      "semantic_atomicity_review": "not_claimed_complete",
-      "summary": "Replan future events and chapters against accepted facts while preserving protected anchors."
+      "semantic_atomicity_review": "explicit_change_review",
+      "summary": "Replan future events and chapters against recorded state while preserving protected anchors."
     },
     {
       "action": "novel.project.audit",
@@ -22150,7 +22148,7 @@
         "values": false
       },
       "default_args": {},
-      "definition_sha256": "dc0b6511f4ba3ebbc17e8ef72973d61a5b2a1063415598f0019e5627c63f30c8",
+      "definition_sha256": "aec6098be0a3b8087e47fb95697e834b68a0580fc1c9d1b9f192618b5aab995c",
       "disposition": "retain_with_contract",
       "effect": "read",
       "implementation_declared": true,
@@ -22161,12 +22159,12 @@
       "retry": "observe_before_retry",
       "review_scope": "source_definition_and_binding_review",
       "runtime_literal_references": [
-        "app/backend/tiangong-backend/v3/novel_system.py:1509",
+        "app/backend/tiangong-backend/v3/novel_system.py:1462",
         "src/omni_body_skill/tool_contracts.py:46",
         "src/omni_body_skill/tools/novel_system.py:105",
-        "src/omni_body_skill/tools/novel_system.py:355"
+        "src/omni_body_skill/tools/novel_system.py:356"
       ],
-      "semantic_atomicity_review": "not_claimed_complete",
+      "semantic_atomicity_review": "explicit_change_review",
       "summary": "Audit blueprint integrity, state hashes, event deadlines, and accepted chapter files."
     },
     {
@@ -22186,7 +22184,7 @@
         "values": false
       },
       "default_args": {},
-      "definition_sha256": "e7842bd45568a19168468ae0e17fb9e3c875a8a7a91d632f3e12e65434060e07",
+      "definition_sha256": "57a7d5ca810fb56e9179554dcad117d9879ceebe9309d08536fa9ed40e9c8a16",
       "disposition": "retain_with_contract",
       "effect": "create",
       "implementation_declared": true,
@@ -22200,11 +22198,11 @@
         "src/omni_body_skill/tool_contracts.py:1469",
         "src/omni_body_skill/tool_contracts.py:28",
         "src/omni_body_skill/tools/novel_system.py:15",
-        "src/omni_body_skill/tools/novel_system.py:317",
-        "src/omni_body_skill/tools/novel_system.py:319",
-        "src/omni_body_skill/tools/novel_system.py:360"
+        "src/omni_body_skill/tools/novel_system.py:318",
+        "src/omni_body_skill/tools/novel_system.py:320",
+        "src/omni_body_skill/tools/novel_system.py:361"
       ],
-      "semantic_atomicity_review": "not_claimed_complete",
+      "semantic_atomicity_review": "explicit_change_review",
       "summary": "Create a managed long-form novel project and its canonical state directories."
     },
     {
@@ -22224,7 +22222,7 @@
         "values": false
       },
       "default_args": {},
-      "definition_sha256": "ed625e57f03330ae045ef03d75f815463025f45ca2514ecfb714fadc32b06fe5",
+      "definition_sha256": "e9d25a039f84e7c0be909c0e6b39ba7ce761fb82408887dff00da614c440aeaa",
       "disposition": "retain_with_contract",
       "effect": "update",
       "implementation_declared": true,
@@ -22235,14 +22233,15 @@
       "retry": "observe_before_retry",
       "review_scope": "source_definition_and_binding_review",
       "runtime_literal_references": [
-        "app/backend/tiangong-backend/v3/novel_system.py:1658",
+        "app/backend/tiangong-backend/v3/novel_system.py:1649",
         "src/omni_body_skill/tool_contracts.py:30",
         "src/omni_body_skill/tools/novel_system.py:25",
-        "src/omni_body_skill/tools/novel_system.py:305",
-        "src/omni_body_skill/tools/novel_system.py:323",
-        "src/omni_body_skill/tools/novel_system.py:362"
+        "src/omni_body_skill/tools/novel_system.py:306",
+        "src/omni_body_skill/tools/novel_system.py:324",
+        "src/omni_body_skill/tools/novel_system.py:363",
+        "src/omni_body_skill/tools/novel_system.py:389"
       ],
-      "semantic_atomicity_review": "not_claimed_complete",
+      "semantic_atomicity_review": "explicit_change_review",
       "summary": "Finish idempotent prepared chapter transactions after interruption."
     },
     {
@@ -22262,7 +22261,7 @@
         "values": false
       },
       "default_args": {},
-      "definition_sha256": "26ab11d2c0dfad1908158e77715a513ef6bbfd35447a32792c31d26444446269",
+      "definition_sha256": "a76cc17bd2639bd02c55832d485e1157da1f2613352f4aae6265cede1a128726",
       "disposition": "retain_with_contract",
       "effect": "read",
       "implementation_declared": true,
@@ -22275,10 +22274,11 @@
       "runtime_literal_references": [
         "src/omni_body_skill/tool_contracts.py:29",
         "src/omni_body_skill/tools/novel_system.py:20",
-        "src/omni_body_skill/tools/novel_system.py:321",
-        "src/omni_body_skill/tools/novel_system.py:361"
+        "src/omni_body_skill/tools/novel_system.py:322",
+        "src/omni_body_skill/tools/novel_system.py:362",
+        "src/omni_body_skill/tools/novel_system.py:399"
       ],
-      "semantic_atomicity_review": "not_claimed_complete",
+      "semantic_atomicity_review": "explicit_change_review",
       "summary": "Read canonical novel progress, open event debt, and emotional triggers."
     },
     {
@@ -22298,7 +22298,7 @@
         "values": false
       },
       "default_args": {},
-      "definition_sha256": "dbef3edec7912b180f3b50a6e579edd4824f96f2b098c07fe955d1d096de780e",
+      "definition_sha256": "5014cfe77bc8902aeb716c329b01f02915abda77737d6d05b2faf6b19afd72ff",
       "disposition": "retain_with_contract",
       "effect": "read",
       "implementation_declared": true,
@@ -22313,10 +22313,10 @@
         "src/omni_body_skill/tool_contracts.py:1181",
         "src/omni_body_skill/tool_contracts.py:1635",
         "src/omni_body_skill/tool_contracts.py:35",
-        "src/omni_body_skill/tools/novel_system.py:333",
+        "src/omni_body_skill/tools/novel_system.py:334",
         "src/omni_body_skill/tools/novel_system.py:50"
       ],
-      "semantic_atomicity_review": "not_claimed_complete",
+      "semantic_atomicity_review": "explicit_change_review",
       "summary": "Resolve human labels to exact canonical ids or ranked non-authoritative suggestions."
     },
     {
@@ -22336,7 +22336,7 @@
         "values": false
       },
       "default_args": {},
-      "definition_sha256": "8b9a9ee1550875acad46fbe1faa70e7a52ac5080454e6dc3e5286b6464994e3a",
+      "definition_sha256": "9f34184a1b01eed6a7b233fb8f594d16a8f2b74442241728fad8a3532fdb73d7",
       "disposition": "retain_with_contract",
       "effect": "update",
       "implementation_declared": true,
@@ -22347,15 +22347,13 @@
       "retry": "observe_before_retry",
       "review_scope": "source_definition_and_binding_review",
       "runtime_literal_references": [
-        "app/backend/tiangong-backend/v3/novel_system.py:1191",
-        "app/backend/tiangong-backend/v3/novel_system.py:1509",
         "src/omni_body_skill/tool_contracts.py:1745",
         "src/omni_body_skill/tool_contracts.py:44",
-        "src/omni_body_skill/tools/novel_system.py:351",
+        "src/omni_body_skill/tools/novel_system.py:352",
         "src/omni_body_skill/tools/novel_system.py:95"
       ],
-      "semantic_atomicity_review": "not_claimed_complete",
-      "summary": "Score 2-3 emotional payoff candidates and bind the strongest valid scene to a chapter."
+      "semantic_atomicity_review": "explicit_change_review",
+      "summary": "Record the caller-selected scene using selected_index and expected_state_hash; no score or quality decision."
     },
     {
       "action": "novel.timeline.calculate",
@@ -22374,7 +22372,7 @@
         "values": false
       },
       "default_args": {},
-      "definition_sha256": "a52b30f2cf712bfb064edf4dd2db249d8e2f0ee29755504b9b96bd0abcd00412",
+      "definition_sha256": "3e7222e2f97a24fe90418b9f0411f99bde166ce2a2a25a382eb247c4f13bc8b8",
       "disposition": "retain_with_contract",
       "effect": "read",
       "implementation_declared": true,
@@ -22387,10 +22385,10 @@
       "runtime_literal_references": [
         "src/omni_body_skill/tool_contracts.py:1641",
         "src/omni_body_skill/tool_contracts.py:36",
-        "src/omni_body_skill/tools/novel_system.py:335",
+        "src/omni_body_skill/tools/novel_system.py:336",
         "src/omni_body_skill/tools/novel_system.py:55"
       ],
-      "semantic_atomicity_review": "not_claimed_complete",
+      "semantic_atomicity_review": "explicit_change_review",
       "summary": "Calculate age, earliest route arrival, or interval overlap without changing the story."
     },
     {
@@ -22410,7 +22408,7 @@
         "values": false
       },
       "default_args": {},
-      "definition_sha256": "3ddfe7cb0ec82a0206651a013ad4fd79cb6cc20e6a8f765ff4cf8a39333c3b99",
+      "definition_sha256": "18c59fe839c089e006bfde171f226e6ec7b1be4cbc590a73a39c01ba8f53640c",
       "disposition": "retain_with_contract",
       "effect": "update",
       "implementation_declared": true,
@@ -22421,15 +22419,15 @@
       "retry": "observe_before_retry",
       "review_scope": "source_definition_and_binding_review",
       "runtime_literal_references": [
-        "app/backend/tiangong-backend/v3/novel_system.py:742",
-        "app/backend/tiangong-backend/v3/novel_system.py:767",
+        "app/backend/tiangong-backend/v3/novel_system.py:709",
+        "app/backend/tiangong-backend/v3/novel_system.py:734",
         "src/omni_body_skill/tool_contracts.py:1668",
         "src/omni_body_skill/tool_contracts.py:38",
-        "src/omni_body_skill/tools/novel_system.py:339",
+        "src/omni_body_skill/tools/novel_system.py:340",
         "src/omni_body_skill/tools/novel_system.py:65"
       ],
-      "semantic_atomicity_review": "not_claimed_complete",
-      "summary": "Atomically resolve all currently deterministic overlap and travel-gap conflicts with strictly improving suffix shifts."
+      "semantic_atomicity_review": "explicit_change_review",
+      "summary": "Atomically resolve all currently deterministic overlap and travel-gap conflicts using explicit suffix shifts; report remaining observations."
     },
     {
       "action": "novel.timeline.shift_suffix",
@@ -22448,7 +22446,7 @@
         "values": false
       },
       "default_args": {},
-      "definition_sha256": "5853132ea941f389541925b0952ebf00e5629b96f00ca2458f1b20771dfc7086",
+      "definition_sha256": "d82b3f99969819faa4d66b6b5451051c4a5847bb537fdbae0688e13dc2626f0f",
       "disposition": "retain_with_contract",
       "effect": "update",
       "implementation_declared": true,
@@ -22461,10 +22459,10 @@
       "runtime_literal_references": [
         "src/omni_body_skill/tool_contracts.py:1657",
         "src/omni_body_skill/tool_contracts.py:37",
-        "src/omni_body_skill/tools/novel_system.py:337",
+        "src/omni_body_skill/tools/novel_system.py:338",
         "src/omni_body_skill/tools/novel_system.py:60"
       ],
-      "semantic_atomicity_review": "not_claimed_complete",
+      "semantic_atomicity_review": "explicit_change_review",
       "summary": "Atomically insert time before a pivot event by shifting its chronological suffix and recomputing chapter intervals."
     },
     {
@@ -23896,6 +23894,7 @@
       "retry": "read_retry",
       "review_scope": "source_definition_and_binding_review",
       "runtime_literal_references": [
+        "app/backend/tiangong-backend/v3/novel_system.py:1649",
         "app/backend/tiangong-backend/v3/permission_settings.py:78",
         "src/omni_body_skill/tools/_stub_actions.py:13",
         "src/omni_body_skill/tools/delivery_kernel.py:165",
@@ -30812,7 +30811,7 @@
   ],
   "application_count": 100,
   "applications_sha256": "dc3dac4fb1f5cc32442a270221058973abb3ec1f58e1a70315f01047f7843f48",
-  "catalog_sha256": "bc60101ff88f0d88a56164bd68cdc5a78c5f2a73fc49f6d2a9068d3cd78bfabd",
+  "catalog_sha256": "b4c386e0859841625bcf06caacea9b706a11cb99b591d138a7af093e840a7e76",
   "counts": {
     "merge_explicit_alias": 78,
     "retain_disabled": 2,
@@ -30820,9 +30819,9 @@
     "retain_with_contract": 196,
     "retire": 6
   },
-  "dictionary_version": "2026.09.27.3",
+  "dictionary_version": "2026.09.27.4",
   "interpretation": "Complete inventory is not complete semantic audit, real execution coverage or application connection proof.",
   "registered_actions": 779,
   "schema": "tiangong.ontology.coverage.v1",
-  "schemas_sha256": "fedcc6d6fd24e6354035756d9fb577a3c20952a8ff03f959abdb251927b140e4"
+  "schemas_sha256": "576f47ad5dc35b902aca087c595114dfb493d282f94ff8ce0d6d88ba85605562"
 }

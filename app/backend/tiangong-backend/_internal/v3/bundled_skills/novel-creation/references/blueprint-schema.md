@@ -2,7 +2,7 @@
 
 ## Story
 
-Required fields:
+Example caller-supplied creative fields (not automatic content gates):
 
 ```json
 {
@@ -65,7 +65,7 @@ Derive age from `birth_tick`, event tick, and `ticks_per_year`. Never store a ma
 }
 ```
 
-Travel events also require `from`, `to`, and `mode`. Scheduled events require `schedule_id`. Age-sensitive events may supply `expected_ages`. Knowledge-sensitive events may supply `knowledge_requires`.
+Caller annotations for travel events may include `from`, `to`, and `mode`. Scheduled event annotations may include `schedule_id`. Age-sensitive events may supply `expected_ages`. Knowledge-sensitive events may supply `knowledge_requires`.
 
 ## Chapter plan
 
@@ -95,3 +95,5 @@ Travel events also require `from`, `to`, and `mode`. Scheduled events require `s
 }
 ```
 
+
+Numeric age/route/overlap calculations describe these supplied records. They do not decide what is possible in a fictional world or approve prose. Literal evidence terms prove only text presence. Emotional account fields retained from v1 are historical notes, not an active scoring or completion system.

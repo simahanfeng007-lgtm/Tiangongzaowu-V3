@@ -309,7 +309,8 @@
     },
     "novel.chapter.checkout": {
       "args": {
-        "chapter_number": "positive integer"
+        "chapter_number": "positive integer",
+        "revision_of": "optional current recorded SHA-256: revise latest chapter prose only using empty actual; previous bytes retained"
       },
       "required": [
         "args.chapter_number"
@@ -319,25 +320,7 @@
     "novel.chapter.submit": {
       "args": {
         "actual": {
-          "convergence_proof": {
-            "maintained_anchor_ids": [
-              "protected anchor id"
-            ],
-            "reason": "required only for high deviation"
-          },
-          "emotional_transactions": [
-            {
-              "account_id": "declared id",
-              "evidence_terms": [
-                "exact prose term"
-              ],
-              "factors": "0..1 factor object",
-              "kind": "deposit|withdraw",
-              "related_event_ids": [
-                "event id"
-              ]
-            }
-          ],
+          "emotional_transactions": "optional array of caller creative annotations; no inferred score, balance or compulsory scene",
           "events": [
             {
               "duration_ticks": "positive integer",
@@ -445,8 +428,8 @@
     "novel.project.create": {
       "args": {
         "genre": "non-empty string",
-        "planned_chapters": "full-book count, integer >= ceil(target_words/5000), never a writing checkpoint",
-        "target_words": "integer >= 1000",
+        "planned_chapters": "positive integer: user-declared plan size; no words-per-chapter formula",
+        "target_words": "positive integer: declared writing target, not an automatic acceptance gate",
         "title": "non-empty string"
       },
       "required": [
@@ -478,12 +461,15 @@
     },
     "novel.scene.design": {
       "args": {
-        "candidates": "array of 2-3 structured candidates",
-        "trigger_id": "pending emotion trigger id"
+        "candidates": "non-empty candidate object array; selected candidate requires title and integer target_chapter",
+        "expected_state_hash": "current state hash returned by status or checkout",
+        "selected_index": "zero-based explicit caller selection; no program ranking",
+        "trigger_id": "optional pending historical trigger id; no new mandatory triggers"
       },
       "required": [
-        "args.trigger_id",
-        "args.candidates"
+        "args.candidates",
+        "args.selected_index",
+        "args.expected_state_hash"
       ],
       "target": "managed novel project directory (required)"
     },
@@ -2293,27 +2279,27 @@
             "result": {
               "additionalProperties": true,
               "properties": {
-                "type": {
-                  "const": "executive_ppt_delivery"
-                },
                 "assessment_mode": {
                   "const": "content_observation_only"
+                },
+                "constraint_checks": {
+                  "items": {
+                    "type": "object"
+                  },
+                  "type": "array"
                 },
                 "content_quality": {
                   "const": "unassessed"
                 },
-                "slides": {
-                  "type": "integer",
-                  "minimum": 0
-                },
                 "inspection": {
                   "type": "object"
                 },
-                "constraint_checks": {
-                  "type": "array",
-                  "items": {
-                    "type": "object"
-                  }
+                "slides": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "type": {
+                  "const": "executive_ppt_delivery"
                 }
               },
               "required": [

@@ -18,7 +18,7 @@
 | `novel.plan.rebase` | Managed project directory | `expected_state_hash`, `reason`, `event_updates`, `chapter_updates`, `maintained_anchor_ids` |
 | `novel.chapter.checkout` | Managed project directory | `chapter_number` |
 | `novel.chapter.submit` | Managed project directory | `lease_id`, `chapter_number`, `title`, `content`, `actual` |
-| `novel.scene.design` | Managed project directory | `trigger_id`, `candidates` |
+| `novel.scene.design` | Managed project directory | `candidates`, `selected_index`, `expected_state_hash`; optional historical `trigger_id` |
 | `novel.context.query` | Managed project directory | `entity_type`, `entity_ids` |
 | `novel.project.audit` | Managed project directory | none |
 

@@ -17,7 +17,7 @@ import urllib.error
 
 BASE = Path(__file__).resolve().parent
 parser = argparse.ArgumentParser(description=__doc__)
-parser.add_argument('case', choices=['local', 'browser', 'mcp', 'quality', 'document'])
+parser.add_argument('case', choices=['local', 'browser', 'mcp', 'quality', 'document', 'novel'])
 parser.add_argument('--attempt', default='1')
 parser.add_argument('--source-root', type=Path, default=BASE.parents[1])
 parser.add_argument('--output-root', type=Path, required=True)
@@ -58,6 +58,23 @@ elif args.case == 'document':
     document.save(workspace/'inventory.docx')
     (workspace/'corrupt.docx').write_bytes(b'not a DOCX archive')
     prompt = '用 qc.docx.delivery_check 分别实际观察 inventory.docx 与 corrupt.docx。根据可读取正文和表格，写 report.md，列出 SKU-A、SKU-B 数量及合计，并如实记录损坏文件的读取失败。只要求正文和表格内容，不要求版式或页眉；禁止修改原始文件，报告写完后重新读取确认。'
+elif args.case == 'novel':
+    sys.path.insert(0, str(SOURCE / 'app/backend/tiangong-backend'))
+    from v3.novel_system import NovelSystemEngine
+    engine = NovelSystemEngine(workspace/'managed-novel')
+    engine.create_project({'title':'星光记录','genre':'微型科幻','planned_chapters':1,'target_words':10000})
+    for section, data in (
+        ('story', {'soul':'保留指定原文','protected_anchors':[]}),
+        ('world', {'rules':['由作者定义故事世界']}), ('characters', [{'id':'c1','name':'旅人','initial':{'alive':True,'location':'l1'}}]),
+        ('calendar', {'ticks_per_year':365,'start_tick':0}), ('locations', [{'id':'l1','name':'站台'}]),
+        ('plot_events', [{'id':'e1','chapter':1,'participants':['c1'],'location':'l1','start_tick':0,'duration_ticks':1}]),
+        ('chapters', [{'number':1,'title':'星光','event_ids':['e1']}]), ('settings', {'min_chapter_chars':2500})):
+        engine.update_blueprint({'section':section,'data':data})
+    engine.compile_blueprint({})
+    lease=engine.checkout_chapter({'chapter_number':1})
+    engine.submit_chapter({'lease_id':lease['lease_id'],'chapter_number':1,'title':'星光','content':'星光亮起。','actual':{}})
+    (workspace/'novel-request.json').write_text(json.dumps({'title':'星光','content':'星光熄灭。','actual':{}},ensure_ascii=False))
+    prompt = '工作区 managed-novel 是已经记录一章的测试小说项目，现有正文“星光亮起。”需要实际修正。本任务只要求原样改为 novel-request.json 指定的短正文“星光熄灭。”，标题星光，actual 使用空对象；不要扩写，不要求兑现旧计划事件或达到配置字数。请实际读取现有正文和 novel.context.query 的 chapter 记录，使用当前记录的 sha256 作为 novel.chapter.checkout 的 revision_of，再通过 novel.chapter.submit 修订末章；actual 必须为空，不修改历史故事注释。重新读取写入的章节正文，运行项目审计，将事务状态、字节和内容观察范围写入 report.md 并回读。工具 committed/章节计数本身不代表内容获批，由最终对抗裁判判断本次原样记录任务是否完成。禁止用通用写文件绕过小说事务。'
 elif args.case == 'quality':
     (workspace/'one.py').write_text('value = 18\n')
     (workspace/'test_marker.py').write_text("from pathlib import Path\nPath('must-not-execute.txt').write_text('executed')\n")
@@ -104,7 +121,9 @@ record = {'case':args.case,'prompt':prompt,'scope':'MODEL_LIVE_LOCAL','configure
     'base_commit':subprocess.check_output(['git','rev-parse','HEAD'],cwd=SOURCE,text=True).strip(),
     'source_files_sha256':hashlib.sha256((out/'source-files.json').read_bytes()).hexdigest(),
     'driver_files_sha256':{n:hashlib.sha256((BASE/n).read_bytes()).hexdigest() for n in ('run.py','gateway_entry.py','instrumentation.py','mcp_fixture.py')},
-    'input_sha256':{p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in workspace.iterdir()},
+    'input_sha256':{p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in workspace.iterdir() if p.is_file()},
+    'initial_managed_fixture_sha256':{p.relative_to(workspace).as_posix():hashlib.sha256(p.read_bytes()).hexdigest()
+        for p in (workspace/'managed-novel').rglob('*') if p.is_file()},
     'started_at':time.strftime('%Y-%m-%dT%H:%M:%S%z')}
 def save():
     (out/'result.json').write_text(json.dumps(record, ensure_ascii=False, indent=2))
@@ -171,6 +190,14 @@ try:
         text=(workspace/'report.md').read_text()
         actual={'report_created':True, 'contains_known_totals':all(v in text for v in ('SKU-A','SKU-B','7','11','18'))}
         expected={'report_created':True, 'contains_known_totals':True}
+    elif args.case=='novel':
+        project=workspace/'managed-novel'
+        ledger=json.loads((project/'.novel-system/ledger/chapters.json').read_text())
+        chapters=list((project/'正文').glob('*.md'))
+        actual={'chapter_count':len(chapters),'content':chapters[0].read_text() if len(chapters)==1 else None,
+                'ledger_count':len(ledger),'quality':ledger[0].get('content_quality') if ledger else None,
+                'report_created':(workspace/'report.md').is_file()}
+        expected={'chapter_count':1,'content':'星光熄灭。\n','ledger_count':1,'quality':'unassessed','report_created':True}
     elif args.case=='quality':
         actual={'project_code_executed':(workspace/'must-not-execute.txt').exists(),
                 'report_created':(workspace/'report.md').is_file()}

@@ -10,6 +10,7 @@ python scripts/ontology-smoke/run.py browser --model-config /private/model-confi
 python scripts/ontology-smoke/run.py mcp --model-config /private/model-config.json --output-root /private/ontology-evidence --attempt candidate
 python scripts/ontology-smoke/run.py quality --model-config /private/model-config.json --output-root /private/ontology-evidence --attempt candidate
 python scripts/ontology-smoke/run.py document --model-config /private/model-config.json --output-root /private/ontology-evidence --attempt candidate
+python scripts/ontology-smoke/run.py novel --model-config /private/model-config.json --output-root /private/ontology-evidence --attempt candidate
 python scripts/ontology-smoke/audit_live.py --output-root /private/ontology-evidence --attempt candidate
 ```
 
@@ -20,3 +21,5 @@ python scripts/ontology-smoke/audit_live.py --output-root /private/ontology-evid
 `audit_live.py` 独立核对真实文件、已知输入真值、账本哈希链、请求/运行/代际、当前产物与最终裁决，并对比本地产品文件。对已正常关闭且无非空 WAL 的数据库使用 immutable 只读；有 WAL 时保留只读读取并核对数据库与 WAL 字节。SHM 是读者协调文件，不作为执行事实。二次审计用新的 `--audit-id` 保留旧结果。
 
 模型原始私有推理字段不写入遥测，已知凭据脱敏。目录仍包含私有配置链接及运行密钥；分享时只导出经过核查的摘要、回执和产物，不提交整个运行目录。
+
+小说用例以真实小说事务预置一个错误末章，再由普通 Gateway 的真实模型发现版本并使用 checkout/submit 修订。确定性回读检查正文、账本和原输入；预置不属于模型执行证据。

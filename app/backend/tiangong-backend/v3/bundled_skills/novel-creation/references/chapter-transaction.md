@@ -1,61 +1,13 @@
-# Chapter Transaction
+# Chapter Transaction v2
 
-## Checkout
+Checkout supplies a v2 lease bound to the current chapter, state hash, rolling blueprint hash and expiry. Submit `lease_id`, `chapter_number`, `title`, `content`, and an `actual` object. The delta arrays are optional: `events`, `state_changes`, `relationship_changes`, `foreshadow_ops`, `emotional_transactions`.
 
-Use the lease, pre-state hash, rolling blueprint hash, chapter plan, relevant entities, due open events, selected set pieces, and recent summaries returned by `novel.chapter.checkout`.
+Events have unique string IDs and a status of `progressed`, `turned`, or `closed`. Participants, outcome tags and evidence terms are string arrays; time fields are integers. State changes name a recorded character and a supported field. An optional `from` value is a compare-and-set precondition. These are data contracts, not prose interpretation.
 
-## Submit shape
+Submission records bytes, delta provenance, planned event IDs missing from the report, and literal evidence-term presence. A literal match proves only that text occurs. It does not prove an event, emotional payoff or user-goal compliance. No minimum character count or deviation score rejects a chapter.
 
-```json
-{
-  "lease_id": "lease_...",
-  "chapter_number": 1,
-  "title": "chapter title",
-  "content": "final chapter prose",
-  "actual": {
-    "summary": "factual result",
-    "events": [],
-    "state_changes": [],
-    "relationship_changes": [],
-    "foreshadow_ops": [],
-    "emotional_transactions": [],
-    "theme_tags": [],
-    "convergence_proof": {}
-  }
-}
-```
+`CHAPTER_COMMITTED` / `committed=true` establishes storage completion only. Reopen the returned path and bind its hash to the final adversarial judge's decision. A failed storage step can leave a prepared transaction: recover it before another submit. Recovery validates state/content/ledger identity before writing and refuses conflicting live bytes or versions. It never implies content approval.
 
-## Actual event
+Old v1 leases are rejected explicitly. Old v1 prepared transactions remain recoverable as byte transactions; their original schema and history are preserved.
 
-```json
-{
-  "id": "evt.001",
-  "status": "progressed|turned|closed",
-  "start_tick": 20,
-  "duration_ticks": 1,
-  "participants": ["char.hero"],
-  "location": "loc.city",
-  "outcome_tags": ["result-tag"],
-  "evidence_terms": ["term appearing in prose"],
-  "result": "permanent factual outcome"
-}
-```
-
-For an unplanned event, set `unplanned=true` and include causal prerequisites plus a closure deadline.
-
-## State change
-
-```json
-{"character_id": "char.hero", "field": "location", "from": "loc.home", "to": "loc.city", "op": "set"}
-```
-
-Allowed fields are `alive`, `location`, `realm`, `injuries`, `inventory`, and `knowledge`. Use `op=add` or `op=remove` with `items` for list changes.
-
-## Deviation
-
-The tool computes a 0-100 weighted distance across plot events, characters, locations, outcomes, themes, and time. Low deviation is accepted, medium deviation rebases the rolling plan, and high deviation requires a convergence proof preserving every protected anchor.
-
-## Closure
-
-Submit `status=closed`, a factual result, and permanent state consequences for every event due in the chapter. Do not advance while a required closure remains open.
-
+To repair the latest recorded chapter, read its chapter record and actual bytes, then checkout that chapter with `revision_of` equal to its current SHA-256. Submit the fresh lease with revised prose and `actual={}`. This changes prose only; prior story annotations remain explicitly unverified. Earlier chapter or state-delta corrections are outside this version’s revision support and must not be silently rewritten. Old bytes/records remain in transaction history. Read the new content and obtain a fresh final judge decision.

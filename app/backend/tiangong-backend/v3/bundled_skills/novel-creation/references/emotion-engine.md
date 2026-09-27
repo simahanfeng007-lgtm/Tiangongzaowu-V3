@@ -1,41 +1,7 @@
-# Emotional Energy and Set Pieces
+# Emotion and Scene Notes
 
-## Deposit or withdrawal
+Emotional accounts and historical triggers are creative annotations. The engine no longer calculates emotional balances, creates mandatory payoff triggers, requires 2–3 scenes, or selects a scene using a numeric threshold.
 
-```json
-{
-  "account_id": "emotion.family.hero-father",
-  "kind": "deposit|withdraw",
-  "related_event_ids": ["evt.001"],
-  "evidence_terms": ["exact term in prose"],
-  "factors": {
-    "attachment": 0.0,
-    "duration": 0.0,
-    "sacrifice": 0.0,
-    "expectation": 0.0,
-    "foreshadow": 0.0,
-    "importance": 0.0,
-    "leakage": 0.0,
-    "repetition": 0.0
-  }
-}
-```
+`actual.emotional_transactions` stores caller notes with their provenance. To record a selected scene, call `novel.scene.design` with a non-empty `candidates` array, zero-based `selected_index`, and `expected_state_hash`. The selected candidate needs `title` and integer `target_chapter` for an unrecorded chapter in the plan. Optional `trigger_id` can associate a pending historical trigger. Omit it for a new scene.
 
-All factors range from 0 to 1. Ground them in the accepted chapter. The tool caps chapter growth, subtracts leakage and repetition, enforces cooldown, and creates a pending scene trigger at the configured threshold.
-
-## Scene candidate
-
-Provide 2-3 candidates containing:
-
-- title and payoff type;
-- target chapter inside the trigger window;
-- core character choice;
-- irreversible cost;
-- permanent consequence;
-- event closures and callbacks;
-- normalized shock and tear scores.
-
-Required scores are `surprise`, `retrospective_inevitability`, `consequence`, `character_relevance`, `causality_support`, `attachment`, `agency`, `irreversibility`, `callbacks`, and `restraint`.
-
-The tool selects only a candidate scoring at least 70. A selected design becomes a hard chapter-card input. Payoff must consume emotional energy and leave a lasting factual consequence.
-
+A scene is recorded, not quality approved. Explain creative choices through the user's requirements and actual prose for the final judge. Historical numeric fields remain historical and cannot grant a current completion decision.
