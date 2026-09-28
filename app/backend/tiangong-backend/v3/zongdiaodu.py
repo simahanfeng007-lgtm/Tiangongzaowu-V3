@@ -2620,6 +2620,8 @@ class Zongdiaodu:
                 )
             elif status == "force_stopped" and "budget" in reason_text:
                 fallback = _simple_chain_budget_close_reply(clean_reasons, gongju_cishu, status=status)
+            elif status == "force_stopped" and isinstance(run_state.get("model_failure"), dict):
+                fallback = _simple_chain_incomplete_reply(clean_reasons, gongju_cishu, status="failed")
             elif status == "force_stopped":
                 fallback = _simple_chain_force_stopped_reply(clean_reasons, gongju_cishu, status=status)
             else:
@@ -2742,19 +2744,23 @@ class Zongdiaodu:
             initial_llm_failed = True
             final_guard_exhausted = True
             final_chain_status = "force_stopped"
+            run_state["model_failure"] = {
+                "error_code": "model_call_exception",
+                "exception_type": type(exc).__name__,
+            }
             shenti, huifu = _natural_closeout(
                 "force_stopped",
-                [f"[terminal_model_error] initial model call failed: {str(exc)[:300]}"],
+                ["模型调用失败，本轮未取得有效结果。请检查模型连接或配置。"],
             )
             if run_control:
                 run_control.step(
                     "llm_call",
                     "model thinking",
                     "failed",
-                    str(exc)[:500],
-                    meta={"error_type": "terminal_model_error"},
+                    type(exc).__name__,
+                    meta={"error_type": "model_call_exception"},
                 )
-            QUANZHUIXIAN.jilu_kuadu(zhuizong_id, "LLM_diaoyong", "cuowu", str(exc)[:500])
+            QUANZHUIXIAN.jilu_kuadu(zhuizong_id, "LLM_diaoyong", "cuowu", type(exc).__name__)
         if native_audio_paths and not initial_llm_failed:
             native_audio_evidence = getattr(huifu, "native_audio_evidence", None)
             semantic_visibility = str(
@@ -2811,19 +2817,29 @@ class Zongdiaodu:
                         meta={"terminal_reason": "audio_recognition_unavailable"},
                     )
         if run_control and not initial_llm_failed:
-            run_control.step("llm_call", "model thinking", "done", ("候选响应已返回，完成状态待对抗智能体确认。" if judge_completion else _llm_reply_progress_summary(huifu)))
+            from .model_protocol_contract import model_turn_failure
+            initial_failure = model_turn_failure(huifu)
+            run_control.step(
+                "llm_call", "model thinking", "failed" if initial_failure else "done",
+                ("模型服务未返回有效结果。" if initial_failure else
+                 "候选响应已返回，完成状态待对抗智能体确认。" if judge_completion else
+                 _llm_reply_progress_summary(huifu)),
+                meta={"error_type": initial_failure} if initial_failure else None,
+            )
             _check_stop("stopped after model reply")
 
         while True:
             if initial_llm_failed or audio_semantic_unavailable:
                 break
-            from .model_protocol_contract import model_turn_failure
+            from .model_protocol_contract import model_turn_failure, model_turn_failure_detail
             failure = model_turn_failure(huifu)
             if failure:
                 final_guard_exhausted = True
                 final_chain_status = "force_stopped" if failure == "cancelled" else "failed"
                 run_state["terminal_reason"] = failure
-                shenti, huifu = _natural_closeout(final_chain_status, [f"[terminal_model_error] {failure}"])
+                detail = model_turn_failure_detail(huifu)
+                run_state["model_failure"] = {key: value for key, value in detail.items() if key != "user_message"}
+                shenti, huifu = _natural_closeout(final_chain_status, [detail["user_message"]])
                 break
             iteration_count = turn_loop.bump_iteration()
             turn_loop.project_live(run_state, loop_started_at)
@@ -4508,25 +4524,26 @@ class Zongdiaodu:
             except Exception as exc:
                 final_guard_exhausted = True
                 final_chain_status = "force_stopped"
-                tool_error = _gongju_cuowu_text(gongju_jieguo) if isinstance(gongju_jieguo, dict) else str(exc)
-                reasons = [
-                    f"[terminal_model_error] {tool_error or str(exc) or 'model failed while integrating tool result'}"
-                ]
+                run_state["model_failure"] = {
+                    "error_code": "model_continuation_exception",
+                    "exception_type": type(exc).__name__,
+                }
+                reasons = ["模型续答失败，已有工具回执已保留；本轮任务尚未完成。请检查模型连接或配置。"]
                 shenti, huifu = _natural_closeout("force_stopped", reasons)
                 if run_control:
                     run_control.step(
                         "llm_continue",
                         "model integrates tool result",
                         "failed",
-                        str(exc)[:500],
+                        type(exc).__name__,
                         meta={
                             "reason": reasons[0],
-                            "error_type": "terminal_model_error",
+                            "error_type": "model_continuation_exception",
                             "tool_name": tool_name,
                             "tool_action": attempted_action,
                         },
                     )
-                QUANZHUIXIAN.jilu_kuadu(zhuizong_id, "LLM_continue_after_tool", "cuowu", str(exc)[:500])
+                QUANZHUIXIAN.jilu_kuadu(zhuizong_id, "LLM_continue_after_tool", "cuowu", type(exc).__name__)
                 break
             if composition_cursor is not None:
                 huifu = next_huifu

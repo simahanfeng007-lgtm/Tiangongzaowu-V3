@@ -108,6 +108,7 @@ contextBridge.exposeInMainWorld("tiangongDesktop", {
   sendWindowAction,
   setThemeStyle,
   writeDiagnostic: (kind, detail = "") => ipcRenderer.send("diagnostic:write", { kind, detail }),
+  reportCoreReady: () => ipcRenderer.send("renderer:coreReady"),
   getModelSettings: () => ipcRenderer.invoke("model:getSettings"),
   setModelSettings: (payload) => ipcRenderer.invoke("model:setSettings", payload || {}),
   probeProviderApi: () => ipcRenderer.invoke("model:probeProviderApi"),
@@ -122,6 +123,12 @@ contextBridge.exposeInMainWorld("tiangongDesktop", {
   getWorkspaceRoot: () => ipcRenderer.invoke("workspace:getRoot"),
   setWorkspaceRoot: (request) => ipcRenderer.invoke("workspace:setRoot", request),
   getServiceStatus: () => ipcRenderer.invoke("services:getStatus"),
+  onServiceStatus: (callback) => {
+    if (typeof callback !== "function") return () => {};
+    const handler = (_event, snapshot) => callback(snapshot);
+    ipcRenderer.on("services:status", handler);
+    return () => ipcRenderer.removeListener("services:status", handler);
+  },
   chooseStorageRoot: (payload) => ipcRenderer.invoke("dialog:chooseStorageRoot", payload || {}),
   chooseKnowledgeRoot: () => ipcRenderer.invoke("dialog:chooseKnowledgeRoot"),
   chooseKnowledgeFiles: (payload) => ipcRenderer.invoke("dialog:chooseKnowledgeFiles", payload || {}),

@@ -37,6 +37,8 @@ from __future__ import annotations
 # 1.65 carries the bounded recovery budget through the actual HTTP call scope.
 # 1.67 binds explicit application ownership metadata in the action authority.
 # 1.68 unifies connection probes with configured credentials and execution transport.
-VERIFICATION_PLANE_VERSION = "1.68"
+# 1.69 preserves model HTTP failure evidence and bounded retry behavior
+# through the authoritative task completion path.
+VERIFICATION_PLANE_VERSION = "1.69"
 
 __all__ = ["VERIFICATION_PLANE_VERSION"]

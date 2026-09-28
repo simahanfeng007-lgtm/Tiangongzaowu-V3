@@ -287,6 +287,13 @@ def _simple_chain_run_state_view(run_state: dict[str, Any] | None) -> dict[str, 
         "completion_authority": run_state.get("completion_authority"),
         "adversarial_completion": run_state.get("adversarial_completion") or {},
         "review_phase": run_state.get("review_phase") or "executing",
+        "model_failure": (
+            {key: run_state["model_failure"].get(key) for key in (
+                "error_code", "http_status", "retry_count", "provider_identity",
+                "model_id", "retryable_after_recovery", "exception_type",
+            ) if key in run_state["model_failure"]}
+            if isinstance(run_state.get("model_failure"), dict) else {}
+        ),
         "review_evidence_count": len(run_state.get("review_evidence_index") or []),
         "completion_correction": (
             run_state.get("completion_correction")
@@ -4016,6 +4023,8 @@ def _simple_chain_life_completion_gate(
     )
 
 _INCOMPLETE_REASON_RENHUA = (
+    ("http_error", "模型服务请求失败，任务尚未完成；请检查模型连接与账号配置"),
+    ("transport_error", "模型服务连接中断，任务尚未完成"),
     ("execution_obligation:", "还没有获得用户明确要求动作对应的真实工具执行证据"),
     ("execution_claim_without_evidence", "模型给出了完成性描述，但没有对应的真实工具执行证据"),
     ("confirm_required", "有操作需要你在确认卡片里允许后才能继续"),
@@ -4058,11 +4067,15 @@ def _simple_chain_incomplete_reply(reasons: list[str], tool_count: int, status: 
     if not visible_reasons:
         visible_reasons = ["还缺少能证明任务完成的实际结果"]
     head = "这次执行遇到了问题" if status == "failed" else "这件事目前还没有全部办完"
+    preserved = (
+        "已有执行记录和产物会保留；未完成的部分不会被说成完成。"
+        if tool_count else "本轮尚未执行工具动作，也没有把任务标为完成。"
+    )
     bullets = "\n".join(f"- {item}" for item in visible_reasons)
     return (
-        f"{head}。已经完成的步骤和产物我都保留着，没有重复执行副作用，也不会把未完成说成完成。\n\n"
+        f"{head}。{preserved}\n\n"
         f"现在还差这些：\n{bullets}\n\n"
-        "已完成步骤与产物都会保留；是否继续处理，以你确认或新的任务为准。"
+        "任务尚未完成。继续原任务时会先核对已有进度与产物，避免重复执行；只有需要新权限或关键信息时才会询问你。"
     )
 
 def _simple_chain_budget_close_reply(

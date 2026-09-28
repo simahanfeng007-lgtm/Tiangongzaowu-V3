@@ -7,7 +7,10 @@ no task/effect authority.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 import json
+import math
 import time
 from typing import Any, Callable, Mapping
 from urllib.parse import urlsplit, urlunsplit
@@ -117,6 +120,31 @@ def _response_preview(response: Any) -> str:
             return ""
 
 
+def _http_retry_delay_seconds(response: httpx.Response, fallback: float) -> float:
+    """Honor a provider's retry hint without letting it extend the call deadline.
+
+    The caller still uses ``lifecycle.wait``; this cap only bounds one pause.
+    HTTP 409 is deliberately absent from the retry set because a conflict can
+    mean the request itself needs correction rather than another identical send.
+    """
+    value = str(response.headers.get("retry-after") or "").strip()
+    hinted = 0.0
+    if value:
+        try:
+            hinted = float(value)
+        except ValueError:
+            try:
+                target = parsedate_to_datetime(value)
+                if target.tzinfo is None:
+                    target = target.replace(tzinfo=timezone.utc)
+                hinted = (target - datetime.now(timezone.utc)).total_seconds()
+            except (TypeError, ValueError, OverflowError):
+                pass
+    if not math.isfinite(hinted):
+        hinted = 0.0
+    return min(15.0, max(0.0, float(fallback), hinted))
+
+
 def _pinned_request(url: str, binding: EndpointBinding) -> tuple[str, dict[str, str], str]:
     """把请求钉扎到已验证 IP：连接层用 IP，Host 头与 TLS SNI 仍用原域名。
 
@@ -202,7 +230,7 @@ def execute_streaming_turn(
     transaction = canonical.get("__append_context")
     if transaction is not None:
         transaction.observe_wire(request.payload)
-    transient = transient_status_codes or {408, 409, 425, 429, 500, 502, 503, 504}
+    transient = transient_status_codes if transient_status_codes is not None else {408, 425, 429, 500, 502, 503, 504}
     attempts = max(1, min(3, int(retry_limit)))
     call_started = time.perf_counter()
     attempt = 1
@@ -301,9 +329,13 @@ def execute_streaming_turn(
                         telemetry["usage"] = dict(state.usage or {})
                 except httpx.HTTPStatusError as exc:
                     status = int(exc.response.status_code)
+                    telemetry["http_status"] = status
                     lifecycle.check()
                     if status in transient and attempt < attempts:
-                        lifecycle.wait(retry_sleep_seconds * attempt)
+                        delay = _http_retry_delay_seconds(exc.response, retry_sleep_seconds * attempt)
+                        telemetry["retry_reason"] = "transient_http_status"
+                        telemetry["retry_delay_seconds"] = delay
+                        lifecycle.wait(delay)
                         continue
                     raise TransportExecutionError(f"HTTP {status}", request.url, http_status=status,
                                                   error_code="http_error") from exc
