@@ -122,8 +122,10 @@ vm.runInContext(WINDOW_FUNCTIONS, ctx);
     script = script.replace("WINDOW_FUNCTIONS", json.dumps(WINDOW_FUNCTIONS)).replace(
         "OUTCOME", json.dumps(outcome)
     )
+    # Keep the nonblocking assertion at 500 ms inside Node. The outer budget
+    # also covers Node launch, Windows scheduling, exit, and stdio draining.
     result = subprocess.run(
-        ["node", "-e", script], cwd=ROOT, text=True, capture_output=True, timeout=5
+        ["node", "-e", script], cwd=ROOT, text=True, capture_output=True, timeout=20
     )
     assert result.returncode == 0, result.stdout + result.stderr
 
