@@ -368,25 +368,48 @@ class DesktopServiceSupervisorTests(unittest.TestCase):
 
 
 class TotalGatewayShutdownTests(unittest.TestCase):
+    HEALTH_TIMEOUT_SECONDS = 30
+
     def free_port(self) -> int:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
             listener.bind(("127.0.0.1", 0))
             return int(listener.getsockname()[1])
 
+    def gateway_log_tail(self, process: subprocess.Popen[bytes]) -> str:
+        path = getattr(self, "_gateway_logs", {}).get(process.pid)
+        if path is None:
+            return "log path unavailable"
+        try:
+            return path.read_bytes()[-4096:].decode("utf-8", "replace")
+        except OSError as exc:
+            return f"log unreadable: {type(exc).__name__}"
+
     def wait_for_health(self, port: int, process: subprocess.Popen[bytes]) -> dict[str, object]:
-        deadline = time.monotonic() + 10
+        started = time.monotonic()
+        deadline = started + self.HEALTH_TIMEOUT_SECONDS
         url = f"http://127.0.0.1:{port}/health"
+        last_error = "no HTTP response"
         while time.monotonic() < deadline:
             if process.poll() is not None:
-                _, stderr = process.communicate(timeout=2)
-                self.fail(f"gateway exited before health: {stderr.decode('utf-8', 'replace')}")
+                process.communicate(timeout=2)
+                self.fail(
+                    f"gateway exited before health: pid={process.pid}; "
+                    f"elapsed={time.monotonic() - started:.2f}s; exit={process.returncode}; "
+                    f"gateway_log_tail={self.gateway_log_tail(process)}"
+                )
             try:
                 with urllib.request.urlopen(url, timeout=0.25) as response:
                     if response.status == 200:
                         return json.loads(response.read())
-            except (OSError, urllib.error.URLError):
+            except (OSError, urllib.error.URLError) as exc:
+                last_error = f"{type(exc).__name__}: {exc}"
                 time.sleep(0.05)
-        self.fail("gateway did not become healthy")
+        self.fail(
+            f"gateway did not become healthy within {self.HEALTH_TIMEOUT_SECONDS}s; "
+            f"pid={process.pid}; elapsed={time.monotonic() - started:.2f}s; "
+            f"exit={process.poll()}; last_error={last_error}; "
+            f"gateway_log_tail={self.gateway_log_tail(process)}"
+        )
 
     def start_gateway(self, state_root: Path, port: int) -> subprocess.Popen[bytes]:
         env = os.environ.copy()
@@ -403,15 +426,24 @@ class TotalGatewayShutdownTests(unittest.TestCase):
             }
         )
         creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
-        return subprocess.Popen(
-            [sys.executable, "-m", "total_gateway"],
-            cwd=ROOT,
-            env=env,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            creationflags=creationflags,
-        )
+        log_path = state_root.parent / f"gateway-{port}.log"
+        # A busy Windows runner can exceed ten seconds before /health starts
+        # listening. File-backed output avoids a full PIPE blocking startup and
+        # retains the actual Gateway error when the bounded wait still fails.
+        with log_path.open("wb") as log:
+            process = subprocess.Popen(
+                [sys.executable, "-m", "total_gateway"],
+                cwd=ROOT,
+                env=env,
+                stdin=subprocess.DEVNULL,
+                stdout=log,
+                stderr=subprocess.STDOUT,
+                creationflags=creationflags,
+            )
+        if not hasattr(self, "_gateway_logs"):
+            self._gateway_logs = {}
+        self._gateway_logs[process.pid] = log_path
+        return process
 
     def stop_gateway(self, process: subprocess.Popen[bytes]) -> None:
         if process.poll() is None:
