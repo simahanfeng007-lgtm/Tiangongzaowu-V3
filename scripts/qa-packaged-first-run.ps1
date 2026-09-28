@@ -91,6 +91,16 @@ function Invoke-CdpExpression {
   return $Json | ConvertFrom-Json
 }
 
+function Get-RendererDiagnosticFiles {
+  param([Parameter(Mandatory = $true)][string]$Root)
+  return @(
+    Get-ChildItem -LiteralPath $Root -Recurse -File `
+      -Filter "desktop_renderer.*.jsonl" -ErrorAction SilentlyContinue |
+      Where-Object { $_.Name -match '^desktop_renderer\.\d{4}-\d{2}-\d{2}\.jsonl$' } |
+      Sort-Object Name, FullName
+  )
+}
+
 function Invoke-PackagedScenario {
   param(
     [string]$Name,
@@ -327,12 +337,10 @@ function Invoke-PackagedScenario {
       }
     }
 
-    $Diagnostic = Get-ChildItem -LiteralPath $ScenarioRoot -Recurse `
-      -Filter "desktop_renderer.jsonl" -ErrorAction SilentlyContinue |
-      Select-Object -First 1
-    $Rows = if ($Diagnostic) {
-      @(Get-Content -LiteralPath $Diagnostic.FullName -Encoding UTF8)
-    } else { @() }
+    $Diagnostics = @(Get-RendererDiagnosticFiles -Root $ScenarioRoot)
+    $Rows = @($Diagnostics | ForEach-Object {
+      Get-Content -LiteralPath $_.FullName -Encoding UTF8
+    })
     $FatalDiagnostics = @($Rows | Where-Object {
       $_ -match '"kind":"(did-fail-load|render-process-gone|load-frontend-rejected)"'
     })
@@ -366,7 +374,8 @@ function Invoke-PackagedScenario {
       migration_status = $MigrationStatus
       layout_checks = if ($LayoutResult) { [int]$LayoutResult.checks } else { 0 }
       fatal_renderer_diagnostics = $FatalDiagnostics.Count
-      diagnostic_path = if ($Diagnostic) { $Diagnostic.FullName } else { "" }
+      diagnostic_path = if ($Diagnostics.Count) { $Diagnostics[-1].FullName } else { "" }
+      diagnostic_paths = @($Diagnostics | ForEach-Object { $_.FullName })
     }
     if (
       -not $Result.process_alive -or

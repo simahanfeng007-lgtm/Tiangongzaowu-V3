@@ -25,6 +25,75 @@ import uuid
 from typing import Any, Mapping, Sequence
 
 
+def model_turn_failure_detail(value: object) -> dict[str, Any]:
+    """Return a safe, structured provider failure for task state and users.
+
+    Provider response bodies and endpoint URLs are intentionally excluded:
+    they can contain credentials or untrusted text. A failed model turn never
+    grants completion or permission to replay an already executed tool.
+    """
+    code = model_turn_failure(value)
+    if not code:
+        return {}
+    metadata = getattr(value, "stream_metadata", None)
+    metadata = metadata if isinstance(metadata, Mapping) else {}
+    try:
+        status = int(metadata.get("http_status") or 0)
+    except (TypeError, ValueError, OverflowError):
+        status = 0
+    if not 100 <= status <= 599:
+        status = 0
+    try:
+        retry_count = max(0, min(99, int(metadata.get("retry_count") or 0)))
+    except (TypeError, ValueError, OverflowError):
+        retry_count = 0
+    attempts = retry_count + 1
+    if code == "http_error":
+        if status in {401, 403}:
+            message = f"模型服务鉴权或账号权限失败（HTTP {status}）。请在模型设置中检查密钥和账号权限。"
+        elif status == 402:
+            message = "模型服务报告计费或额度状态异常（HTTP 402）。请检查服务账号的计费状态或余额。"
+        elif status == 400:
+            message = "模型服务拒绝了请求（HTTP 400）。请检查模型名、接口协议及服务地址配置。"
+        elif status == 404:
+            message = "模型或接口未找到（HTTP 404）。请检查模型名及服务地址配置。"
+        elif status == 409:
+            message = "模型服务报告请求冲突（HTTP 409）。请检查当前模型会话或接口配置。"
+        elif status == 429:
+            message = f"模型服务限流或额度不足（HTTP 429，已尝试 {attempts} 次）。请检查额度，连接恢复后可继续原任务。"
+        elif status in {408, 425, 500, 502, 503, 504}:
+            message = f"模型服务暂时不可用（HTTP {status}，已尝试 {attempts} 次）。连接恢复后可继续原任务。"
+        elif status:
+            message = f"模型服务请求失败（HTTP {status}）。请检查服务配置及连接。"
+        else:
+            message = "模型服务请求失败，未取得有效响应。请检查服务连接。"
+    elif code == "transport_error":
+        message = "模型服务连接中断或网络不可达。请检查网络连接，恢复后可继续原任务。"
+    elif code == "deadline_exceeded":
+        if status == 429:
+            message = "模型服务返回限流（HTTP 429）；等待服务商建议的重试时间时，本轮时限已到。任务尚未完成，可在额度或限流恢复后继续。"
+        elif status >= 500:
+            message = f"模型服务暂时不可用（HTTP {status}）；等待重试时本轮时限已到。任务尚未完成。"
+        else:
+            message = "模型服务在本轮时限内没有返回有效结果。连接恢复后可继续原任务。"
+    elif code in {"output_truncated", "invalid_tool_arguments", "incomplete", "invalid_stream", "stream_unexpected_eof"}:
+        message = "模型响应不完整，未执行不完整的工具调用。请检查模型服务或切换模型后继续。"
+    elif code == "cancelled":
+        message = "任务已停止，尚未取得模型的有效结果。"
+    else:
+        message = "模型服务未返回有效结果，任务尚未完成。请检查模型连接。"
+    return {
+        "error_code": code,
+        "http_status": status or None,
+        "retry_count": retry_count,
+        "provider_identity": str(getattr(value, "provider_identity", "") or "")[:80],
+        "model_id": str(getattr(value, "model_id", "") or "")[:120],
+        "retryable_after_recovery": code in {"transport_error", "deadline_exceeded"}
+        or (code == "http_error" and status in {408, 425, 429, 500, 502, 503, 504}),
+        "user_message": message,
+    }
+
+
 PROVIDER_TURN_SCHEMA = "tiangong.v3.provider_turn_envelope.v1"
 TOOL_CALL_BINDING_SCHEMA = "tiangong.v3.tool_call_binding.v1"
 CONTINUATION_SCHEMA = "tiangong.v3.provider_continuation_state.v1"

@@ -26,6 +26,10 @@ export function createAppCore({ runtime, kernel = null, documentRef = document }
   const plugins = [];
   const slotCache = new Map();
   const pluginFailures = [];
+  let bootComplete = false;
+  let pendingServiceRefresh = false;
+  let observedGatewayReady = null;
+  let serviceRefreshTail = Promise.resolve();
   const core = {
     runtime,
     kernel,
@@ -43,6 +47,30 @@ export function createAppCore({ runtime, kernel = null, documentRef = document }
   if (kernel?.onState) kernel.onState((next) => state.setKernelStatus(next));
   applyTheme(documentRef, state.snapshot().settings);
   state.on("settings", (settings) => applyTheme(documentRef, settings));
+  window.tiangongDesktop?.onServiceStatus?.((snapshot) => {
+    const ready = snapshot?.["total-gateway"]?.ready === true;
+    if (ready === observedGatewayReady) return;
+    observedGatewayReady = ready;
+    if (!bootComplete) {
+      pendingServiceRefresh = true;
+      return;
+    }
+    void queueServiceRefresh();
+  });
+
+  function queueServiceRefresh() {
+    // A slow READY fetch must not land after a newer DEGRADED observation and
+    // overwrite the offline state. Apply transition refreshes in event order.
+    serviceRefreshTail = serviceRefreshTail.then(refreshAfterServiceTransition, refreshAfterServiceTransition);
+    return serviceRefreshTail;
+  }
+
+  async function refreshAfterServiceTransition() {
+    await core.actions.refreshStatus().catch((error) => console.error("service status refresh failed", error));
+    if (observedGatewayReady) {
+      await core.actions.refreshConfig().catch((error) => console.error("service config refresh failed", error));
+    }
+  }
 
   function registerPlugin(plugin) {
     if (!plugin?.id || !plugin?.slot || typeof plugin.mount !== "function") {
@@ -82,6 +110,11 @@ export function createAppCore({ runtime, kernel = null, documentRef = document }
     await core.actions.loadSettings().catch((error) => console.error("loadSettings failed", error));
     await core.actions.refreshStatus().catch((error) => console.error("refreshStatus failed", error));
     await core.actions.refreshConfig().catch((error) => console.error("refreshConfig failed", error));
+    bootComplete = true;
+    if (pendingServiceRefresh) {
+      pendingServiceRefresh = false;
+      await queueServiceRefresh();
+    }
   }
 
   return core;

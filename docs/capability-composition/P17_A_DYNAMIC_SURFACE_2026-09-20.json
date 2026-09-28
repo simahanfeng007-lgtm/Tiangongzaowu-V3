@@ -223,7 +223,7 @@
   {
    "kind": "reflective_getattr",
    "path": "app/backend/tiangong-backend/v3/zongdiaodu.py",
-   "line": 5054,
+   "line": 5071,
    "target": "field.name",
    "classification": "verified",
    "verified_category": "structural_field_access"
@@ -231,7 +231,7 @@
   {
    "kind": "reflective_getattr",
    "path": "app/backend/tiangong-backend/v3/zongdiaodu.py",
-   "line": 5231,
+   "line": 5248,
    "target": "key",
    "classification": "verified",
    "verified_category": "structural_field_access"

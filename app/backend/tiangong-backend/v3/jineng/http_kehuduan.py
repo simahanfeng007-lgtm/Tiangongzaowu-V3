@@ -58,7 +58,7 @@ from .moxing_shipei import MOXING_SHIPEI
 
 HTTP_RETRY_LIMIT = 3
 HTTP_RETRY_SLEEP_SECONDS = 0.5
-TRANSIENT_STATUS_CODES = {408, 409, 425, 429, 500, 502, 503, 504}
+TRANSIENT_STATUS_CODES = {408, 425, 429, 500, 502, 503, 504}
 _NATIVE_AUDIO_FORMATS = {".mp3": "mp3", ".wav": "wav"}
 _NATIVE_AUDIO_MAX_BYTES = int(
     (os.environ.get("TIANGONG_NATIVE_AUDIO_MAX_BYTES") or str(20 * 1024 * 1024)).strip()
@@ -1260,7 +1260,9 @@ class HttpKehuduan:
                 model_name=model_name,
                 error_code=exc.error_code,
                 usage=failed_usage,
-                stream_metadata=exc.response_metrics,
+                stream_metadata={**exc.response_metrics, "http_status": exc.http_status,
+                                 "retry_count": exc.retry_count,
+                                 "deadline_exceeded": exc.deadline_exceeded},
             )
             return _with_native_audio(
                 error,

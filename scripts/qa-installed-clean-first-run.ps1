@@ -49,6 +49,16 @@ function Get-ListeningConnections {
   )
 }
 
+function Get-RendererDiagnosticFiles {
+  param([Parameter(Mandatory = $true)][string]$Root)
+  return @(
+    Get-ChildItem -LiteralPath $Root -Recurse -File `
+      -Filter "desktop_renderer.*.jsonl" -ErrorAction SilentlyContinue |
+      Where-Object { $_.Name -match '^desktop_renderer\.\d{4}-\d{2}-\d{2}\.jsonl$' } |
+      Sort-Object Name, FullName
+  )
+}
+
 function Get-InstallationProcesses {
   param([Parameter(Mandatory = $true)][string]$InstallRoot)
   return @(
@@ -600,11 +610,14 @@ try {
   }
 
   Start-Sleep -Milliseconds 1000
-  $DiagnosticPath = Join-Path $RuntimeRoot "logs\desktop_renderer.jsonl"
-  if (-not (Test-Path -LiteralPath $DiagnosticPath -PathType Leaf)) {
-    throw "isolated renderer diagnostic was not created: $DiagnosticPath"
+  $DiagnosticRoot = Join-Path $RuntimeRoot "logs"
+  $DiagnosticFiles = @(Get-RendererDiagnosticFiles -Root $DiagnosticRoot)
+  if ($DiagnosticFiles.Count -eq 0) {
+    throw "isolated renderer diagnostic was not created: $DiagnosticRoot"
   }
-  $DiagnosticText = Get-Content -LiteralPath $DiagnosticPath -Raw -Encoding UTF8
+  $DiagnosticText = (@($DiagnosticFiles | ForEach-Object {
+    Get-Content -LiteralPath $_.FullName -Raw -Encoding UTF8
+  })) -join "`n"
   $FatalDiagnosticPattern = '"kind":"(?:did-fail-load|render-process-gone|load-frontend-rejected|renderer-ready-marker-missing|renderer-ready-probe-failed|window-unresponsive|avatar-boot-failed)"'
   $FatalDiagnosticCount = [regex]::Matches($DiagnosticText, $FatalDiagnosticPattern).Count
   $FrontendLoaded = $DiagnosticText -match '"kind":"frontend-load-complete-ms"'
@@ -656,7 +669,8 @@ try {
     legacy_ports_closed = ($LegacyListeners.Count -eq 0)
     frontend_load_diagnostic_present = $FrontendLoaded
     fatal_renderer_diagnostics = $FatalDiagnosticCount
-    diagnostic_path = $DiagnosticPath
+    diagnostic_path = $DiagnosticFiles[-1].FullName
+    diagnostic_paths = @($DiagnosticFiles | ForEach-Object { $_.FullName })
     local_storage_keys = @($Probe.ui.localStorageKeys)
     process_cleanup_complete = $false
     process_environment_restored = $false

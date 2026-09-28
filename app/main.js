@@ -181,6 +181,9 @@ function configureModelNetworkEnvironment(env) {
 configureModelNetworkEnvironment(process.env);
 
 let mainWindow = null;
+let frontendLoadedWindow = null;
+let healthyUpdateTokenCommitted = "";
+let healthyUpdateCheckPromise = null;
 let backendProcess = null;
 let backendStopping = false;
 let backendStarting = false;
@@ -1508,7 +1511,9 @@ async function secureModelSettingsUpdate(payload = {}) {
   // endpoint/model must never mutate the OS credential vault or restart the
   // application runtime.  Preserve the previous contract so a failed runtime
   // restart can roll back both halves of the transaction.
-  const previous = changesCredential ? await desktopModelSettingsRequest("GET") : null;
+  const previous = changesCredential
+    ? await desktopModelSettingsRequest("GET", null, { startIfUnavailable: true })
+    : null;
   const result = await desktopModelSettingsRequest("POST", settings);
   if (!result || typeof result !== "object" || result.ok === false) return result;
 
@@ -3107,7 +3112,7 @@ function normalizedModelSettingsPayload(payload = {}) {
   return clean;
 }
 
-async function desktopModelSettingsRequest(method, payload = null) {
+async function desktopModelSettingsRequest(method, payload = null, { startIfUnavailable = false } = {}) {
   const normalizedMethod = String(method || "GET").toUpperCase();
   if (!new Set(["GET", "POST"]).has(normalizedMethod)) return { ok: false, error: "model_settings_method_invalid" };
   let body = null;
@@ -3117,7 +3122,11 @@ async function desktopModelSettingsRequest(method, payload = null) {
     return { ok: false, error: error?.message || "model_settings_invalid" };
   }
   let result = await backendControlJsonRequest(normalizedMethod, "/api/v1/llm/settings", body);
-  if (result.statusCode === 0) {
+  // Startup reads must not join the potentially ten-minute gateway launch.
+  // The window can show the unavailable state while its owner starts 7184.
+  // A user-initiated write or credential rollback snapshot still waits for
+  // the service before changing persistent settings.
+  if (result.statusCode === 0 && (normalizedMethod === "POST" || startIfUnavailable)) {
     await serviceSupervisor.start(modelRuntimeServiceName());
     result = await backendControlJsonRequest(normalizedMethod, "/api/v1/llm/settings", body);
   }
@@ -3461,7 +3470,7 @@ function totalGatewayEnvironment(entry) {
 async function waitForTotalGateway(child = null, failed = null, timeoutMs = SOURCE_MODE ? 600000 : 120000) {
   const deadline = Date.now() + timeoutMs;
   for (let i = 0; i < SERVICE_START_ATTEMPTS; i += 1) {
-    if (failed?.value === true || (child && child.exitCode !== null)) return false;
+    if (serviceSupervisor.draining || failed?.value === true || (child && child.exitCode !== null)) return false;
     if (Date.now() >= deadline) return false;
     // Process startup and business readiness are different states.  Once
     // /health is structurally valid the supervisor owns the live process and
@@ -4123,8 +4132,73 @@ const serviceSupervisor = new ServiceSupervisor({
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send("services:status", serviceSupervisor.snapshot());
     }
+    if (event.name === "total-gateway" && event.ready === true) {
+      void maybeMarkHealthyUpdate(frontendLoadedWindow);
+    }
   },
 });
+
+async function maybeMarkHealthyUpdate(window) {
+  const token = postUpdateToken();
+  if (
+    !token || healthyUpdateTokenCommitted === token || healthyUpdateCheckPromise
+    || !window || window !== mainWindow || window !== frontendLoadedWindow || window.isDestroyed()
+    || serviceSupervisor.snapshot()["total-gateway"]?.ready !== true
+  ) return false;
+  const operation = (async () => {
+    let rendererReady;
+    try {
+      rendererReady = await withTimeout(window.webContents.executeJavaScript(
+        'document.documentElement.dataset.tiangongReady === "true"', true,
+      ), 3000, "renderer_ready_probe_timeout");
+    } catch (error) {
+      writeDesktopDiagnostic("update-renderer-ready-probe-failed", error?.message || error);
+      return false;
+    }
+    if (
+      rendererReady !== true || window !== mainWindow || window !== frontendLoadedWindow
+      || window.isDestroyed() || serviceSupervisor.snapshot()["total-gateway"]?.ready !== true
+    ) return false;
+    try {
+      if (getSecureUpdater().markHealthy(token) === true) {
+        healthyUpdateTokenCommitted = token;
+        return true;
+      }
+    } catch (error) {
+      writeDesktopDiagnostic("update-health-commit-failed", error?.message || error);
+    }
+    return false;
+  })();
+  healthyUpdateCheckPromise = operation;
+  try {
+    return await operation;
+  } finally {
+    if (healthyUpdateCheckPromise === operation) healthyUpdateCheckPromise = null;
+  }
+}
+
+async function startServicesAfterFrontendLoad(window) {
+  const startedAt = Date.now();
+  let snapshot;
+  try {
+    snapshot = await serviceSupervisor.startAll();
+  } catch (error) {
+    writeDesktopDiagnostic("application-services-start-failed", error?.stack || error?.message || error);
+    snapshot = serviceSupervisor.snapshot();
+  }
+  writeDesktopDiagnostic("application-services-start-ms", Date.now() - startedAt);
+  writeDesktopDiagnostic("application-services-start-state", JSON.stringify(snapshot));
+  if (!mainWindow || mainWindow !== window || window.isDestroyed()) return;
+
+  const gateway = snapshot["total-gateway"] || {};
+  if (!gateway.running) {
+    console.warn("Tiangong total gateway was not running; the desktop remains available with offline runtime status.");
+  } else if (!gateway.ready) {
+    console.warn("Tiangong total gateway is alive but not ready; inspect the /ready reason_codes for the failed service or evidence check.");
+  }
+  startBackendWatchdog();
+  await maybeMarkHealthyUpdate(window);
+}
 
 async function createWindow() {
   applyWorkspacePreference();
@@ -4140,7 +4214,7 @@ async function createWindow() {
   }
   applyWindowTheme("ink_teal");
 
-  mainWindow = new BrowserWindow({
+  const window = new BrowserWindow({
     show: !(SOURCE_MODE && process.env.TIANGONG_SOURCE_BACKGROUND === "1"),
     width: 1380,
     height: 840,
@@ -4159,6 +4233,14 @@ async function createWindow() {
       allowRunningInsecureContent: false,
     },
   });
+  mainWindow = window;
+  window.on("closed", () => {
+    if (frontendLoadedWindow === window) frontendLoadedWindow = null;
+    if (mainWindow === window) {
+      mainWindow = null;
+      stopBackendWatchdog();
+    }
+  });
   applyWindowTheme("ink_teal");
 
   const splash = `<!doctype html><meta charset="utf-8"><title>${PRODUCT_LABEL}正在启动</title><style>
@@ -4166,33 +4248,22 @@ async function createWindow() {
     body{display:grid;place-items:center}.box{text-align:center}.mark{font-size:48px;margin-bottom:18px}.title{font-size:22px;font-weight:700}
     .hint{margin-top:12px;color:#86aaa1;font-size:14px}.pulse{display:inline-block;animation:p 1.1s ease-in-out infinite}@keyframes p{50%{opacity:.35}}
   </style><div class="box"><div class="mark">◉</div><div class="title">${PRODUCT_LABEL}正在启动</div><div class="hint"><span class="pulse">正在唤醒生命与工具服务，请稍候…</span></div></div>`;
-  await mainWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(splash)}`).catch(() => {});
+  await window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(splash)}`).catch(() => {});
+  if (mainWindow !== window || window.isDestroyed()) return;
 
-  const servicesStartedAt = Date.now();
-  const serviceSnapshot = await serviceSupervisor.startAll();
-  const totalGatewayRunning = serviceSnapshot["total-gateway"]?.running === true;
-  const totalGatewayReady = serviceSnapshot["total-gateway"]?.ready === true;
-  const backendReady = totalGatewayReady;
-  const lifeReady = totalGatewayReady;
-  const communicationRunning = totalGatewayRunning;
-  const communicationReady = totalGatewayReady;
-  writeDesktopDiagnostic("application-services-start-ms", Date.now() - servicesStartedAt);
-  writeDesktopDiagnostic("application-services-start-state", JSON.stringify(serviceSnapshot));
-  if (!mainWindow || mainWindow.isDestroyed()) return;
-
-  mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
-  installEditContextMenu(mainWindow.webContents);
-  mainWindow.webContents.on("did-fail-load", (_event, code, description, validatedURL, isMainFrame) => {
+  window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  installEditContextMenu(window.webContents);
+  window.webContents.on("did-fail-load", (_event, code, description, validatedURL, isMainFrame) => {
     writeDesktopDiagnostic("did-fail-load", JSON.stringify({ code, description, validatedURL, isMainFrame }));
-    if (isMainFrame && mainWindow && !mainWindow.isDestroyed()) {
+    if (isMainFrame && mainWindow === window && !window.isDestroyed()) {
       const safe = String(description || `load error ${code}`).replace(/[<>&]/g, "");
-      mainWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(`<!doctype html><meta charset="utf-8"><style>body{background:#0c0e11;color:#e6edf3;font:16px system-ui;padding:40px}code{color:#ffb4a8}</style><h1>天工桌面加载失败</h1><p>客户端已阻止黑屏并记录诊断。</p><code>${safe}</code>`)}`).catch(() => {});
+      window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(`<!doctype html><meta charset="utf-8"><style>body{background:#0c0e11;color:#e6edf3;font:16px system-ui;padding:40px}code{color:#ffb4a8}</style><h1>天工桌面加载失败</h1><p>客户端已阻止黑屏并记录诊断。</p><code>${safe}</code>`)}`).catch(() => {});
     }
   });
-  mainWindow.webContents.on("render-process-gone", (_event, details) => {
+  window.webContents.on("render-process-gone", (_event, details) => {
     writeDesktopDiagnostic("render-process-gone", JSON.stringify(details || {}));
   });
-  mainWindow.webContents.on("console-message", (details) => {
+  window.webContents.on("console-message", (details) => {
     const severity = String(details?.level || "").toLowerCase();
     if (["warning", "error"].includes(severity)) {
       writeDesktopDiagnostic("renderer-console", JSON.stringify({
@@ -4203,46 +4274,32 @@ async function createWindow() {
       }));
     }
   });
-  mainWindow.on("unresponsive", () => writeDesktopDiagnostic("window-unresponsive"));
-  mainWindow.webContents.on("will-navigate", (event, url) => {
+  window.on("unresponsive", () => writeDesktopDiagnostic("window-unresponsive"));
+  window.webContents.on("will-navigate", (event, url) => {
     if (!isTrustedAppUrl(url)) event.preventDefault();
   });
-  mainWindow.webContents.on("will-frame-navigate", (details) => {
+  window.webContents.on("will-frame-navigate", (details) => {
     if (!isTrustedAppFrameUrl(details?.url || "")) details.preventDefault();
   });
 
   const loadLocalFrontend = () => {
     if (!exists(PRIMARY_FRONTEND_FILE)) throw new Error("primary_frontend_missing");
-    return mainWindow && mainWindow.loadFile(PRIMARY_FRONTEND_FILE);
+    return window.loadFile(PRIMARY_FRONTEND_FILE);
   };
-  if (!backendReady) {
-    console.warn("Tiangong backend daemon was not ready; loading the desktop frontend with offline runtime status.");
-  }
-  if (!lifeReady) {
-    console.warn("Tiangong complete life service was not ready; identity and life organs will remain offline.");
-  }
-  if (!totalGatewayRunning) {
-    console.warn("Tiangong total gateway was not running; business orchestration will remain offline.");
-  } else if (!totalGatewayReady) {
-    console.warn("Tiangong total gateway is alive but not ready; inspect the /ready reason_codes for the failed service or evidence check.");
-  }
-  if (!communicationRunning || !communicationReady) {
-    console.warn("Tiangong communication service was not ready; WeChat and Feishu connections will remain offline.");
-  }
   const frontendLoadStartedAt = Date.now();
   try {
     await loadLocalFrontend();
     writeDesktopDiagnostic("frontend-load-complete-ms", Date.now() - frontendLoadStartedAt);
     setTimeout(async () => {
-      if (!mainWindow || mainWindow.isDestroyed()) return;
+      if (mainWindow !== window || window.isDestroyed()) return;
       try {
-        const ready = await mainWindow.webContents.executeJavaScript(
+        const ready = await window.webContents.executeJavaScript(
           'document.documentElement.dataset.tiangongCoreLoaded === "true" && document.documentElement.dataset.tiangongReady !== "failed"',
           true,
         );
         if (!ready) {
           writeDesktopDiagnostic("renderer-ready-marker-missing");
-          await mainWindow.webContents.executeJavaScript(
+          await window.webContents.executeJavaScript(
             'window.__tiangongShowFatal?.("核心界面模块未完成加载，请重启客户端；诊断已保存。")',
             true,
           );
@@ -4255,20 +4312,12 @@ async function createWindow() {
     writeDesktopDiagnostic("load-frontend-rejected", error?.stack || error?.message || error);
     throw error;
   }
-  startBackendWatchdog();
-
-  const updateToken = postUpdateToken();
-  if (updateToken && backendReady && lifeReady && totalGatewayReady && communicationReady) {
-    try {
-      getSecureUpdater().markHealthy(updateToken);
-    } catch (error) {
-      writeDesktopDiagnostic("update-health-commit-failed", error?.message || error);
-    }
-  }
-
-  mainWindow.on("closed", () => {
-    mainWindow = null;
-    stopBackendWatchdog();
+  if (mainWindow !== window || window.isDestroyed()) return;
+  frontendLoadedWindow = window;
+  // Source-mode gateway startup can legitimately take ten minutes. It must
+  // never keep the only desktop window on the splash page for that duration.
+  void startServicesAfterFrontendLoad(window).catch((error) => {
+    writeDesktopDiagnostic("application-services-background-failed", error?.stack || error?.message || error);
   });
 }
 
@@ -4531,6 +4580,12 @@ onTrusted("diagnostic:write", (_event, payload = {}) => {
   const kind = String(payload?.kind || "renderer").replace(/[^A-Za-z0-9._:-]/g, "_").slice(0, 120) || "renderer";
   const detail = String(payload?.detail || "").slice(0, 4000);
   writeDesktopDiagnostic(kind, detail);
+});
+
+onTrusted("renderer:coreReady", (event) => {
+  if (event.sender === frontendLoadedWindow?.webContents) {
+    void maybeMarkHealthyUpdate(frontendLoadedWindow);
+  }
 });
 
 onTrusted("window:minimize", (event) => {

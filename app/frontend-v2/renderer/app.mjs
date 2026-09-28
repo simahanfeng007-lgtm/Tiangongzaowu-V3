@@ -34,6 +34,7 @@ app.boot()
       window.__tiangongShowFatal?.(`插件挂载失败：${failures.map((item) => item.id).join("、")}`);
     } else {
       window.__tiangongHideFatal?.();
+      window.tiangongDesktop?.reportCoreReady?.();
     }
   })
   .catch((error) => {

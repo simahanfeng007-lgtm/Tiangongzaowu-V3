@@ -68,7 +68,7 @@ def _health_for(rows: list[dict[str, Any]]) -> str:
     recent = rows[-20:]
     ok_count = sum(1 for row in recent if row.get("api_status") == "ok")
     rate_limited = any(row.get("http_status") == 429 for row in recent[-5:])
-    transient_errors = sum(1 for row in recent if row.get("http_status") in {408, 409, 425, 429, 500, 502, 503, 504})
+    transient_errors = sum(1 for row in recent if row.get("http_status") in {408, 425, 429, 500, 502, 503, 504})
     ok_rate = ok_count / max(len(recent), 1)
     p95_latency = _percentile([int(row.get("latency_ms") or 0) for row in recent], 0.95)
     if rate_limited:
