@@ -35,6 +35,7 @@ class SourceRuntimeRecoveryTests(unittest.TestCase):
         self.assertIn('source_requirements_sha256 = Get-FileDigest', provision)
         self.assertIn('$Manifest.source_requirements_sha256 -ne', provision)
         self.assertIn('& $Python -m pip check', provision)
+        self.assertIn('scripts\\embedded_python_integrity.py', provision)
         self.assertIn('Remove-Item -LiteralPath $ManifestPath -Force', provision)
         self.assertLess(
             provision.index('$TkinterAvailable = [bool](Copy-TkinterRuntime)'),
@@ -64,6 +65,11 @@ class SourceRuntimeRecoveryTests(unittest.TestCase):
         self.assertIn('TIANGONG_SKIP_PLAYWRIGHT_BROWSERS: "1"', workflow)
         self.assertIn('Remove-Item -LiteralPath (Join-Path $RuntimeRoot "runtime-manifest.json")', workflow)
         self.assertIn('Remove-Item -LiteralPath (Join-Path $RuntimeRoot "python312._pth")', workflow)
+        self.assertIn('pydantic\\__init__.py', workflow)
+        self.assertIn('Missing installed module unexpectedly passed runtime check', workflow)
+        self.assertIn('Reprovision did not restore the missing module', workflow)
+        self.assertIn('Modified installed module unexpectedly passed runtime check', workflow)
+        self.assertIn('Same-size content repair did not pass runtime check', workflow)
         self.assertNotIn("Start-Transcript", workflow)
         self.assertNotIn("actions/upload-artifact", workflow)
         self.assertNotIn("release-desktop.yml", workflow)

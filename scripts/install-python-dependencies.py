@@ -8,6 +8,7 @@ within one resolver run.
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import os
 from pathlib import Path
 import re
@@ -15,6 +16,14 @@ import subprocess
 import sys
 import tomllib
 from typing import Sequence
+
+_integrity_path = Path(__file__).resolve().with_name("embedded_python_integrity.py")
+_integrity_spec = importlib.util.spec_from_file_location("tiangong_embedded_python_integrity", _integrity_path)
+if _integrity_spec is None or _integrity_spec.loader is None:
+    raise RuntimeError("Embedded Python integrity helper is unavailable")
+_integrity_module = importlib.util.module_from_spec(_integrity_spec)
+_integrity_spec.loader.exec_module(_integrity_module)
+audit_embedded_install = _integrity_module.audit_embedded_install
 
 
 TUNA_PYPI_INDEX = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"
@@ -72,6 +81,27 @@ def _embedded_build_pins(requirements: Path, project: Path) -> tuple[str, str]:
     return pins["setuptools"], pins["wheel"]
 
 
+def _repair_embedded_integrity(requirements: Path, project: Path) -> None:
+    """Reinstall damaged wheels; ordinary pip install trusts surviving dist-info."""
+    site_packages = Path(sys.executable).resolve().parent / "Lib" / "site-packages"
+    audit = audit_embedded_install(site_packages, requirements, project)
+    if not audit.problems:
+        return
+    print("[embedded-python] repairing incomplete installed packages", flush=True)
+    common = ["--disable-pip-version-check", "install", "--force-reinstall", "--no-deps"]
+    build_specs = [spec for spec in audit.repair_specs if spec.split("==", 1)[0].lower() in {"pip", "setuptools", "wheel"}]
+    other_specs = [spec for spec in audit.repair_specs if spec not in build_specs]
+    if build_specs:
+        install_with_fallback([*common, "--only-binary=:all:", *build_specs], label="embedded Python damaged build packages")
+    if other_specs:
+        install_with_fallback([*common, "--no-build-isolation", *other_specs], label="embedded Python damaged packages")
+    if audit.repair_project:
+        install_with_fallback([*common, "--no-build-isolation", str(project)], label="embedded Python damaged project")
+    remaining = audit_embedded_install(site_packages, requirements, project)
+    if remaining.problems:
+        raise RuntimeError("Embedded Python remains incomplete after repair: " + "; ".join(remaining.problems[:3]))
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--requirements", type=Path)
@@ -113,6 +143,9 @@ def main() -> int:
             [*common, "install", *build_option, "--no-deps", str(project)],
             label=f"Python project {project.name}",
         )
+    if args.embedded_python:
+        assert requirements is not None and project is not None
+        _repair_embedded_integrity(requirements, project)
     return 0
 
 

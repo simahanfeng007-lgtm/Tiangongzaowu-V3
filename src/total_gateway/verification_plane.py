@@ -41,6 +41,7 @@ from __future__ import annotations
 # through the authoritative task completion path.
 # 1.70 records finite provider failure categories and prevents provider
 # error details from becoming a completion signal or leaking URL credentials.
-VERIFICATION_PLANE_VERSION = "1.70"
+# 1.71 binds source Gateway health to the actual checkout and desktop owner.
+VERIFICATION_PLANE_VERSION = "1.71"
 
 __all__ = ["VERIFICATION_PLANE_VERSION"]

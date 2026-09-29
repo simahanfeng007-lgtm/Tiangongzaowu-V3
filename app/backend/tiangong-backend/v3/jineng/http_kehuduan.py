@@ -413,17 +413,20 @@ def _learned_skill_context(limit: int = 8) -> str:
 
 def _safe_error_part(value: Any, limit: int = 240) -> str:
     text = str(value or "").replace("\r", " ").replace("\n", " ").strip()
+    # Transport exception messages may embed the configured endpoint, whose
+    # path can itself carry a credential. Keep the error class, not the URL.
+    text = re.sub(r"https?://\S+", "<model_endpoint>", text, flags=re.IGNORECASE)
     return text[:limit]
 
 
 def _safe_error_url(value: str, limit: int = 320) -> str:
-    """Keep useful endpoint location while removing URL credentials and query."""
+    """Keep only the endpoint origin; URL paths can contain credentials too."""
     try:
         parts = urlsplit(str(value or ""))
         if parts.scheme not in {"http", "https"} or not parts.hostname:
             return "<invalid_endpoint>"
         host = parts.netloc.rsplit("@", 1)[-1]
-        return _safe_error_part(urlunsplit((parts.scheme, host, parts.path, "", "")), limit)
+        return urlunsplit((parts.scheme, host, "", "", "")).replace("\r", "").replace("\n", "")[:limit]
     except ValueError:
         return "<invalid_endpoint>"
 
@@ -1241,7 +1244,7 @@ class HttpKehuduan:
                 http_status=exc.http_status,
                 latency_ms=exc.latency_ms,
                 retry_count=exc.retry_count,
-                error_preview=exc.response_preview or exc.reason,
+                error_preview=_safe_error_part(exc.response_preview or exc.reason, 320),
                 provider_error_category=exc.provider_error_category,
                 provider_request_id=exc.provider_request_id,
                 response_metrics=exc.response_metrics,

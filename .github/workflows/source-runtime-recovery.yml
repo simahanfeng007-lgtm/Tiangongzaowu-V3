@@ -6,6 +6,7 @@ on:
       - .github/workflows/source-runtime-recovery.yml
       - scripts/provision-embedded-python.ps1
       - scripts/install-python-dependencies.py
+      - scripts/embedded_python_integrity.py
       - scripts/setup-source.ps1
       - scripts/start-source.ps1
       - requirements-release.lock
@@ -40,7 +41,10 @@ jobs:
           $RuntimeRoot = Join-Path $env:GITHUB_WORKSPACE "app\runtime\python312"
           if (& $Provision -Check) { throw "Clean source tree unexpectedly passed runtime check" }
           & $Provision
+          $CheckTimer = [Diagnostics.Stopwatch]::StartNew()
           $Ready = @(& $Provision -Check)
+          $CheckTimer.Stop()
+          Write-Host ("Initial runtime check: {0:N2}s" -f $CheckTimer.Elapsed.TotalSeconds)
           if ($Ready.Count -ne 1 -or $Ready[0] -ne $true) { throw "Initial provision did not pass runtime check" }
 
           Remove-Item -LiteralPath (Join-Path $RuntimeRoot "runtime-manifest.json") -Force
@@ -50,4 +54,40 @@ jobs:
           & $Provision
           $Ready = @(& $Provision -Check)
           if ($Ready.Count -ne 1 -or $Ready[0] -ne $true) { throw "Recovered runtime did not pass runtime check" }
-          Write-Host "Embedded Python interruption recovery passed"
+
+          # pip check reads dependency metadata, so it still succeeds when a
+          # real package module is gone but its dist-info directory remains.
+          $SitePackages = Join-Path $RuntimeRoot "Lib\site-packages"
+          $Module = Join-Path $SitePackages "pydantic\__init__.py"
+          $Metadata = @(Get-ChildItem -LiteralPath $SitePackages -Directory -Filter "pydantic-*.dist-info")
+          if (-not (Test-Path -LiteralPath $Module -PathType Leaf) -or $Metadata.Count -ne 1) {
+            throw "Pydantic package fixture is not installed as expected"
+          }
+          Remove-Item -LiteralPath $Module -Force
+          & (Join-Path $RuntimeRoot "python.exe") -m pip check | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "The missing-module fixture unexpectedly broke pip check" }
+          if (& $Provision -Check) { throw "Missing installed module unexpectedly passed runtime check" }
+
+          & $Provision
+          if (-not (Test-Path -LiteralPath $Module -PathType Leaf)) { throw "Reprovision did not restore the missing module" }
+          $CheckTimer = [Diagnostics.Stopwatch]::StartNew()
+          $Ready = @(& $Provision -Check)
+          $CheckTimer.Stop()
+          Write-Host ("Repaired runtime check: {0:N2}s" -f $CheckTimer.Elapsed.TotalSeconds)
+          if ($Ready.Count -ne 1 -or $Ready[0] -ne $true) { throw "Repaired package did not pass runtime check" }
+
+          # Keep the path and byte count unchanged: existence/size-only checks
+          # would pass, but the wheel RECORD digest must reject altered code.
+          $ModuleBytes = [IO.File]::ReadAllBytes($Module)
+          $LastIndex = $ModuleBytes.Length - 1
+          if ($LastIndex -lt 0) { throw "Pydantic module fixture is empty" }
+          $ModuleBytes[$LastIndex] = $ModuleBytes[$LastIndex] -bxor 1
+          [IO.File]::WriteAllBytes($Module, $ModuleBytes)
+          & (Join-Path $RuntimeRoot "python.exe") -m pip check | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "The same-size content fixture unexpectedly broke pip check" }
+          if (& $Provision -Check) { throw "Modified installed module unexpectedly passed runtime check" }
+
+          & $Provision
+          $Ready = @(& $Provision -Check)
+          if ($Ready.Count -ne 1 -or $Ready[0] -ne $true) { throw "Same-size content repair did not pass runtime check" }
+          Write-Host "Embedded Python interruption and package integrity recovery passed"

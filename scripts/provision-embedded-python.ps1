@@ -88,6 +88,11 @@ function Test-EmbeddedPythonRuntime {
         if ($LASTEXITCODE -ne 0) { return $false }
         & $Python -m pip check 2>$null | Out-Null
         if ($LASTEXITCODE -ne 0) { return $false }
+        & $Python (Join-Path $Root "scripts\embedded_python_integrity.py") `
+            --site-packages (Join-Path $RuntimeRoot "Lib\site-packages") `
+            --requirements (Join-Path $Root "requirements-release.lock") `
+            --project $Root 2>$null | Out-Null
+        if ($LASTEXITCODE -ne 0) { return $false }
         & $Python -c "import setuptools.build_meta, wheel" 2>$null | Out-Null
         if ($LASTEXITCODE -ne 0) { return $false }
         & $Python -c "import importlib.util; assert importlib.util.find_spec('total_gateway') is not None" 2>$null | Out-Null
