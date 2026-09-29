@@ -855,7 +855,7 @@
   {
    "kind": "dynamic_import",
    "path": "src/total_gateway/server.py",
-   "line": 350,
+   "line": 395,
    "target": "<__import__>",
    "classification": "verified",
    "verified_category": "inline_stdlib_import"
@@ -863,7 +863,7 @@
   {
    "kind": "dynamic_import",
    "path": "src/total_gateway/server.py",
-   "line": 391,
+   "line": 436,
    "target": "<__import__>",
    "classification": "verified",
    "verified_category": "inline_stdlib_import"
@@ -871,7 +871,7 @@
   {
    "kind": "dynamic_import",
    "path": "src/total_gateway/server.py",
-   "line": 752,
+   "line": 797,
    "target": "<__import__>",
    "classification": "verified",
    "verified_category": "inline_stdlib_import"
@@ -879,7 +879,7 @@
   {
    "kind": "dynamic_import",
    "path": "src/total_gateway/server.py",
-   "line": 766,
+   "line": 811,
    "target": "<__import__>",
    "classification": "verified",
    "verified_category": "inline_stdlib_import"
@@ -887,7 +887,7 @@
   {
    "kind": "dynamic_import",
    "path": "src/total_gateway/server.py",
-   "line": 794,
+   "line": 839,
    "target": "<__import__>",
    "classification": "verified",
    "verified_category": "inline_stdlib_import"
@@ -895,10 +895,10 @@
   {
    "kind": "reflective_getattr",
    "path": "src/total_gateway/server.py",
-   "line": 973,
+   "line": 1026,
    "target": "signal_name",
    "classification": "verified",
-   "verified_category": "route_handler_dispatch"
+   "verified_category": "structural_field_access"
   },
   {
    "kind": "reflective_getattr",

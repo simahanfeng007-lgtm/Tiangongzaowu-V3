@@ -496,34 +496,34 @@
    "reason": "2 hits: getattr for governance field access",
    "reviewed_line": "if str(getattr(checkpoint, name) or \"\") != str(getattr(current, name) or \"\")"
   },
-  "src/total_gateway/server.py:350": {
+  "src/total_gateway/server.py:395": {
    "category": "inline_stdlib_import",
    "reason": "Fixed standard-library import of time; no caller-supplied module name.",
    "reviewed_line": "now_ms=__import__(\"time\").time_ns() // 1_000_000,"
   },
-  "src/total_gateway/server.py:391": {
+  "src/total_gateway/server.py:436": {
    "category": "inline_stdlib_import",
    "reason": "Fixed standard-library import of time; no caller-supplied module name.",
    "reviewed_line": "response = api.submit(body, now_ms=__import__(\"time\").time_ns() // 1_000_000)"
   },
-  "src/total_gateway/server.py:752": {
+  "src/total_gateway/server.py:797": {
    "category": "inline_stdlib_import",
    "reason": "Fixed standard-library import of time; no caller-supplied module name.",
    "reviewed_line": "epoch = store.increment_action_fence(reason=reason, now_ms=__import__(\"time\").time_ns() // 1_000_000)"
   },
-  "src/total_gateway/server.py:766": {
+  "src/total_gateway/server.py:811": {
    "category": "inline_stdlib_import",
    "reason": "Fixed standard-library import of time; no caller-supplied module name.",
    "reviewed_line": "now_ms = __import__(\"time\").time_ns() // 1_000_000"
   },
-  "src/total_gateway/server.py:794": {
+  "src/total_gateway/server.py:839": {
    "category": "inline_stdlib_import",
    "reason": "Fixed standard-library import of time; no caller-supplied module name.",
    "reviewed_line": "now_ms = __import__(\"time\").time_ns() // 1_000_000"
   },
-  "src/total_gateway/server.py:973": {
-   "category": "route_handler_dispatch",
-   "reason": "6 hits: getattr-based HTTP route handler dispatch (do_GET etc.)",
+  "src/total_gateway/server.py:1026": {
+   "category": "structural_field_access",
+   "reason": "Looks up only SIGINT, SIGTERM, or SIGBREAK from the fixed shutdown-signal tuple; absent platform signals are skipped, and no caller supplies the attribute name.",
    "reviewed_line": "shutdown_signal = getattr(signal, signal_name, None)"
   },
   "src/total_gateway/store.py:11625": {

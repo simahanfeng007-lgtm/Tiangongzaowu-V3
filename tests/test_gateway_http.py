@@ -196,6 +196,8 @@ class GatewayHttpTests(unittest.TestCase):
         response, health = self.request("GET", "/health")
         self.assertEqual(response.status, 200)
         self.assertEqual(health["status"], "ALIVE")
+        self.assertNotIn("source_checkout_id", health)
+        self.assertNotIn("source_gateway_owner_id", health)
         self.assertEqual(response.getheader("Cache-Control"), "no-store")
 
         response, ready = self.request("GET", "/ready")
@@ -259,6 +261,18 @@ class GatewayHttpTests(unittest.TestCase):
         self.assertIn("facts.sqlite3", files)
         self.assertIn("objects", files)
         self.assertFalse(any(name.startswith(".disk-probe-") for name in files))
+
+    def test_source_identity_is_present_in_both_http_probes(self) -> None:
+        self.server.source_checkout_id = "a" * 64
+        self.server.source_gateway_owner_id = "b" * 64
+        response, health = self.request("GET", "/health")
+        self.assertEqual(response.status, 200)
+        self.assertEqual(health["source_checkout_id"], "a" * 64)
+        self.assertEqual(health["source_gateway_owner_id"], "b" * 64)
+        response, ready = self.request("GET", "/ready")
+        self.assertEqual(response.status, 503)
+        self.assertEqual(ready["source_checkout_id"], "a" * 64)
+        self.assertEqual(ready["source_gateway_owner_id"], "b" * 64)
 
     def test_readiness_collector_failure_is_explicit_fail_closed_and_recovers(self) -> None:
         expectation, evidence = readiness_inputs(self.runtime.lease.gateway_epoch)

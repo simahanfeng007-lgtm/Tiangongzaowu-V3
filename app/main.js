@@ -94,6 +94,17 @@ function configureSourceIsolation() {
 
 const SOURCE_ISOLATION = configureSourceIsolation();
 
+// Separate source checkouts may intentionally share a profile and therefore
+// the 7184 epoch file.  The checkout identity must come from the actual app
+// tree, never from that shared profile or a caller-supplied environment value.
+const SOURCE_CHECKOUT_ID = SOURCE_MODE
+  ? crypto.createHash("sha256")
+    .update(process.platform === "win32"
+      ? fs.realpathSync.native(path.resolve(__dirname, "..")).toLowerCase()
+      : fs.realpathSync.native(path.resolve(__dirname, "..")))
+    .digest("hex")
+  : "";
+
 // 便携模式（U 盘 TiangongData）必须在 resolveWorkspaceMode()/runtimeStateRoot()
 // 之前执行：它们在模块加载期就会读取并永久缓存 userData 派生路径，
 // setPath 晚于它们的话，全部运行时状态（日志/gateway 状态/恢复密钥）
@@ -227,6 +238,9 @@ process.env.TIANGONG_ARTIFACT_OPEN_TOKEN = ARTIFACT_OPEN_TOKEN;
 // P2b 受控资产层：进程级 issuer epoch（grant 跨进程重启即失效，方案 §8.5）。
 const AVATAR_ASSET_ISSUER_EPOCH = crypto.randomInt(1, 2 ** 31 - 1);
 const SHADOW_API_TOKEN = crypto.randomBytes(48).toString("base64url");
+const SOURCE_GATEWAY_OWNER_ID = SOURCE_MODE
+  ? crypto.createHash("sha256").update(SHADOW_API_TOKEN).digest("hex")
+  : "";
 const COMMUNICATION_GATEWAY_TOKEN = crypto.randomBytes(48).toString("base64url");
 const LIFE_ACTION_INTENT_TOKEN = crypto.randomBytes(48).toString("base64url");
 const LEGACY_COMMUNICATION_EXE_SHA256 = "613f569ee889b1f365b4678f02a2f2dc12507a52858a91d6b8a553880e2d11f6";
@@ -2649,6 +2663,22 @@ function totalGatewayListenerPids() {
   return serviceListenerPids(TOTAL_GATEWAY_URL, DEFAULT_TOTAL_GATEWAY_PORT);
 }
 
+function totalGatewayPortOccupied(timeoutMs = 1000) {
+  return new Promise((resolve) => {
+    const socket = net.createConnection({ host: "127.0.0.1", port: Number(DEFAULT_TOTAL_GATEWAY_PORT) });
+    let settled = false;
+    const finish = (occupied) => {
+      if (settled) return;
+      settled = true;
+      socket.destroy();
+      resolve(occupied);
+    };
+    socket.once("connect", () => finish(true));
+    socket.once("error", (error) => finish(error?.code !== "ECONNREFUSED"));
+    socket.setTimeout(timeoutMs, () => finish(true));
+  });
+}
+
 function totalGatewayRequest(relativePath, timeoutMs = 2000) {
   return new Promise((resolve) => {
     const url = `${TOTAL_GATEWAY_URL}${String(relativePath || "").startsWith("/") ? relativePath : `/${relativePath}`}`;
@@ -3253,7 +3283,11 @@ async function totalGatewayHealthCheck(timeoutMs = 2000) {
     && result.payload?.component_id === "tiangong-total-gateway"
     && result.payload?.status === "ALIVE"
     && Number.isInteger(result.payload?.gateway_epoch)
-    && result.payload.gateway_epoch >= 1;
+    && result.payload.gateway_epoch >= 1
+    && (!SOURCE_MODE || (
+      result.payload?.source_checkout_id === SOURCE_CHECKOUT_ID
+      && result.payload?.source_gateway_owner_id === SOURCE_GATEWAY_OWNER_ID
+    ));
   if (!structurallyValid) return false;
   try {
     const epochPath = path.join(runtimeStateRoot(), "gateway", "gateway.epoch.json");
@@ -3269,7 +3303,11 @@ async function totalGatewayReadyCheck(timeoutMs = 2000) {
   const result = await totalGatewayRequest("/ready", timeoutMs);
   return result.statusCode === 200
     && result.payload?.component_id === "tiangong-total-gateway"
-    && result.payload?.status === "READY";
+    && result.payload?.status === "READY"
+    && (!SOURCE_MODE || (
+      result.payload?.source_checkout_id === SOURCE_CHECKOUT_ID
+      && result.payload?.source_gateway_owner_id === SOURCE_GATEWAY_OWNER_ID
+    ));
 }
 
 function totalGatewayEntries() {
@@ -3283,51 +3321,51 @@ function totalGatewayEntries() {
     entries.push(entry);
   };
 
-  // A packaged release must prefer the executable whose bytes were bound into
-  // release-manifest.json.  The embedded Python mirror is a compatibility
-  // fallback for machines where the frozen image is quarantined or cannot
-  // start; it must not silently become the only launch path.
-  const boundExecutable = boundComponentExecutable("tiangong-total-gateway");
-  if (boundExecutable) {
-    add({
-      command: boundExecutable,
-      args: [],
-      cwd: path.dirname(boundExecutable),
-      pythonPath: "",
-      kind: "release-bound-executable",
-    });
-  }
-  const executableCandidates = [
-    path.join(process.resourcesPath || "", "total-gateway", "tiangong-total-gateway.exe"),
-    path.resolve(__dirname, "total-gateway", "tiangong-total-gateway.exe"),
-    process.env.TIANGONG_TOTAL_GATEWAY_EXE,
-  ].filter(Boolean);
-  for (const executable of executableCandidates) {
-    if (isFile(executable)) {
+  if (!SOURCE_MODE) {
+    // A packaged release must prefer the executable whose bytes were bound
+    // into release-manifest.json.  The embedded Python mirror is a fallback
+    // if that image cannot start.  Neither belongs to a source checkout.
+    const boundExecutable = boundComponentExecutable("tiangong-total-gateway");
+    if (boundExecutable) {
       add({
-        command: executable,
+        command: boundExecutable,
         args: [],
-        cwd: path.dirname(executable),
+        cwd: path.dirname(boundExecutable),
         pythonPath: "",
-        kind: "packaged-executable-fallback",
+        kind: "release-bound-executable",
+      });
+    }
+    const executableCandidates = [
+      path.join(process.resourcesPath || "", "total-gateway", "tiangong-total-gateway.exe"),
+      path.resolve(__dirname, "total-gateway", "tiangong-total-gateway.exe"),
+      process.env.TIANGONG_TOTAL_GATEWAY_EXE,
+    ].filter(Boolean);
+    for (const executable of executableCandidates) {
+      if (isFile(executable)) {
+        add({
+          command: executable,
+          args: [],
+          cwd: path.dirname(executable),
+          pythonPath: "",
+          kind: "packaged-executable-fallback",
+        });
+      }
+    }
+
+    const embeddedSourceRoot = path.join(process.resourcesPath || "", "python", "Lib", "site-packages");
+    if (isFile(path.join(embeddedSourceRoot, "total_gateway", "__main__.py"))) {
+      add({
+        command: pythonCommand(),
+        args: ["-m", "total_gateway"],
+        cwd: path.join(process.resourcesPath || "", "total-gateway"),
+        pythonPath: "",
+        kind: "embedded-python-fallback",
       });
     }
   }
-
-  const embeddedSourceRoot = path.join(process.resourcesPath || "", "python", "Lib", "site-packages");
-  if (isFile(path.join(embeddedSourceRoot, "total_gateway", "__main__.py"))) {
-    add({
-      command: pythonCommand(),
-      args: ["-m", "total_gateway"],
-      cwd: path.join(process.resourcesPath || "", "total-gateway"),
-      pythonPath: "",
-      kind: "embedded-python-fallback",
-    });
-  }
-  const sourceCandidates = [
-    process.env.TIANGONG_TOTAL_GATEWAY_SOURCE_ROOT,
-    path.resolve(__dirname, "..", "src"),
-  ].filter(Boolean);
+  const sourceCandidates = SOURCE_MODE
+    ? [path.resolve(__dirname, "..", "src")]
+    : [process.env.TIANGONG_TOTAL_GATEWAY_SOURCE_ROOT, path.resolve(__dirname, "..", "src")].filter(Boolean);
   for (const sourceRoot of sourceCandidates) {
     if (isFile(path.join(sourceRoot, "total_gateway", "__main__.py"))) {
       const sourceBootstrap = path.join(path.dirname(sourceRoot), "scripts", "source-total-gateway-entry.py");
@@ -3364,6 +3402,9 @@ function totalGatewayEnvironment(entry) {
     path.join(app.getAppPath(), "runtime", "ms-playwright"),
   ].filter(Boolean).find((candidate) => isDirectory(candidate));
   const env = { ...process.env };
+  // Never forward an identity inherited from the shell or a different app.
+  if (SOURCE_MODE) env.TIANGONG_SOURCE_CHECKOUT_ID = SOURCE_CHECKOUT_ID;
+  else delete env.TIANGONG_SOURCE_CHECKOUT_ID;
   if (packagedBrowsersRoot) env.PLAYWRIGHT_BROWSERS_PATH = packagedBrowsersRoot;
   const rawReleaseCandidates = releaseManifestCandidatePaths();
   const boundReleases = verifiedReleaseBindings();
@@ -3468,6 +3509,9 @@ function totalGatewayEnvironment(entry) {
 }
 
 async function waitForTotalGateway(child = null, failed = null, timeoutMs = SOURCE_MODE ? 600000 : 120000) {
+  // A source process can only report readiness for the child handle this
+  // Electron instance spawned. A matching repository path is not ownership.
+  if (SOURCE_MODE && (!child || child !== totalGatewayProcess)) return false;
   const deadline = Date.now() + timeoutMs;
   for (let i = 0; i < SERVICE_START_ATTEMPTS; i += 1) {
     if (serviceSupervisor.draining || failed?.value === true || (child && (child.exitCode != null || child.signalCode != null))) return false;
@@ -3506,7 +3550,11 @@ async function totalGatewayServiceReadyCheck() {
 }
 
 async function startTotalGateway() {
-  if (totalGatewayStarting) return waitForTotalGateway();
+  if (totalGatewayStarting) {
+    return SOURCE_MODE
+      ? (totalGatewayProcess ? waitForTotalGateway(totalGatewayProcess) : false)
+      : waitForTotalGateway();
+  }
   totalGatewayStarting = true;
   try {
     // Remove stale listeners from pre-merge builds before acquiring the
@@ -3521,14 +3569,26 @@ async function startTotalGateway() {
     ]).catch((error) => {
       writeDesktopDiagnostic("embedded-cutover-sweep-failed", error?.message || error);
     });
-    if (await totalGatewayHealthCheck(1000)) {
-      for (const pid of totalGatewayListenerPids()) adoptedTotalGatewayPids.add(pid);
-      return waitForTotalGateway();
-    }
-    const listeners = totalGatewayListenerPids();
-    if (listeners.length) {
-      writeDesktopDiagnostic("total-gateway-port-conflict", listeners.join(","));
-      return false;
+    if (SOURCE_MODE) {
+      const child = totalGatewayProcess;
+      if (child && child.exitCode == null && child.signalCode == null) {
+        return waitForTotalGateway(child);
+      }
+      const listeners = totalGatewayListenerPids();
+      if (listeners.length || await totalGatewayPortOccupied()) {
+        writeDesktopDiagnostic("total-gateway-port-conflict", listeners.join(",") || "listener-present");
+        return false;
+      }
+    } else {
+      if (await totalGatewayHealthCheck(1000)) {
+        for (const pid of totalGatewayListenerPids()) adoptedTotalGatewayPids.add(pid);
+        return waitForTotalGateway();
+      }
+      const listeners = totalGatewayListenerPids();
+      if (listeners.length) {
+        writeDesktopDiagnostic("total-gateway-port-conflict", listeners.join(","));
+        return false;
+      }
     }
     const entries = totalGatewayEntries();
     if (!entries.length) {
@@ -3590,7 +3650,7 @@ async function startTotalGateway() {
 async function stopTotalGateway(reason = "app-exit") {
   const child = totalGatewayProcess;
   if (child) await stopChildGracefully(child, reason);
-  const pids = new Set(adoptedTotalGatewayPids);
+  const pids = SOURCE_MODE ? new Set() : new Set(adoptedTotalGatewayPids);
   if (child?.pid) pids.delete(child.pid);
   for (const pid of pids) {
     console.log(`Stopping adopted Tiangong total gateway (${reason}): ${pid}`);
@@ -3604,7 +3664,7 @@ function stopTotalGatewaySync(reason = "app-exit-failsafe") {
   // `before-quit` performs the normal async drain.  This synchronous guard is
   // deliberately retained for the final Electron shutdown path so an already
   // adopted 7184 process cannot outlive its only desktop owner.
-  const pids = new Set(adoptedTotalGatewayPids);
+  const pids = SOURCE_MODE ? new Set() : new Set(adoptedTotalGatewayPids);
   if (totalGatewayProcess?.pid) pids.add(totalGatewayProcess.pid);
   for (const pid of pids) {
     console.log(`Stopping Electron-owned Tiangong total gateway (${reason}): ${pid}`);

@@ -364,10 +364,11 @@ def test_slow_error_body_does_not_delay_http_failure(monkeypatch):
     assert caught.value.provider_error_category == "invalid_request"
 
 
-def test_error_text_removes_endpoint_query_fragment_and_userinfo():
+def test_error_text_removes_endpoint_path_query_fragment_and_userinfo():
     text = http_kehuduan._llm_error_text(
-        "HTTP 403", provider="custom", base_url="https://alice:secret@example.com/v1?api_key=secret#private",
-        endpoint="https://alice:secret@example.com/v1/chat/completions?token=secret#private",
+        "HTTP 403 for https://example.com/path-reason-secret", provider="custom",
+        base_url="https://alice:secret@example.com/path-base-secret?api_key=secret#private",
+        endpoint="https://alice:secret@example.com/path-endpoint-secret?token=secret#private",
     )
-    assert "https://example.com/v1" in text and "chat/completions" in text
+    assert "https://example.com" in text
     assert all(value not in text for value in ("alice", "secret", "api_key", "token=", "private"))

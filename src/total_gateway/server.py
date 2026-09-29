@@ -6,13 +6,15 @@ from .diagnostics import diagnostic_log
 
 import json
 import hmac
+import hashlib
 import os
+import re
 import signal
 import socket
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from contracts import canonical_json_bytes
 
@@ -53,6 +55,43 @@ from .skill_api import (
 )
 
 
+def _source_checkout_id(environ: Mapping[str, str]) -> str | None:
+    """Bind source health to the code actually serving this HTTP endpoint."""
+    if environ.get("TIANGONG_SOURCE_MODE") != "1":
+        return None
+    identity = str(environ.get("TIANGONG_SOURCE_CHECKOUT_ID") or "")
+    if re.fullmatch(r"[0-9a-f]{64}", identity) is None:
+        return None
+    raw_root = str(environ.get("TIANGONG_SOURCE_ROOT") or "")
+    if not raw_root or not Path(raw_root).is_absolute():
+        return None
+    try:
+        claimed_root = Path(raw_root).resolve(strict=True)
+        running_module = Path(__file__).resolve(strict=True)
+        relative_module = running_module.relative_to(claimed_root).as_posix()
+        if os.name == "nt":
+            relative_module = relative_module.casefold()
+        permitted_paths = {
+            "src/total_gateway/server.py",
+            "app/runtime/python312/Lib/site-packages/total_gateway/server.py",
+        }
+        if os.name == "nt":
+            permitted_paths = {item.casefold() for item in permitted_paths}
+        if relative_module not in permitted_paths:
+            return None
+        # Recompute the Electron checkout identity from the actual resolved
+        # source root; a caller-supplied 64-hex value is not evidence of which
+        # checkout is serving this endpoint.
+        canonical_root = str(claimed_root)
+        if os.name == "nt":
+            canonical_root = canonical_root.lower()
+        if hashlib.sha256(canonical_root.encode("utf-8")).hexdigest() != identity:
+            return None
+    except (OSError, RuntimeError, ValueError):
+        return None
+    return identity
+
+
 class GatewayHttpServer(ThreadingHTTPServer):
     daemon_threads = True
     # POSIX requires SO_REUSEADDR for deterministic close-and-restart cycles.
@@ -72,6 +111,12 @@ class GatewayHttpServer(ThreadingHTTPServer):
         desktop_api: DesktopApiRouter | None = None,
     ) -> None:
         self.runtime = runtime
+        self.source_checkout_id = _source_checkout_id(os.environ)
+        shadow_token = str(runtime.config.shadow_api_token or "")
+        self.source_gateway_owner_id = (
+            hashlib.sha256(shadow_token.encode("utf-8")).hexdigest()
+            if self.source_checkout_id and shadow_token else None
+        )
         self.desktop_api = desktop_api or DesktopApiRouter.from_environment(runtime, os.environ)
         self.shadow_api = (
             None
@@ -827,10 +872,18 @@ class GatewayRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         if self.path == "/health":
             payload = self.gateway.runtime.health_payload()
+            if self.gateway.source_checkout_id:
+                payload["source_checkout_id"] = self.gateway.source_checkout_id
+            if self.gateway.source_gateway_owner_id:
+                payload["source_gateway_owner_id"] = self.gateway.source_gateway_owner_id
             self._send_json(200, payload)
             return
         if self.path == "/ready":
             status, payload = self.gateway.runtime.ready_payload()
+            if self.gateway.source_checkout_id:
+                payload["source_checkout_id"] = self.gateway.source_checkout_id
+            if self.gateway.source_gateway_owner_id:
+                payload["source_gateway_owner_id"] = self.gateway.source_gateway_owner_id
             self._send_json(status, payload)
             return
         if self._dispatch_life_action_intent():

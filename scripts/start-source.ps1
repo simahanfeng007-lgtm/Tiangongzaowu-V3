@@ -69,26 +69,17 @@ if (-not (Test-Path -LiteralPath (Join-Path $AppRoot "node_modules\electron\dist
     throw "Electron dependencies are not installed. Run scripts\setup-source.ps1 first."
 }
 
-# 7184 is a fixed production contract.  Source mode may reuse only its own
-# listener; a packaged/unknown listener is never adopted or terminated.
-$SourceRootPrefix = $Root.TrimEnd("\") + "\"
+# A previous source run is not this Electron process, even when it came from
+# the same checkout before a git pull. Never adopt or stop its 7184 listener.
 try {
     Get-Command Get-NetTCPConnection -ErrorAction Stop | Out-Null
 } catch {
-    throw "Unable to verify the owner of port 7184; source startup fails closed."
+    throw "Unable to verify port 7184; source startup fails closed."
 }
 $GatewayListeners = @(Get-NetTCPConnection -State Listen -LocalPort 7184 -ErrorAction SilentlyContinue)
-foreach ($Listener in $GatewayListeners) {
-    $Owner = Get-CimInstance Win32_Process -Filter "ProcessId = $($Listener.OwningProcess)" -ErrorAction SilentlyContinue
-    $ExecutablePath = [string]$Owner.ExecutablePath
-    $CommandLine = [string]$Owner.CommandLine
-    $OwnedBySource = (
-        $ExecutablePath.StartsWith($SourceRootPrefix, [StringComparison]::OrdinalIgnoreCase) -or
-        $CommandLine.IndexOf($SourceRootPrefix, [StringComparison]::OrdinalIgnoreCase) -ge 0
-    )
-    if (-not $OwnedBySource) {
-        throw "Port 7184 is owned by non-source process PID $($Listener.OwningProcess) ($ExecutablePath). Source mode will not adopt or stop it."
-    }
+if ($GatewayListeners.Count -gt 0) {
+    $Pids = @($GatewayListeners | ForEach-Object { $_.OwningProcess } | Sort-Object -Unique) -join ","
+    throw "Port 7184 is already occupied by PID $Pids. Close the old Gateway before starting this source checkout. Source mode will not adopt or stop it."
 }
 
 if ($Verify) {
