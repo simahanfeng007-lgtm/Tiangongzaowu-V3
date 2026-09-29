@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -9,6 +10,40 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class SourceModeIsolationTests(unittest.TestCase):
+    def test_direct_electron_uses_the_launcher_source_profile(self) -> None:
+        main = (ROOT / "app" / "main.js").read_text(encoding="utf-8")
+        start = main.index("const SOURCE_MODE = app.isPackaged === false;")
+        end = main.index("const SOURCE_ISOLATION = configureSourceIsolation();")
+        source = main[start : end + len("const SOURCE_ISOLATION = configureSourceIsolation();")]
+        script = """
+const vm = require('node:vm');
+const path = require('node:path');
+const app = {
+  isPackaged: false,
+  getVersion: () => '3.0.3',
+  getPath: () => path.parse(process.cwd()).root,
+  setName() {},
+  setPath() {},
+};
+const fs = {
+  constants: {R_OK: 4, W_OK: 2},
+  mkdirSync() {},
+  accessSync() {},
+};
+const isolatedProcess = {env: {LOCALAPPDATA: path.join(process.cwd(), 'unrelated-localappdata')}};
+const profile = vm.runInNewContext(__SOURCE_CODE__ + String.fromCharCode(10) + 'SOURCE_ISOLATION.profileRoot', {
+  app, fs, path, process: isolatedProcess, __dirname: __APP_DIR__,
+});
+process.stdout.write(JSON.stringify(profile));
+""".replace("__SOURCE_CODE__", json.dumps(source)).replace(
+            "__APP_DIR__", json.dumps(str(ROOT / "app"))
+        )
+        result = subprocess.run(
+            ["node", "-e", script], cwd=ROOT, text=True, capture_output=True, timeout=20
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(json.loads(result.stdout), str((ROOT.parent / "data").resolve()))
+
     def test_source_launcher_binds_all_mutable_roots_before_electron(self) -> None:
         script = (ROOT / "scripts" / "start-source.ps1").read_text(encoding="utf-8")
         required = (

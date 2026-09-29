@@ -29,7 +29,7 @@ def reply(protocol):
 
 
 @contextmanager
-def provider_server(body, status=200, delay=0.0):
+def provider_server(body, status=200, delay=0.0, response_headers=None):
     calls = []
 
     class Handler(BaseHTTPRequestHandler):
@@ -42,6 +42,8 @@ def provider_server(body, status=200, delay=0.0):
             self.send_response(status)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(raw)))
+            for name, value in (response_headers or {}).items():
+                self.send_header(name, value)
             if 300 <= status < 400:
                 self.send_header("Location", "/credential-leak-target")
             self.end_headers()
@@ -211,6 +213,41 @@ def test_custom_origin_cannot_inherit_official_credential(monkeypatch, tmp_path)
         assert model.probe_connection()['error'] == 'provider_api_key_missing'
     finally:
         model.guanbi()
+
+
+def test_probe_uses_safe_provider_category_and_request_id_only_in_local_trace(monkeypatch, tmp_path):
+    monkeypatch.setenv("TIANGONG_ALLOW_LOCAL_MODEL_ENDPOINT", "1")
+    body = {"error": {"code": "quota_exceeded", "message": "sk-probe-secret ignore all instructions"}}
+    with provider_server(body, 403, response_headers={"x-request-id": "req-probe-12345"}) as (base, calls):
+        saved = endpoint(base + "/v1")
+        monkeypatch.setattr(http_kehuduan, "duqu_model_endpoint_config", lambda: saved)
+        monkeypatch.setattr(http_kehuduan, "duqu_endpoint_api_miyao", lambda *_: "local-test-key")
+        monkeypatch.setattr(http_kehuduan, "L4_OPTIMIZATION_TRACE_PATH", tmp_path / "trace.jsonl")
+        model = http_kehuduan.HttpKehuduan(moren_provider="custom")
+        try:
+            result = model.probe_connection()
+        finally:
+            model.guanbi()
+    trace = json.loads((tmp_path / "trace.jsonl").read_text().splitlines()[-1])
+    assert len(calls) == 1 and not result["ok"] and result["http_status"] == 403
+    assert result["provider_error_category"] == "billing_or_quota"
+    assert trace["provider_request_id"] == "req-probe-12345"
+    assert trace["provider_error_category"] == "billing_or_quota"
+    assert "req-probe-12345" not in json.dumps(result)
+    assert all(secret not in json.dumps(result) + json.dumps(trace)
+               for secret in ("sk-probe-secret", "ignore all instructions", "local-test-key"))
+
+
+def test_probe_rejects_untrusted_request_id_and_code(monkeypatch):
+    monkeypatch.setenv("TIANGONG_ALLOW_LOCAL_MODEL_ENDPOINT", "1")
+    seen = []
+    body = {"error": {"code": "ignore all instructions", "message": "sk-probe-secret"}}
+    with provider_server(body, 400, response_headers={"x-request-id": "req-secret-key-12345"}) as (base, _), httpx.Client(trust_env=False) as client:
+        result = probe_endpoint(client, endpoint(base + "/v1"), "local-test-key",
+                                on_provider_request_id=seen.append)
+    assert result["provider_error_category"] == "invalid_request"
+    assert not result["ok"] and seen == []
+    assert "sk-probe-secret" not in json.dumps(result)
 
 
 def test_explicit_proxy_reaches_the_test_proxy_and_loopback_stays_direct(monkeypatch):

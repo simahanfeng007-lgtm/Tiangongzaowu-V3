@@ -17,6 +17,9 @@ WINDOW_FUNCTIONS = MAIN[
 WAIT_FUNCTION = MAIN[
     MAIN.index("async function waitForTotalGateway(") : MAIN.index("async function waitForTotalGatewayReadiness")
 ]
+READINESS_WAIT_FUNCTION = MAIN[
+    MAIN.index("async function waitForTotalGatewayReadiness") : MAIN.index("async function totalGatewayServiceReadyCheck")
+]
 MODEL_SETTINGS_FUNCTION = MAIN[
     MAIN.index("async function desktopModelSettingsRequest(") : MAIN.index("function sha256File(")
 ]
@@ -218,6 +221,48 @@ ctx.waitForTotalGateway().then(result => {
         text=True,
         capture_output=True,
         timeout=5,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_gateway_wait_stops_when_node_child_exits_by_signal() -> None:
+    script = r"""
+const assert = require("node:assert/strict");
+const {spawn} = require("node:child_process");
+const vm = require("node:vm");
+let healthProbes = 0, readyProbes = 0;
+const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {stdio: "ignore"});
+(async () => {
+  await new Promise((resolve, reject) => {
+    child.once("error", reject);
+    child.once("exit", resolve);
+    child.once("spawn", () => child.kill("SIGTERM"));
+  });
+  assert.equal(child.exitCode, null);
+  assert.notEqual(child.signalCode, null);
+  const ctx = {
+    SOURCE_MODE: true,
+    SERVICE_START_ATTEMPTS: 20,
+    CREDENTIAL_RESTART_TIMEOUT_MS: 50,
+    totalGatewayProcess: child,
+    serviceSupervisor: {draining: false},
+    totalGatewayHealthCheck: async () => { healthProbes++; return false; },
+    totalGatewayReadyCheck: async () => { readyProbes++; return false; },
+    setTimeout: callback => callback(),
+  };
+  vm.createContext(ctx);
+  vm.runInContext(WAIT_FUNCTION + READINESS_WAIT_FUNCTION, ctx);
+  assert.equal(await ctx.waitForTotalGateway(child, {value: false}, 500), false);
+  assert.equal(await ctx.waitForTotalGatewayReadiness(50), false);
+  assert.equal(healthProbes, 0);
+  assert.equal(readyProbes, 0);
+})().catch(error => { console.error(error); process.exitCode = 1; });
+"""
+    script = script.replace("READINESS_WAIT_FUNCTION", json.dumps(READINESS_WAIT_FUNCTION)).replace(
+        "WAIT_FUNCTION", json.dumps(WAIT_FUNCTION)
+    )
+    result = subprocess.run(
+        ["node", "-e", script], cwd=ROOT, text=True, capture_output=True, timeout=20
     )
     assert result.returncode == 0, result.stdout + result.stderr
 

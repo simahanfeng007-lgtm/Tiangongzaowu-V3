@@ -289,7 +289,7 @@ def _simple_chain_run_state_view(run_state: dict[str, Any] | None) -> dict[str, 
         "review_phase": run_state.get("review_phase") or "executing",
         "model_failure": (
             {key: run_state["model_failure"].get(key) for key in (
-                "error_code", "http_status", "retry_count", "provider_identity",
+                "error_code", "http_status", "retry_count", "provider_error_category", "provider_identity",
                 "model_id", "retryable_after_recovery", "exception_type",
             ) if key in run_state["model_failure"]}
             if isinstance(run_state.get("model_failure"), dict) else {}

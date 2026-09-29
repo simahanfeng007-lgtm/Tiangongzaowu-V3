@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 import json
 import math
+import re
 import time
 from typing import Any, Callable, Mapping
 from urllib.parse import urlsplit, urlunsplit
@@ -35,6 +36,8 @@ class TransportExecutionError(RuntimeError):
     latency_ms: int = 0
     deadline_exceeded: bool = False
     error_code: str = "transport_error"
+    provider_error_category: str = ""
+    provider_request_id: str = ""
     response_metrics: dict[str, Any] = field(default_factory=dict)
 
     def __str__(self) -> str:
@@ -110,14 +113,90 @@ def execute_streaming_turn_with_repair(**kwargs) -> TransportExecutionResult:
             return result
 
 
-def _response_preview(response: Any) -> str:
+_PROVIDER_ERROR_CODES = {
+    "authentication": frozenset({"invalid_api_key", "invalid_token", "unauthorized", "authentication_error"}),
+    "permission": frozenset({"permission_denied", "insufficient_scope", "model_not_allowed", "access_denied"}),
+    "billing_or_quota": frozenset({"insufficient_quota", "quota_exceeded", "insufficient_balance", "payment_required"}),
+    "rate_limit": frozenset({"rate_limit_exceeded", "rate_limited", "too_many_requests"}),
+    "model_or_endpoint": frozenset({"model_not_found", "model_not_available", "invalid_model", "not_found"}),
+    "invalid_request": frozenset({"invalid_request", "invalid_parameter", "bad_request"}),
+    "service_unavailable": frozenset({"server_error", "service_unavailable", "overloaded_error"}),
+}
+PROVIDER_ERROR_CATEGORIES = frozenset((*_PROVIDER_ERROR_CODES, "unknown"))
+_REQUEST_ID_PATTERN = re.compile(r"(?:req[-_][A-Za-z0-9_-]{5,90}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\Z")
+
+
+def _provider_error_category(value: Any, status: int | None = None) -> str:
+    """Map a provider-controlled code to a finite, non-provider-controlled label."""
+    raw = value
+    if isinstance(raw, dict) and isinstance(raw.get("response"), dict):
+        raw = raw["response"]
+    if isinstance(raw, dict) and isinstance(raw.get("error"), dict):
+        raw = raw["error"]
+    code = raw.get("code") if isinstance(raw, dict) else None
+    if isinstance(code, str) and len(code) <= 64:
+        for category, known in _PROVIDER_ERROR_CODES.items():
+            if code.casefold() in known:
+                return category
+    return ({400: "invalid_request", 401: "authentication", 402: "billing_or_quota",
+             403: "permission", 404: "model_or_endpoint", 429: "rate_limit"}.get(status)
+            or ("service_unavailable" if status is not None and status >= 500 else "unknown"))
+
+
+def _safe_provider_request_id(value: Any, api_key: str = "") -> str:
+    """Only a narrow support ID may enter a local trace, never a model turn."""
+    if not isinstance(value, str) or not _REQUEST_ID_PATTERN.fullmatch(value):
+        return ""
+    lowered = value.casefold()
+    if any(word in lowered for word in ("key", "token", "secret", "bearer")):
+        return ""
+    if api_key and api_key.casefold() in lowered:
+        return ""
+    return value
+
+
+def _provider_request_id_from_headers(headers: Mapping[str, str], api_key: str = "") -> str:
+    for name in ("x-request-id", "x-correlation-id", "x-zai-request-id"):
+        request_id = _safe_provider_request_id(headers.get(name), api_key)
+        if request_id:
+            return request_id
+    return ""
+
+
+def _bounded_http_error_category(response: httpx.Response, remaining_seconds: float) -> str:
+    """Spend at most one second and 4 KiB on optional error classification."""
+    headers = getattr(response, "headers", {})
+    content_type = str(headers.get("content-type") or "").split(";", 1)[0].strip().casefold()
+    if not (content_type == "application/json" or content_type.endswith("+json")):
+        return _provider_error_category(None, response.status_code)
+    if str(headers.get("content-encoding") or "identity").casefold() != "identity":
+        return _provider_error_category(None, response.status_code)
     try:
-        return str(response.text or "")[:240]
+        length = int(headers.get("content-length") or "0")
+    except ValueError:
+        length = 0
+    if not 0 < length <= 4096 or remaining_seconds <= 0:
+        return _provider_error_category(None, response.status_code)
+    try:
+        # httpcore reads this request extension when its body iterator starts.
+        # A slow error body must never inherit the normal streaming read timeout.
+        timeout = response.request.extensions.get("timeout")
+        if isinstance(timeout, dict):
+            timeout["read"] = min(0.25, remaining_seconds)
+        deadline = time.monotonic() + min(1.0, remaining_seconds)
+        chunks = bytearray()
+        for chunk in response.iter_bytes(chunk_size=1):
+            if time.monotonic() >= deadline or len(chunks) + len(chunk) > length:
+                return _provider_error_category(None, response.status_code)
+            chunks.extend(chunk)
+            if len(chunks) == length:
+                break
+        body = json.loads(chunks) if len(chunks) == length else None
     except Exception:
-        try:
-            return response.read().decode("utf-8", errors="replace")[:240]
-        except Exception:
-            return ""
+        # Diagnostics cannot turn an already known HTTP failure into a new
+        # transport failure, nor prolong its recovery path.
+        body = None
+    return _provider_error_category(body, response.status_code)
 
 
 def _http_retry_delay_seconds(response: httpx.Response, fallback: float) -> float:
@@ -235,6 +314,8 @@ def execute_streaming_turn(
     call_started = time.perf_counter()
     attempt = 1
     status = None
+    provider_error_category = ""
+    provider_request_id = ""
     attempt_metrics: list[dict[str, Any]] = []
     try:
         with model_call_scope(max_wall_clock_seconds) as lifecycle:
@@ -245,6 +326,8 @@ def execute_streaming_turn(
                 state = StreamState()
                 progress = False
                 status = None
+                provider_error_category = ""
+                provider_request_id = ""
                 attempt_started = time.perf_counter()
                 telemetry: dict[str, Any] = {"attempt": attempt, "first_packet_ms": None,
                     "first_progress_ms": None, "last_progress_ms": None, "max_progress_gap_ms": 0,
@@ -269,6 +352,9 @@ def execute_streaming_turn(
                     try:
                         with lifecycle.response(response.close):
                             status = int(response.status_code)
+                            provider_request_id = _provider_request_id_from_headers(getattr(response, "headers", {}), api_key)
+                            if status >= 400:
+                                provider_error_category = _bounded_http_error_category(response, lifecycle.remaining)
                             response.raise_for_status()
                             first_progress_ms = None
                             last_progress_ms = None
@@ -284,7 +370,20 @@ def execute_streaming_turn(
                                     state.metadata["stream_terminal"] = "done"
                                     break
                                 if event.get("error") or event.get("type") in {"error", "response.failed"}:
-                                    raise TransportExecutionError("provider_stream_error", request.url, error_code="provider_error")
+                                    provider_error_category = _provider_error_category(event, status)
+                                    error = event.get("error")
+                                    if not isinstance(error, dict) and isinstance(event.get("response"), dict):
+                                        error = event["response"].get("error")
+                                    if isinstance(error, dict):
+                                        provider_request_id = (_safe_provider_request_id(error.get("request_id"), api_key)
+                                                               or provider_request_id)
+                                    provider_request_id = (_safe_provider_request_id(event.get("request_id"), api_key)
+                                                           or provider_request_id)
+                                    raise TransportExecutionError(
+                                        "provider_stream_error", request.url, http_status=status,
+                                        error_code="provider_error", provider_error_category=provider_error_category,
+                                        provider_request_id=provider_request_id,
+                                    )
                                 before = (len(state.visible_parts), len(state.reasoning_parts),
                                           sum(len(str(i.get("arguments_text") or "")) for i in state.tool_items.values()),
                                           len(state.tool_items))
@@ -338,7 +437,9 @@ def execute_streaming_turn(
                         lifecycle.wait(delay)
                         continue
                     raise TransportExecutionError(f"HTTP {status}", request.url, http_status=status,
-                                                  error_code="http_error") from exc
+                                                  error_code="http_error",
+                                                  provider_error_category=provider_error_category,
+                                                  provider_request_id=provider_request_id) from exc
                 except (httpx.TimeoutException, httpx.TransportError) as exc:
                     lifecycle.check()
                     # Only the wrapper that owns an uncommitted complete turn
@@ -369,6 +470,8 @@ def execute_streaming_turn(
             request.url, http_status=status, retry_count=attempt - 1,
             latency_ms=round((time.perf_counter() - call_started) * 1000),
             deadline_exceeded=exc.reason == "deadline_exceeded", error_code=exc.reason,
+            provider_error_category=provider_error_category,
+            provider_request_id=provider_request_id,
             response_metrics={"attempts": attempt_metrics},
         ) from exc
     except TransportExecutionError as exc:

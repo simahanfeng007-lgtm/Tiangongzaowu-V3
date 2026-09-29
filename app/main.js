@@ -45,11 +45,11 @@ function ensureSourceIsolationDirectory(value, label) {
 
 function configureSourceIsolation() {
   if (!SOURCE_MODE) return null;
-  const localStateRoot = String(process.env.LOCALAPPDATA || "").trim()
-    || path.join(app.getPath("home"), ".tiangong-v3-source-work");
+  // The PowerShell source launcher uses the repository parent's data folder.
+  // A direct Electron start must read the same profile and credential vault.
   const profileRoot = ensureSourceIsolationDirectory(
     process.env.TIANGONG_SOURCE_PROFILE_ROOT
-      || path.join(localStateRoot, "TiangongV3-SourceWork"),
+      || path.resolve(__dirname, "..", "..", "data"),
     "profile root",
   );
   const userData = ensureSourceIsolationDirectory(
@@ -3470,14 +3470,16 @@ function totalGatewayEnvironment(entry) {
 async function waitForTotalGateway(child = null, failed = null, timeoutMs = SOURCE_MODE ? 600000 : 120000) {
   const deadline = Date.now() + timeoutMs;
   for (let i = 0; i < SERVICE_START_ATTEMPTS; i += 1) {
-    if (serviceSupervisor.draining || failed?.value === true || (child && child.exitCode !== null)) return false;
+    if (serviceSupervisor.draining || failed?.value === true || (child && (child.exitCode != null || child.signalCode != null))) return false;
     if (Date.now() >= deadline) return false;
     // Process startup and business readiness are different states.  Once
     // /health is structurally valid the supervisor owns the live process and
     // represents a failing /ready probe as DEGRADED.  Requiring READY here
     // killed a healthy 7184 every two minutes and prevented late readiness
     // from ever converging in the renderer.
-    if (await totalGatewayHealthCheck(3000)) return true;
+    const healthy = await totalGatewayHealthCheck(3000);
+    if (child && (child.exitCode != null || child.signalCode != null)) return false;
+    if (healthy) return true;
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
   return false;
@@ -3487,9 +3489,9 @@ async function waitForTotalGatewayReadiness(timeoutMs = CREDENTIAL_RESTART_TIMEO
   const deadline = Date.now() + timeoutMs;
   const child = totalGatewayProcess;
   while (Date.now() < deadline) {
-    if (child && child.exitCode !== null) return false;
+    if (child && (child.exitCode != null || child.signalCode != null)) return false;
     const ready = await totalGatewayReadyCheck(3000);
-    if (child && child.exitCode !== null) return false;
+    if (child && (child.exitCode != null || child.signalCode != null)) return false;
     if (Date.now() >= deadline) return false;
     if (ready) return true;
     await new Promise((resolve) => setTimeout(resolve, 250));
@@ -3559,7 +3561,10 @@ async function startTotalGateway() {
       }
       totalGatewayProcess = child;
       child.on("exit", (code, signal) => {
-        if (code !== 0 && code !== null) {
+        writeDesktopDiagnostic("total-gateway-process-exit", JSON.stringify({
+          kind: entry.kind || "unknown", code, signal: signal || "",
+        }));
+        if ((code !== 0 && code !== null) || signal) {
           console.warn(`Tiangong total gateway exited: code=${code} signal=${signal || ""}`);
         }
         if (totalGatewayProcess === child) totalGatewayProcess = null;

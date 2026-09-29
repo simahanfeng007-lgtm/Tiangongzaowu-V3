@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import time
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 from ..model_endpoint import ModelEndpointConfig, ProtocolFamily
 from .model_transport_anthropic import AnthropicMessagesTransport
@@ -80,7 +80,8 @@ def _probe_usage(body: Any) -> dict[str, Any] | None:
     return clean or None
 
 
-def probe_endpoint(client: Any, endpoint: ModelEndpointConfig, api_key: str, *, timeout: float = 20.0) -> dict[str, Any]:
+def probe_endpoint(client: Any, endpoint: ModelEndpointConfig, api_key: str, *, timeout: float = 20.0,
+                   on_provider_request_id: Callable[[str], None] | None = None) -> dict[str, Any]:
     """One bounded request using the execution transport and endpoint authority.
 
     A provider may bill this text request. It does not prove streaming, tools,
@@ -89,7 +90,8 @@ def probe_endpoint(client: Any, endpoint: ModelEndpointConfig, api_key: str, *, 
     import httpx
     from ..endpoint_security import EndpointSecurityError, validate_model_endpoint
     from .model_call_lifecycle import ModelCallStopped, run_model_call
-    from .model_transport_executor import _pinned_request
+    from .model_transport_executor import (_bounded_http_error_category, _pinned_request,
+                                           _provider_error_category, _provider_request_id_from_headers)
 
     transport = get_model_transport(endpoint.protocol_family)
     payload = transport.probe_payload(endpoint)
@@ -133,25 +135,37 @@ def probe_endpoint(client: Any, endpoint: ModelEndpointConfig, api_key: str, *, 
         response = client.send(request, stream=True, follow_redirects=False)
         try:
             with lifecycle.response(response.close):
+                provider_request_id = _provider_request_id_from_headers(response.headers, api_key)
+                if provider_request_id and on_provider_request_id is not None:
+                    try:
+                        on_provider_request_id(provider_request_id)
+                    except Exception:
+                        pass  # optional diagnostics cannot replace a known HTTP result
+                if response.status_code >= 400:
+                    category = _bounded_http_error_category(response, lifecycle.remaining)
+                    return response.status_code, None, "", category
+                if 300 <= response.status_code < 400:
+                    return response.status_code, None, "", "unknown"
                 chunks = []
                 size = 0
                 for chunk in response.iter_bytes():
                     lifecycle.check()
                     size += len(chunk)
                     if size > 256 * 1024:
-                        return response.status_code, None, "provider_response_too_large"
+                        return response.status_code, None, "provider_response_too_large", "unknown"
                     chunks.append(chunk)
                 lifecycle.check()
                 try:
                     body = json.loads(b"".join(chunks))
                 except (ValueError, UnicodeError):
-                    return response.status_code, None, "provider_response_invalid"
-                return response.status_code, body, ""
+                    return response.status_code, None, "provider_response_invalid", "unknown"
+                return response.status_code, body, "", ""
         finally:
             response.close()
 
     try:
-        status, body, body_error = run_model_call(request, seconds=min(20.0, max(0.01, timeout)), child=True)
+        status, body, body_error, error_category = run_model_call(
+            request, seconds=min(20.0, max(0.01, timeout)), child=True)
         result["http_status"] = status
         result["probe_evidence"]["http_status"] = status
         result["endpoint_reachable"] = status > 0
@@ -161,6 +175,12 @@ def probe_endpoint(client: Any, endpoint: ModelEndpointConfig, api_key: str, *, 
                       configured_model_available=True if valid else None,
                       auth_valid=True if valid else False if status in {401, 403} else None)
         if not valid:
+            # The body is only consulted for a finite classification. Never
+            # return any provider-controlled code or message from the probe.
+            result["provider_error_category"] = (error_category or _provider_error_category(
+                body if isinstance(body, dict) and len(json.dumps(body).encode("utf-8")) <= 4096 else None,
+                status,
+            ))
             result["error"] = (
                 "provider_auth_failed" if status == 401 else
                 "provider_permission_denied" if status == 403 else

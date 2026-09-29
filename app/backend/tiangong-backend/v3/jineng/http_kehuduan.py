@@ -23,7 +23,7 @@ import sys
 import threading
 import time
 from typing import Any, Callable, Mapping
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlsplit, urlunsplit
 
 import httpx
 
@@ -52,7 +52,9 @@ from .deepseek_zhuanshu import (
 )
 from .guge_ceng import GUGE
 from .minimax_m3_adapter import MINIMAX_M3
-from .model_transport_executor import TransportExecutionError, execute_streaming_turn_with_repair as execute_streaming_turn
+from .model_transport_executor import (PROVIDER_ERROR_CATEGORIES, TransportExecutionError,
+                                       _safe_provider_request_id,
+                                       execute_streaming_turn_with_repair as execute_streaming_turn)
 from .moxing_shipei import MOXING_SHIPEI
 
 
@@ -414,6 +416,18 @@ def _safe_error_part(value: Any, limit: int = 240) -> str:
     return text[:limit]
 
 
+def _safe_error_url(value: str, limit: int = 320) -> str:
+    """Keep useful endpoint location while removing URL credentials and query."""
+    try:
+        parts = urlsplit(str(value or ""))
+        if parts.scheme not in {"http", "https"} or not parts.hostname:
+            return "<invalid_endpoint>"
+        host = parts.netloc.rsplit("@", 1)[-1]
+        return _safe_error_part(urlunsplit((parts.scheme, host, parts.path, "", "")), limit)
+    except ValueError:
+        return "<invalid_endpoint>"
+
+
 def _allowed_tools_from_system_prompt(system_tishi: str) -> set[str] | None:
     text = str(system_tishi or "")
     marker = "本轮系统只向你暴露该 skill 对应工具:"
@@ -667,9 +681,9 @@ def _llm_error_text(
     if model:
         parts.append(f"model={_safe_error_part(model)}")
     if base_url:
-        parts.append(f"base_url={_safe_error_part(base_url)}")
+        parts.append(f"base_url={_safe_error_url(base_url)}")
     if endpoint:
-        parts.append(f"endpoint={_safe_error_part(endpoint, 320)}")
+        parts.append(f"endpoint={_safe_error_url(endpoint)}")
     if http_status is not None:
         parts.append(f"http_status={http_status}")
     if retry_count is not None:
@@ -1228,6 +1242,8 @@ class HttpKehuduan:
                 latency_ms=exc.latency_ms,
                 retry_count=exc.retry_count,
                 error_preview=exc.response_preview or exc.reason,
+                provider_error_category=exc.provider_error_category,
+                provider_request_id=exc.provider_request_id,
                 response_metrics=exc.response_metrics,
                 usage=failed_usage,
             )
@@ -1262,7 +1278,8 @@ class HttpKehuduan:
                 usage=failed_usage,
                 stream_metadata={**exc.response_metrics, "http_status": exc.http_status,
                                  "retry_count": exc.retry_count,
-                                 "deadline_exceeded": exc.deadline_exceeded},
+                                 "deadline_exceeded": exc.deadline_exceeded,
+                                 "provider_error_category": exc.provider_error_category},
             )
             return _with_native_audio(
                 error,
@@ -1362,12 +1379,16 @@ class HttpKehuduan:
                 return {"ok": False, "error": "provider_api_key_missing"}
         except (ValueError, TypeError):
             return {"ok": False, "error": "model_endpoint_invalid"}
-        result = probe_endpoint(self._kehuduan, endpoint, api_key)
+        provider_request_ids: list[str] = []
+        result = probe_endpoint(self._kehuduan, endpoint, api_key,
+                                on_provider_request_id=provider_request_ids.append)
         _jilu_l4_youhua_zhuizong(
             {"provider": endpoint.optimization_family, "provider_identity": endpoint.provider_identity,
              "model": endpoint.model_name, "purpose": "connection_probe"},
             api_status="ok" if result["ok"] else result.get("error", "probe_failed"),
             http_status=result.get("http_status"), latency_ms=result["latency_ms"], retry_count=0,
+            provider_error_category=result.get("provider_error_category"),
+            provider_request_id=provider_request_ids[-1] if provider_request_ids else "",
             usage=result.get("usage"),
         )
         return result
@@ -1551,6 +1572,8 @@ def _jilu_l4_youhua_zhuizong(
     usage: dict[str, Any] | None = None,
     response_metrics: dict[str, Any] | None = None,
     error_preview: str | None = None,
+    provider_error_category: str | None = None,
+    provider_request_id: str | None = None,
 ) -> None:
     if not trace:
         return
@@ -1597,6 +1620,11 @@ def _jilu_l4_youhua_zhuizong(
         row["response_metrics"] = response_metrics
     if error_preview:
         row["error_preview"] = error_preview
+    if provider_error_category in PROVIDER_ERROR_CATEGORIES:
+        row["provider_error_category"] = provider_error_category
+    safe_request_id = _safe_provider_request_id(provider_request_id)
+    if safe_request_id:
+        row["provider_request_id"] = safe_request_id
     try:
         L4_OPTIMIZATION_TRACE_PATH.parent.mkdir(parents=True, exist_ok=True)
         with L4_OPTIMIZATION_TRACE_PATH.open("a", encoding="utf-8") as handle:

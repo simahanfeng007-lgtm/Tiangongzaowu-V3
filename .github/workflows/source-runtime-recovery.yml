@@ -1,0 +1,53 @@
+name: Windows source runtime recovery
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/source-runtime-recovery.yml
+      - scripts/provision-embedded-python.ps1
+      - scripts/install-python-dependencies.py
+      - scripts/setup-source.ps1
+      - scripts/start-source.ps1
+      - requirements-release.lock
+      - requirements-source.lock
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  embedded-python-recovery:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      TIANGONG_SKIP_PLAYWRIGHT_BROWSERS: "1"
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          architecture: x64
+
+      - name: Provision and recover an interrupted embedded runtime
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $Provision = Join-Path $env:GITHUB_WORKSPACE "scripts\provision-embedded-python.ps1"
+          $RuntimeRoot = Join-Path $env:GITHUB_WORKSPACE "app\runtime\python312"
+          if (& $Provision -Check) { throw "Clean source tree unexpectedly passed runtime check" }
+          & $Provision
+          $Ready = @(& $Provision -Check)
+          if ($Ready.Count -ne 1 -or $Ready[0] -ne $true) { throw "Initial provision did not pass runtime check" }
+
+          Remove-Item -LiteralPath (Join-Path $RuntimeRoot "runtime-manifest.json") -Force
+          Remove-Item -LiteralPath (Join-Path $RuntimeRoot "python312._pth") -Force
+          if (& $Provision -Check) { throw "Interrupted runtime unexpectedly passed runtime check" }
+
+          & $Provision
+          $Ready = @(& $Provision -Check)
+          if ($Ready.Count -ne 1 -or $Ready[0] -ne $true) { throw "Recovered runtime did not pass runtime check" }
+          Write-Host "Embedded Python interruption recovery passed"
