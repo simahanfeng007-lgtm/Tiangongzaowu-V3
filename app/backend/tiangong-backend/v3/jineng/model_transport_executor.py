@@ -165,13 +165,14 @@ def _provider_request_id_from_headers(headers: Mapping[str, str], api_key: str =
 
 def _bounded_http_error_category(response: httpx.Response, remaining_seconds: float) -> str:
     """Spend at most one second and 4 KiB on optional error classification."""
-    content_type = str(response.headers.get("content-type") or "").split(";", 1)[0].strip().casefold()
+    headers = getattr(response, "headers", {})
+    content_type = str(headers.get("content-type") or "").split(";", 1)[0].strip().casefold()
     if not (content_type == "application/json" or content_type.endswith("+json")):
         return _provider_error_category(None, response.status_code)
-    if str(response.headers.get("content-encoding") or "identity").casefold() != "identity":
+    if str(headers.get("content-encoding") or "identity").casefold() != "identity":
         return _provider_error_category(None, response.status_code)
     try:
-        length = int(response.headers.get("content-length") or "0")
+        length = int(headers.get("content-length") or "0")
     except ValueError:
         length = 0
     if not 0 < length <= 4096 or remaining_seconds <= 0:
@@ -351,7 +352,7 @@ def execute_streaming_turn(
                     try:
                         with lifecycle.response(response.close):
                             status = int(response.status_code)
-                            provider_request_id = _provider_request_id_from_headers(response.headers, api_key)
+                            provider_request_id = _provider_request_id_from_headers(getattr(response, "headers", {}), api_key)
                             if status >= 400:
                                 provider_error_category = _bounded_http_error_category(response, lifecycle.remaining)
                             response.raise_for_status()

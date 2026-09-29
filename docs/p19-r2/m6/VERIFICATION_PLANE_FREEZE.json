@@ -198,7 +198,7 @@
   "app/backend/tiangong-backend/v3/jineng/model_transport_openai_responses.py": "22c87434d337d5f6739a030768ac16f73d9c646c47b2ad58c3e08c149e430a25",
   "app/backend/tiangong-backend/v3/jineng/model_transport_openai_chat.py": "ffb03970f7531f1c14c93b5a645427817b25a7d905b560fe205b9f759a852932",
   "app/backend/tiangong-backend/v3/jineng/model_transport_contract.py": "2e33fd0c25f8c2eed90fd3ef16677a3334e516a6fd60c44c7f1bec101f7e798d",
-  "app/backend/tiangong-backend/v3/jineng/model_transport_executor.py": "a1976b76f5b1dc1c969380311f42ca16a52d6a26bec17554018bad10903f9b00",
+  "app/backend/tiangong-backend/v3/jineng/model_transport_executor.py": "f277f9c217b94e66115b593c8d7b1d7bd424c48dab2471cef77b3de6f80cad66",
   "app/backend/tiangong-backend/v3/jineng/model_context_cache.py": "03ebddd378eaeff0a204c4563f64669b6981bebccf06d11621c6c536767caf3b",
   "src/total_gateway/tool_source_world.py": "a68629be9f24dfad6a5e227e6cd351d45c48bcfe3cc3f2353dbaddac64e8e4d8",
   "src/total_gateway/tool_manifest_evolution.py": "3c07cc4f24be95942eccf3bd65022103e3b5cdadc157fe208b4af67705221030",

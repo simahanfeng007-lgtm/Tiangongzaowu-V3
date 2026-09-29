@@ -88,6 +88,8 @@ function Test-EmbeddedPythonRuntime {
         if ($LASTEXITCODE -ne 0) { return $false }
         & $Python -m pip check 2>$null | Out-Null
         if ($LASTEXITCODE -ne 0) { return $false }
+        & $Python -c "import setuptools.build_meta, wheel" 2>$null | Out-Null
+        if ($LASTEXITCODE -ne 0) { return $false }
         & $Python -c "import importlib.util; assert importlib.util.find_spec('total_gateway') is not None" 2>$null | Out-Null
         if ($LASTEXITCODE -ne 0) { return $false }
     } catch {
@@ -175,6 +177,7 @@ if (-not $PipAvailable) {
 }
 
 & $Python (Join-Path $Root "scripts\install-python-dependencies.py") `
+    --embedded-python `
     --upgrade-pip `
     --requirements (Join-Path $Root "requirements-release.lock") `
     --project $Root

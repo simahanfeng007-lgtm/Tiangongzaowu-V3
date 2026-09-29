@@ -10,8 +10,10 @@ from __future__ import annotations
 import argparse
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
+import tomllib
 from typing import Sequence
 
 
@@ -52,28 +54,63 @@ def install_with_fallback(arguments: Sequence[str], *, label: str) -> None:
         raise RuntimeError(f"{label} failed with both the primary and TUNA indexes")
 
 
+def _embedded_build_pins(requirements: Path, project: Path) -> tuple[str, str]:
+    """Use the existing source/build lock, not an unpinned build environment."""
+    source_lock = requirements.parent / "requirements-source.lock"
+    lines = source_lock.read_text(encoding="utf-8").splitlines()
+    pins = {}
+    for name in ("setuptools", "wheel"):
+        matches = [line.strip() for line in lines if re.fullmatch(
+            rf"{name}==\d+(?:\.\d+)+", line.strip(), re.IGNORECASE
+        )]
+        if len(matches) != 1:
+            raise RuntimeError(f"Embedded Python requires exactly one pinned {name} in requirements-source.lock")
+        pins[name] = matches[0]
+    build_system = tomllib.loads((project / "pyproject.toml").read_text(encoding="utf-8"))["build-system"]
+    if build_system["build-backend"] != "setuptools.build_meta" or pins["setuptools"] not in build_system["requires"]:
+        raise RuntimeError("Embedded setuptools pin differs from the project's build-system requirement")
+    return pins["setuptools"], pins["wheel"]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--requirements", type=Path)
     parser.add_argument("--project", type=Path)
     parser.add_argument("--upgrade-pip", action="store_true")
+    parser.add_argument("--embedded-python", action="store_true")
     args = parser.parse_args()
 
     if not args.requirements and not args.project and not args.upgrade_pip:
         parser.error("at least one install action is required")
+    if args.embedded_python and (not args.requirements or not args.project):
+        parser.error("--embedded-python requires --requirements and --project")
     common = ["--disable-pip-version-check"]
+    requirements = args.requirements.resolve(strict=True) if args.requirements else None
+    project = args.project.resolve(strict=True) if args.project else None
+    build_pins: tuple[str, str] = ()
+    if args.embedded_python:
+        assert requirements is not None and project is not None
+        build_pins = _embedded_build_pins(requirements, project)
     if args.upgrade_pip:
         install_with_fallback([*common, "install", "--upgrade", "pip"], label="pip upgrade")
-    if args.requirements:
-        requirements = args.requirements.resolve(strict=True)
+    build_option: list[str] = []
+    if build_pins:
         install_with_fallback(
-            [*common, "install", "-r", str(requirements)],
+            [*common, "install", "--only-binary=:all:", *build_pins],
+            label="embedded Python build dependencies",
+        )
+        # python312._pth ignores PYTHONPATH, including pip's temporary build
+        # environment. Build sdists with the pinned backend inside this isolated
+        # embedded interpreter instead of the unreachable temporary environment.
+        build_option = ["--no-build-isolation"]
+    if requirements:
+        install_with_fallback(
+            [*common, "install", *build_option, "-r", str(requirements)],
             label=f"Python requirements {requirements.name}",
         )
-    if args.project:
-        project = args.project.resolve(strict=True)
+    if project:
         install_with_fallback(
-            [*common, "install", "--no-deps", str(project)],
+            [*common, "install", *build_option, "--no-deps", str(project)],
             label=f"Python project {project.name}",
         )
     return 0
