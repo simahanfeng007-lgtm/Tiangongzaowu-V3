@@ -11,6 +11,15 @@
 
 首次运行源码版或模型连接失败，请参阅[源码版首次配置与 API 连接排查](docs/SOURCE_API_CONNECTION.md)。
 
+Windows 首次从 GitHub 下载源码后，先安装 Node.js 22 LTS 或更新版本，再在仓库根目录依次运行（PowerShell 的执行策略仅对这两个进程放行）：
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup-source.ps1
+.\start-tiangong.bat
+```
+
+单独运行 `npm start` 不会安装 Python/Electron 等运行依赖；首次启动还需在「设置」中保存当前机器自己的模型 API 密钥。
+
 ## 依赖下载
 
 `scripts/setup-source.ps1` 与正式发布流水线默认使用用户当前配置或官方依赖源，

@@ -53,6 +53,22 @@ foreach ($HomeFolder in @("Desktop", "Documents", "Downloads", "Music", "Picture
     New-Item -ItemType Directory -Path (Join-Path $SourceHomeRoot $HomeFolder) -Force | Out-Null
 }
 
+$EmbeddedPython = Join-Path $AppRoot "runtime\python312\python.exe"
+$Python = $EmbeddedPython
+if (Test-Path -LiteralPath $EmbeddedPython -PathType Leaf) {
+    if (-not (& (Join-Path $PSScriptRoot "provision-embedded-python.ps1") -Check)) {
+        throw "Embedded source runtime is incomplete. Run scripts\setup-source.ps1 to repair it."
+    }
+} else {
+    $Python = Join-Path $AppRoot ".venv\Scripts\python.exe"
+}
+if (-not (Test-Path -LiteralPath $Python -PathType Leaf)) {
+    throw "Embedded source runtime is not installed. Run scripts\setup-source.ps1 first."
+}
+if (-not (Test-Path -LiteralPath (Join-Path $AppRoot "node_modules\electron\dist\electron.exe") -PathType Leaf)) {
+    throw "Electron dependencies are not installed. Run scripts\setup-source.ps1 first."
+}
+
 # 7184 is a fixed production contract.  Source mode may reuse only its own
 # listener; a packaged/unknown listener is never adopted or terminated.
 $SourceRootPrefix = $Root.TrimEnd("\") + "\"
@@ -75,16 +91,6 @@ foreach ($Listener in $GatewayListeners) {
     }
 }
 
-$Python = Join-Path $AppRoot "runtime\python312\python.exe"
-if (-not (Test-Path -LiteralPath $Python -PathType Leaf)) {
-    $Python = Join-Path $AppRoot ".venv\Scripts\python.exe"
-}
-if (-not (Test-Path -LiteralPath $Python -PathType Leaf)) {
-    throw "Embedded source runtime is not installed. Run scripts\setup-source.ps1 first."
-}
-if (-not (Test-Path -LiteralPath (Join-Path $AppRoot "node_modules\electron\dist\electron.exe") -PathType Leaf)) {
-    throw "Electron dependencies are not installed. Run scripts\setup-source.ps1 first."
-}
 if ($Verify) {
     & $Python (Join-Path $Root "scripts\verify_source.py") --quick
 }

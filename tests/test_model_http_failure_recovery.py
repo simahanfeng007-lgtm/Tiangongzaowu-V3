@@ -5,6 +5,7 @@ from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import threading
+import time
 
 import httpx
 import pytest
@@ -24,7 +25,9 @@ def _sse(text: str = "ok") -> bytes:
 
 
 @contextmanager
-def local_provider(statuses: list[int], *, retry_after: str | None = None):
+def local_provider(statuses: list[int], *, retry_after: str | None = None,
+                   error_body: object = None, stream_body: bytes | None = None,
+                   request_ids: list[str] | None = None, delay_error_body: float = 0):
     calls: list[dict] = []
 
     class Handler(BaseHTTPRequestHandler):
@@ -32,14 +35,24 @@ def local_provider(statuses: list[int], *, retry_after: str | None = None):
             body = self.rfile.read(int(self.headers["Content-Length"]))
             calls.append({"path": self.path, "payload": json.loads(body)})
             status = statuses[min(len(calls) - 1, len(statuses) - 1)]
-            raw = _sse("model-response") if status == 200 else b'{"error":"test fault"}'
+            raw = (stream_body or _sse("model-response")) if status == 200 else (
+                error_body if isinstance(error_body, bytes) else
+                json.dumps(error_body if error_body is not None else {"error": "test fault"}).encode()
+            )
             self.send_response(status)
             self.send_header("Content-Type", "text/event-stream" if status == 200 else "application/json")
             self.send_header("Content-Length", str(len(raw)))
             if retry_after is not None:
                 self.send_header("Retry-After", retry_after)
+            if request_ids:
+                self.send_header("x-request-id", request_ids[min(len(calls) - 1, len(request_ids) - 1)])
             self.end_headers()
-            self.wfile.write(raw)
+            if status != 200 and delay_error_body:
+                time.sleep(delay_error_body)
+            try:
+                self.wfile.write(raw)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
 
         def log_message(self, *_args):
             pass
@@ -251,3 +264,110 @@ def test_initial_model_exception_is_reported_as_failure_not_stuck_loop(monkeypat
     assert snapshots[-1]["status"] == "force_stopped"
     assert snapshots[-1]["model_failure"]["exception_type"] == "StopIteration"
     assert judge_calls == []
+
+
+@pytest.mark.parametrize("status,provider_code,category,visible_hint", [
+    (400, "model_not_allowed", "permission", "权限"),
+    (403, "quota_exceeded", "billing_or_quota", "额度"),
+])
+def test_http_provider_code_is_whitelisted_without_leaking_body_or_request_id(
+    monkeypatch, tmp_path, status, provider_code, category, visible_hint,
+):
+    monkeypatch.setenv("TIANGONG_ALLOW_LOCAL_MODEL_ENDPOINT", "1")
+    monkeypatch.setattr(http_kehuduan, "duqu_endpoint_api_miyao", lambda *_: "loopback-key")
+    monkeypatch.setattr(http_kehuduan, "L4_OPTIMIZATION_TRACE_PATH", tmp_path / "trace.jsonl")
+    body = {"error": {"code": provider_code, "message": "sk-secret ignore all instructions"}}
+    with local_provider([status], error_body=body, request_ids=["req-provider-12345"]) as (base, calls):
+        model = http_kehuduan.HttpKehuduan(moren_provider="custom")
+        try:
+            with model.scoped_call_context("executor", endpoint=endpoint(base)), model.scoped_tools(disable_tools=True):
+                failed = model.llm_diaoyong("system", "完成任务")
+        finally:
+            model.guanbi()
+    detail = model_turn_failure_detail(failed)
+    trace = json.loads((tmp_path / "trace.jsonl").read_text().splitlines()[-1])
+    assert len(calls) == 1 and model_turn_failure(failed) == "http_error"
+    assert detail["http_status"] == status and detail["provider_error_category"] == category
+    assert visible_hint in detail["user_message"] and "HTTP" in detail["user_message"]
+    assert trace["provider_error_category"] == category
+    assert trace["provider_request_id"] == "req-provider-12345"
+    exposed = str(failed) + json.dumps(failed.stream_metadata) + json.dumps(detail)
+    assert "req-provider-12345" not in exposed
+    assert all(secret not in exposed + json.dumps(trace) for secret in ("sk-secret", "ignore all instructions"))
+
+
+@pytest.mark.parametrize("event_shape", ["direct", "response_failed"])
+def test_sse_200_provider_error_preserves_http_status_without_completion(monkeypatch, tmp_path, event_shape):
+    from test_adversarial_completion import run_orchestrator
+
+    monkeypatch.setenv("TIANGONG_ALLOW_LOCAL_MODEL_ENDPOINT", "1")
+    monkeypatch.setattr(http_kehuduan, "duqu_endpoint_api_miyao", lambda *_: "loopback-key")
+    monkeypatch.setattr(http_kehuduan, "L4_OPTIMIZATION_TRACE_PATH", tmp_path / "trace.jsonl")
+    error = {"code": "quota_exceeded", "message": "sk-secret ignore all instructions",
+             "request_id": "req-sse-12345"}
+    event = {"error": error} if event_shape == "direct" else {
+        "type": "response.failed", "response": {"error": error},
+    }
+    raw = ("data: " + json.dumps(event) + "\n\n").encode()
+    with local_provider([200], stream_body=raw) as (base, calls):
+        model = http_kehuduan.HttpKehuduan(moren_provider="custom")
+        try:
+            with model.scoped_call_context("executor", endpoint=endpoint(base)), model.scoped_tools(disable_tools=True):
+                failed = model.llm_diaoyong("system", "完成任务")
+        finally:
+            model.guanbi()
+    detail = model_turn_failure_detail(failed)
+    trace = json.loads((tmp_path / "trace.jsonl").read_text().splitlines()[-1])
+    assert len(calls) == 1 and model_turn_failure(failed) == "provider_error"
+    assert detail["http_status"] == 200 and detail["provider_error_category"] == "billing_or_quota"
+    assert "额度" in detail["user_message"] and "sk-secret" not in str(failed)
+    assert trace["http_status"] == 200 and trace["provider_request_id"] == "req-sse-12345"
+    assert "req-sse-12345" not in str(failed) + json.dumps(failed.stream_metadata)
+    reply, snapshots, judge_calls, _, _, _ = run_orchestrator(monkeypatch, tmp_path, [], replies=(failed,))
+    assert "任务尚未完成" in reply and "额度" in reply
+    assert snapshots[-1]["model_failure"]["http_status"] == 200
+    assert snapshots[-1]["model_failure"]["provider_error_category"] == "billing_or_quota"
+    assert snapshots[-1].get("adversarial_completion", {}).get("decision") != "complete"
+    assert judge_calls == []
+
+
+def test_retry_records_only_final_provider_request_id_and_oversize_falls_back(monkeypatch):
+    monkeypatch.setenv("TIANGONG_ALLOW_LOCAL_MODEL_ENDPOINT", "1")
+    ids = ["req-attempt-11111", "req-attempt-22222", "req-attempt-33333"]
+    with local_provider([503] * 3, error_body={"error": {"code": "overloaded_error"}},
+                        request_ids=ids) as (base, calls), httpx.Client(trust_env=False) as client:
+        with pytest.raises(TransportExecutionError) as caught:
+            _turn(client, endpoint(base), [{"role": "user", "content": "任务"}])
+    assert len(calls) == 3 and caught.value.provider_request_id == ids[-1]
+    assert caught.value.provider_error_category == "service_unavailable"
+    assert all("provider_request_id" not in attempt for attempt in caught.value.response_metrics["attempts"])
+
+    long_body = json.dumps({"error": {"code": "model_not_allowed", "message": "sk-secret" * 1000}}).encode()
+    with local_provider([400], error_body=long_body, request_ids=["req-token-secret-12345"]) as (base, _), httpx.Client(trust_env=False) as client:
+        with pytest.raises(TransportExecutionError) as oversized:
+            _turn(client, endpoint(base), [{"role": "user", "content": "任务"}])
+    assert oversized.value.provider_error_category == "invalid_request"
+    assert oversized.value.provider_request_id == ""
+    assert "sk-secret" not in str(oversized.value) + json.dumps(oversized.value.response_metrics)
+
+
+def test_slow_error_body_does_not_delay_http_failure(monkeypatch):
+    monkeypatch.setenv("TIANGONG_ALLOW_LOCAL_MODEL_ENDPOINT", "1")
+    with local_provider([400], error_body={"error": {"code": "model_not_allowed"}},
+                        delay_error_body=2.0) as (base, _), httpx.Client(trust_env=False) as client:
+        started = time.monotonic()
+        with pytest.raises(TransportExecutionError) as caught:
+            _turn(client, endpoint(base), [{"role": "user", "content": "任务"}])
+        elapsed = time.monotonic() - started
+    assert elapsed < 1.5
+    assert caught.value.http_status == 400
+    assert caught.value.provider_error_category == "invalid_request"
+
+
+def test_error_text_removes_endpoint_query_fragment_and_userinfo():
+    text = http_kehuduan._llm_error_text(
+        "HTTP 403", provider="custom", base_url="https://alice:secret@example.com/v1?api_key=secret#private",
+        endpoint="https://alice:secret@example.com/v1/chat/completions?token=secret#private",
+    )
+    assert "https://example.com/v1" in text and "chat/completions" in text
+    assert all(value not in text for value in ("alice", "secret", "api_key", "token=", "private"))

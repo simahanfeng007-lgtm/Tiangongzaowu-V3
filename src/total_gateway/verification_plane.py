@@ -39,6 +39,8 @@ from __future__ import annotations
 # 1.68 unifies connection probes with configured credentials and execution transport.
 # 1.69 preserves model HTTP failure evidence and bounded retry behavior
 # through the authoritative task completion path.
-VERIFICATION_PLANE_VERSION = "1.69"
+# 1.70 records finite provider failure categories and prevents provider
+# error details from becoming a completion signal or leaking URL credentials.
+VERIFICATION_PLANE_VERSION = "1.70"
 
 __all__ = ["VERIFICATION_PLANE_VERSION"]

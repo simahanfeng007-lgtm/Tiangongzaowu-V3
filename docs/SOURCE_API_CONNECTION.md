@@ -4,7 +4,9 @@
 
 ## 源码配置位置
 
-Windows 通过 `scripts/setup-source.ps1` 安装依赖，再运行 `scripts/start-source.ps1`。默认配置放在仓库父目录的 `data` 下，模型配置在 `data/home/.tiangong`，桌面凭据库在源码版独立的用户数据目录。指定 `-ProfileRoot` 或 `TIANGONG_SOURCE_PROFILE_ROOT` 会更换整套配置目录。
+Windows 先安装 Node.js 22 LTS 或更新版本。在仓库根目录运行 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup-source.ps1` 安装依赖，再运行 `start-tiangong.bat` 启动。默认配置放在仓库父目录的 `data` 下，模型配置在 `data/home/.tiangong`，桌面凭据库在源码版独立的用户数据目录。指定 `-ProfileRoot` 或 `TIANGONG_SOURCE_PROFILE_ROOT` 会更换整套配置目录。
+
+直接在 `app` 目录运行 `npm start` 不会代替上述安装步骤；安装依赖后，它与启动脚本默认使用同一个 `data` 配置目录。旧版本直接 `npm start` 可能把设置存到 `%LOCALAPPDATA%\TiangongV3-SourceWork`（Linux 为 `$HOME/.tiangong-v3-source-work/TiangongV3-SourceWork`）。升级后若看不到旧设置，可显式将 `TIANGONG_SOURCE_PROFILE_ROOT` 指向原目录启动，或在新目录重新保存配置和密钥；程序不会自动搬移或合并凭据。
 
 因此，同一台机器的安装版已经设置密钥，也不代表新拉取的源码版已经设置。不要把另一台机器的加密凭据文件当作可移植密钥；请在当前机器重新保存自己的密钥。不要把密钥提交到 GitHub、日志或问题截图中。
 
@@ -21,7 +23,7 @@ Anthropic Messages 支持根地址、以 `/v1` 结尾的地址和完整 `/v1/mes
 ```powershell
 $env:TIANGONG_HTTP_TRUST_ENV = "1"
 # HTTPS_PROXY / HTTP_PROXY 使用自己的代理地址，不要照抄其他机器的端口。
-.\scripts\start-source.ps1
+.\start-tiangong.bat
 ```
 
 显式启用后，模型执行与连接测试使用相同的后端网络配置；本地网关的 `localhost`、`127.0.0.1`、`::1` 保持直连。此开关只影响应用进程，不修改系统代理。不需要代理时关闭该开关并重启。

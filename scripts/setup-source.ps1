@@ -11,6 +11,7 @@ $AppRoot = Join-Path $Root "app"
 $VenvRoot = Join-Path $AppRoot ".venv"
 $VenvPython = Join-Path $VenvRoot "Scripts\python.exe"
 $EmbeddedPython = Join-Path $AppRoot "runtime\python312\python.exe"
+$ProvisionEmbeddedPython = Join-Path $PSScriptRoot "provision-embedded-python.ps1"
 
 function Resolve-BasePython {
     $py = Get-Command py.exe -ErrorAction SilentlyContinue
@@ -28,9 +29,12 @@ function Resolve-BasePython {
 }
 
 if (-not $SkipPython) {
-    if (-not (Test-Path -LiteralPath $EmbeddedPython -PathType Leaf)) {
-        Write-Host "[1/4] Provisioning embedded CPython 3.12"
-        & (Join-Path $PSScriptRoot "provision-embedded-python.ps1")
+    if (-not (& $ProvisionEmbeddedPython -Check)) {
+        Write-Host "[1/4] Provisioning or repairing embedded CPython 3.12"
+        & $ProvisionEmbeddedPython
+    }
+    if (-not (& $ProvisionEmbeddedPython -Check)) {
+        throw "Embedded CPython runtime is incomplete after setup"
     }
     $VenvPython = $EmbeddedPython
     if ($InstallPlaywrightBrowser) {

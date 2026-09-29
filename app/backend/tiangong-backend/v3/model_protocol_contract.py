@@ -37,6 +37,10 @@ def model_turn_failure_detail(value: object) -> dict[str, Any]:
         return {}
     metadata = getattr(value, "stream_metadata", None)
     metadata = metadata if isinstance(metadata, Mapping) else {}
+    category = metadata.get("provider_error_category")
+    if not isinstance(category, str) or category not in {"authentication", "permission", "billing_or_quota", "rate_limit",
+                                                         "model_or_endpoint", "invalid_request", "service_unavailable", "unknown"}:
+        category = ""
     try:
         status = int(metadata.get("http_status") or 0)
     except (TypeError, ValueError, OverflowError):
@@ -82,10 +86,23 @@ def model_turn_failure_detail(value: object) -> dict[str, Any]:
         message = "任务已停止，尚未取得模型的有效结果。"
     else:
         message = "模型服务未返回有效结果，任务尚未完成。请检查模型连接。"
+    if code in {"http_error", "provider_error"} and category and category != "unknown":
+        retry_note = f"，已尝试 {attempts} 次" if code == "http_error" and status in {408, 425, 429, 500, 502, 503, 504} else ""
+        location = f"（HTTP {status}{retry_note}）" if status >= 400 else "（响应流）" if code == "provider_error" else ""
+        message = {
+            "authentication": "模型服务身份验证失败。请检查密钥与账号状态。",
+            "permission": "模型或账号权限不足。请检查模型访问权限和服务套餐。",
+            "billing_or_quota": "模型服务报告额度或计费状态异常。请检查额度与计费状态。",
+            "rate_limit": "模型服务报告请求限流。请在限流恢复后继续任务。",
+            "model_or_endpoint": "模型或接口不可用。请检查模型名及服务地址。",
+            "invalid_request": "模型服务拒绝请求参数。请检查模型名、接口协议与配置。",
+            "service_unavailable": "模型服务暂时不可用。连接恢复后可继续原任务。",
+        }[category].replace("。", f"{location}。", 1)
     return {
         "error_code": code,
         "http_status": status or None,
         "retry_count": retry_count,
+        "provider_error_category": category,
         "provider_identity": str(getattr(value, "provider_identity", "") or "")[:80],
         "model_id": str(getattr(value, "model_id", "") or "")[:120],
         "retryable_after_recovery": code in {"transport_error", "deadline_exceeded"}
