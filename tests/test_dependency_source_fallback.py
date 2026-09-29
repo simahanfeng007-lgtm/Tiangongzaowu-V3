@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
+import subprocess
 import sys
 
 import pytest
@@ -9,6 +10,14 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "install-python-dependencies.py"
+
+
+def test_dependency_installer_loads_helper_under_isolated_python() -> None:
+    result = subprocess.run(
+        [sys.executable, "-I", str(SCRIPT), "--help"],
+        cwd=ROOT, text=True, capture_output=True, timeout=15,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def _module():

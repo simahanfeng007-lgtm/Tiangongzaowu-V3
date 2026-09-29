@@ -8,6 +8,7 @@ within one resolver run.
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import os
 from pathlib import Path
 import re
@@ -16,7 +17,13 @@ import sys
 import tomllib
 from typing import Sequence
 
-from embedded_python_integrity import audit_embedded_install
+_integrity_path = Path(__file__).resolve().with_name("embedded_python_integrity.py")
+_integrity_spec = importlib.util.spec_from_file_location("tiangong_embedded_python_integrity", _integrity_path)
+if _integrity_spec is None or _integrity_spec.loader is None:
+    raise RuntimeError("Embedded Python integrity helper is unavailable")
+_integrity_module = importlib.util.module_from_spec(_integrity_spec)
+_integrity_spec.loader.exec_module(_integrity_module)
+audit_embedded_install = _integrity_module.audit_embedded_install
 
 
 TUNA_PYPI_INDEX = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"
