@@ -2480,7 +2480,10 @@ class Zongdiaodu:
                 payload = cursor.result()
                 provider_turn, provider_tool_results = cursor.provider_turn, cursor.provider_results()
                 composition_cursor = None
-            if isinstance(provider_turn, ProviderTurnEnvelope) and provider_tool_results:
+            native_result_bound = bool(isinstance(provider_turn, ProviderTurnEnvelope)
+                and provider_turn.tool_call_bindings and provider_tool_results
+                and len(provider_turn.tool_call_bindings) == len(provider_tool_results))
+            if native_result_bound:
                 if not any(item["turn"].turn_id == provider_turn.turn_id for item in native_history):
                     native_history.append({"turn": provider_turn, "results": list(provider_tool_results)})
                 # Compact whole call/result groups only. Durable fact receipts
@@ -2516,7 +2519,8 @@ class Zongdiaodu:
                                 "单独提供的历史观察仍可使用；需要缺失的完整内容时请重新读取，不要假设已完成未核实事项。"
                                 if run_state.get("native_history_dropped_groups") else ""
                             ),
-                            include_current_result=isinstance(payload, dict) and payload.get("schema") in {"tiangong.adversarial-review.v1", COMPLETION_SCHEMA, "tiangong.v3.user_guidance.v1"},
+                            include_current_result=(bool(provider_tool_results) and not native_result_bound) or
+                                (isinstance(payload, dict) and payload.get("schema") in {"tiangong.adversarial-review.v1", COMPLETION_SCHEMA, "tiangong.v3.user_guidance.v1", "tiangong.v3.tool_parse_retry.v1"}),
                         )
                 return self.gutong.jixu(
                     _dictionary_system_prompt(), payload, shenti, xiaoxi,
@@ -2531,7 +2535,8 @@ class Zongdiaodu:
                         "单独提供的历史观察仍可使用；需要缺失的完整内容时请重新读取，不要假设已完成未核实事项。"
                         if run_state.get("native_history_dropped_groups") else ""
                     ),
-                    include_current_result=isinstance(payload, dict) and payload.get("schema") in {"tiangong.adversarial-review.v1", COMPLETION_SCHEMA, "tiangong.v3.user_guidance.v1"},
+                    include_current_result=(bool(provider_tool_results) and not native_result_bound) or
+                        (isinstance(payload, dict) and payload.get("schema") in {"tiangong.adversarial-review.v1", COMPLETION_SCHEMA, "tiangong.v3.user_guidance.v1", "tiangong.v3.tool_parse_retry.v1"}),
                 )
 
             return _run_scoped_model(_call_jixu)

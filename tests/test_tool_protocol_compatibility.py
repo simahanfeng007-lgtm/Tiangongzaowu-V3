@@ -39,6 +39,8 @@ def test_native_shorthand_preserves_ids_and_registers_whole_batch(protocol, gate
 
 @pytest.mark.parametrize("wire", [
     json.dumps({"name": "omni_body", "arguments": WRITE}),
+    json.dumps({"tool": "omni_body", "parameters": WRITE}),
+    json.dumps({"tool_calls": [{"name": "omni_body", "parameters": WRITE}]}),
     '<invoke name="omni_body"><parameter name="action">file.write</parameter>'
     '<parameter name="target">result.txt</parameter><parameter name="args">'
     + json.dumps(WRITE["args"]) + '</parameter></invoke>',
@@ -64,6 +66,7 @@ def test_json_arguments_are_data_not_additional_calls(encoding):
             + json.dumps(action['args']) + '</parameter></invoke>',
     }[encoding]
     assert GutongCeng.jiexi_duogongju(wire) == [("omni_body", action)]
+    assert GutongCeng.jiexi_diaoyong(wire) == ("omni_body", action)
 
 
 def test_json_batch_keeps_duplicate_calls_and_submission_order():
@@ -79,6 +82,15 @@ def test_many_text_calls_are_not_silently_truncated_before_admission():
     assert len(calls) == 33
     with pytest.raises(DictionaryError, match="call_count"):
         normalize_task_calls(calls)
+
+
+def test_mixed_text_encodings_keep_order_duplicates_and_all_calls():
+    wire = ('<tool_call><name>omni_body</name><arguments>' + json.dumps(WRITE) + '</arguments></tool_call>'
+            '<invoke name="omni_body">' + json.dumps(READ) + '</invoke>\n'
+            + json.dumps({"name": "omni_body", "arguments": WRITE})
+            + '<omni_body>' + json.dumps(READ) + '</omni_body>'
+            + '<function_calls><invoke name="omni_body">' + json.dumps(READ) + '</invoke></function_calls>')
+    assert GutongCeng.jiexi_duogongju(wire) == [("omni_body", a) for a in [WRITE, READ, WRITE, READ, READ]]
 
 
 @pytest.mark.parametrize("bad", [
@@ -210,6 +222,30 @@ def test_text_after_parse_repair_still_requires_completion_review(monkeypatch, t
         replies=('<function_calls broken', '已经完成文件。'), dictionary_call=False)
     assert judges and states[-1]["status"] == "incomplete"
     assert "已经完成文件。" not in output
+
+
+@pytest.mark.parametrize("encoding", ["text", "envelope", "malformed"])
+def test_textual_protocol_repair_is_in_next_model_context(monkeypatch, tmp_path, encoding):
+    text = json.dumps({"name": "omni_body", "arguments": {"action": "not.available"}})
+    first = (ProviderTurnEnvelope(text, visible_text=text) if encoding == "envelope" else
+             '<function_calls broken' if encoding == "malformed" else text)
+    requests = []
+    _, states, judges, _, _, _ = run_orchestrator(monkeypatch, tmp_path, [],
+        replies=(first, first), dictionary_call=False, model_requests=requests)
+    assert len(requests) == 2 and not judges and states[-1]["status"] == "failed"
+    assert requests[1][1]["include_current_result"] is True
+    assert requests[1][0][1]["ok"] is False
+
+
+def test_real_communication_layer_delivers_unbound_protocol_feedback():
+    sent = []
+    communication = GutongCeng.__new__(GutongCeng)
+    communication.llm = lambda *args, **kwargs: sent.append((args, kwargs)) or '已修正格式'
+    payload = {"ok": False, "not_executed": True, "error": "composition.invocation_invalid"}
+    communication.jixu('system', payload, object(), '原任务', assistant_messages=[], include_current_result=True)
+    text = sent[0][0][1]
+    assert 'composition.invocation_invalid' in text and '上次调用未执行' in text
+    assert 'TIANGONG_SOURCE_V1' in text and '不可信数据' in text
 
 
 def test_host_schema_accepts_shorthand_and_rejects_ambiguous_mixed_envelope():

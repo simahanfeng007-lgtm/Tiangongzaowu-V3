@@ -225,6 +225,11 @@ class GutongCeng:
             )
             if isinstance(gongju_jieguo, dict) and gongju_jieguo.get("schema") == "tiangong.v3.user_guidance.v1":
                 feedback_notice = "\n\n[用户运行中追加要求] 请按用户最新要求继续当前任务。\n"
+            elif isinstance(gongju_jieguo, dict) and (gongju_jieguo.get("not_executed") is True
+                    or gongju_jieguo.get("schema") == "tiangong.v3.tool_parse_retry.v1"):
+                feedback_notice = "\n\n[工具调用校验结果] 上次调用未执行，请根据具体错误修正格式，保持原任务和授权范围。\n"
+            elif isinstance(gongju_jieguo, dict) and gongju_jieguo.get("schema") == "tiangong.task-composition-result.v1":
+                feedback_notice = "\n\n[当前组合执行回执] 按真实结果继续；未执行的步骤没有成功结果。\n"
             yonghu_tishi += feedback_notice + current_result_text
 
         try:
@@ -260,33 +265,9 @@ class GutongCeng:
 
     @staticmethod
     def jiexi_diaoyong(huifu: str) -> tuple[str, dict]:
-        """解析工具调用"""
-        from ..model_protocol_contract import ProviderTurnEnvelope
-        if isinstance(huifu, ProviderTurnEnvelope) and huifu.tool_calls:
-            return GutongCeng.jiexi_duogongju(huifu)[0]
-        # 尝试解析 JSON / OpenAI-style tool_call，支持嵌套 arguments。
-        for data in GutongCeng._json_duixiang(huifu):
-            name, args = GutongCeng._json_gongju_diaoyong(data)
-            if name:
-                return GutongCeng._normalize_tool_call(name, args)
-        
-        name, args = GutongCeng._xml_invoke_gongju_diaoyong(huifu)
-        if name:
-            return GutongCeng._normalize_tool_call(name, args)
-
-        name, args = GutongCeng._omni_body_tag_gongju_diaoyong(huifu)
-        if name:
-            return GutongCeng._normalize_tool_call(name, args)
-        
-        # 尝试解析 XML tool_call
-        try:
-            match = re.search(r'<tool_call>\s*<name>([^<]+)</name>\s*<arguments>(.*?)</arguments>', huifu, re.DOTALL)
-            if match:
-                return GutongCeng._normalize_tool_call(match.group(1).strip(), GutongCeng._json_arguments(match.group(2).strip()))
-        except (json.JSONDecodeError, AttributeError):
-            pass
-        
-        return "", {}
+        """Use the same argument boundary and source order as batch parsing."""
+        calls = GutongCeng.jiexi_duogongju(huifu)
+        return calls[0] if calls else ("", {})
 
     @staticmethod
     def jiexi_duogongju(huifu: str) -> list[tuple[str, dict]]:
@@ -299,31 +280,8 @@ class GutongCeng:
             return [GutongCeng._normalize_tool_call(str(call.get("name") or ""),
                     GutongCeng._json_arguments(call.get("arguments")))
                     for call in huifu.tool_calls]
-        results: list[tuple[str, dict]] = []
-
-        # 1. JSON 对象中的 tool_calls（OpenAI 格式，可能是数组）
-        for data in GutongCeng._json_duixiang(huifu):
-            tool_calls = data.get("tool_calls") if isinstance(data, dict) else None
-            if isinstance(tool_calls, list):
-                for tc in tool_calls:
-                    if not isinstance(tc, dict):
-                        continue
-                    fn = tc.get("function") if isinstance(tc.get("function"), dict) else {}
-                    name = str(fn.get("name") or tc.get("name") or "").strip()
-                    args = fn.get("arguments") or tc.get("arguments") or tc.get("parameters") or {}
-                    if isinstance(args, str):
-                        args = GutongCeng._json_arguments(args)
-                    if name:
-                        results.append(GutongCeng._normalize_tool_call(name, args if isinstance(args, dict) else {}))
-            else:
-                name, args = GutongCeng._json_gongju_diaoyong(data)
-                if name:
-                    results.append(GutongCeng._normalize_tool_call(name, args))
-
-        if results:
-            # A complete JSON call owns its argument strings. Do not rescan
-            # embedded code/HTML as XML calls, and preserve intentional repeats.
-            return results
+        located_calls = []
+        xml_spans = []
 
         # Protect JSON argument regions while finding XML boundaries. Literal
         # </invoke>, </arguments>, or a nested tool call inside file contents
@@ -331,12 +289,14 @@ class GutongCeng:
         source = str(huifu or "")
         regions = GutongCeng._json_regions(source)
         replacements = {}
+        region_tokens = {}
         xml_source = source
         for start, end, _ in reversed(regions):
             token = f"\x00json:{start}:{end}\x00"
             while token in source:
                 token += "\x00"
             replacements[token] = source[start:end]
+            region_tokens[start] = token
             xml_source = xml_source[:start] + token + xml_source[end:]
 
         def restore(value):
@@ -352,18 +312,13 @@ class GutongCeng:
         ):
             name, args = GutongCeng._omni_body_parse_one(match, restore=restore)
             if name:
-                results.append(GutongCeng._normalize_tool_call(name, args))
+                located_calls.append((match.start(), 0, GutongCeng._normalize_tool_call(name, args)))
+                xml_spans.append(match.span())
 
         # 3. 多个 <invoke> 标签
-        container_match = re.search(
-            r"<function_?calls?\b[^>]*>(.*?)(?:</function_?calls?>|$)",
-            xml_source,
-            re.DOTALL | re.IGNORECASE,
-        )
-        search_block = container_match.group(1) if container_match else xml_source
         for match in re.finditer(
             r"<invoke\b[^>]*\bname\s*=\s*([\"'])(.*?)\1[^>]*>(.*?)(?:</invoke>|(?=<invoke\b|</function)|$)",
-            search_block,
+            xml_source,
             re.DOTALL | re.IGNORECASE,
         ):
             tool_name = html.unescape(match.group(2)).strip()
@@ -397,7 +352,8 @@ class GutongCeng:
                     if plain:
                         normalized_name = GutongCeng._normalize_tool_name(tool_name)
                         args = {GutongCeng._default_argument_name(normalized_name): html.unescape(plain)}
-            results.append(GutongCeng._normalize_tool_call(tool_name, args))
+            located_calls.append((match.start(), 0, GutongCeng._normalize_tool_call(tool_name, args)))
+            xml_spans.append(match.span())
 
         # 4. 多个 <tool_call> XML 标签
         for match in re.finditer(
@@ -408,9 +364,31 @@ class GutongCeng:
             tool_name = match.group(1).strip()
             args = GutongCeng._json_arguments(restore(match.group(2).strip()))
             if tool_name:
-                results.append(GutongCeng._normalize_tool_call(tool_name, args))
+                located_calls.append((match.start(), 0, GutongCeng._normalize_tool_call(tool_name, args)))
+                xml_spans.append(match.span())
 
-        return results
+        # JSON outside an XML envelope is another submitted call. JSON inside
+        # one is its data. Sort all encodings by source position, retaining
+        # duplicate calls and the model's exact order even in mixed responses.
+        for start, _, data in regions:
+            position = xml_source.index(region_tokens[start])
+            if not isinstance(data, dict) or any(a <= position < b for a, b in xml_spans):
+                continue
+            if isinstance(data.get("tool_calls"), list):
+                for ordinal, tc in enumerate(data["tool_calls"]):
+                    if not isinstance(tc, dict):
+                        continue
+                    fn = tc.get("function") if isinstance(tc.get("function"), dict) else {}
+                    name = str(fn.get("name") or tc.get("name") or "").strip()
+                    raw_args = fn.get("arguments") or tc.get("arguments") or tc.get("parameters") or {}
+                    args = GutongCeng._json_arguments(raw_args)
+                    if name:
+                        located_calls.append((position, ordinal, GutongCeng._normalize_tool_call(name, args)))
+            else:
+                name, args = GutongCeng._json_gongju_diaoyong(data)
+                if name:
+                    located_calls.append((position, 0, GutongCeng._normalize_tool_call(name, args)))
+        return [call for _, _, call in sorted(located_calls, key=lambda row: row[:2])]
 
     @staticmethod
     def _omni_body_parse_one(match: re.Match, *, restore=lambda value: value) -> tuple[str, dict]:
@@ -610,14 +588,14 @@ class GutongCeng:
             if name:
                 return name, args
 
-        name = str(data.get("name") or data.get("tool_name") or "").strip()
+        name = str(data.get("name") or data.get("tool_name") or data.get("tool") or "").strip()
         if name:
             # A conversational object such as {"name": "张三", "age": 30}
             # is ordinary JSON, not a tool call. Accept the registered
             # omni_body name directly; compatible providers may also make the
             # intent explicit by including an argument/function field.
             if GutongCeng._normalize_tool_name(name) == "omni_body":
-                return name, GutongCeng._json_arguments(data.get("arguments") or data.get("args") or {})
+                return name, GutongCeng._json_arguments(data.get("arguments") or data.get("args") or data.get("parameters") or {})
             if any(key in data for key in ("arguments", "args", "function")):
                 return name, GutongCeng._json_arguments(data.get("arguments") or data.get("args") or {})
         return "", {}
