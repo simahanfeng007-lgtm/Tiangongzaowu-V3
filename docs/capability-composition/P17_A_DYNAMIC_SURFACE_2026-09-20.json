@@ -62,7 +62,7 @@
   {
    "kind": "env_get",
    "path": "app/backend/tiangong-backend/v3/duihua_qiaojie.py",
-   "line": 4569,
+   "line": 4581,
    "target": "'TIANGONG_ENABLE_LEARNED_SKILL_CATALOG'",
    "classification": "verified",
    "env_name": "TIANGONG_ENABLE_LEARNED_SKILL_CATALOG",
@@ -159,7 +159,7 @@
   {
    "kind": "reflective_getattr",
    "path": "app/backend/tiangong-backend/v3/zongdiaodu.py",
-   "line": 470,
+   "line": 487,
    "target": "n",
    "classification": "verified",
    "verified_category": "structural_field_access"
@@ -167,7 +167,7 @@
   {
    "kind": "reflective_getattr",
    "path": "app/backend/tiangong-backend/v3/zongdiaodu.py",
-   "line": 472,
+   "line": 489,
    "target": "n",
    "classification": "verified",
    "verified_category": "structural_field_access"
@@ -175,7 +175,7 @@
   {
    "kind": "reflective_getattr",
    "path": "app/backend/tiangong-backend/v3/zongdiaodu.py",
-   "line": 476,
+   "line": 493,
    "target": "n",
    "classification": "verified",
    "verified_category": "structural_field_access"
@@ -183,7 +183,7 @@
   {
    "kind": "reflective_getattr",
    "path": "app/backend/tiangong-backend/v3/zongdiaodu.py",
-   "line": 1658,
+   "line": 1675,
    "target": "name",
    "classification": "verified",
    "verified_category": "structural_field_access"
@@ -191,7 +191,7 @@
   {
    "kind": "reflective_getattr",
    "path": "app/backend/tiangong-backend/v3/zongdiaodu.py",
-   "line": 1904,
+   "line": 1921,
    "target": "name",
    "classification": "verified",
    "verified_category": "structural_field_access"
@@ -199,7 +199,7 @@
   {
    "kind": "dynamic_import",
    "path": "app/backend/tiangong-backend/v3/zongdiaodu.py",
-   "line": 2106,
+   "line": 2123,
    "target": "<__import__>",
    "classification": "verified",
    "verified_category": "inline_stdlib_import"
@@ -207,7 +207,7 @@
   {
    "kind": "dynamic_import",
    "path": "app/backend/tiangong-backend/v3/zongdiaodu.py",
-   "line": 2291,
+   "line": 2308,
    "target": "<__import__>",
    "classification": "verified",
    "verified_category": "inline_stdlib_import"
@@ -215,7 +215,7 @@
   {
    "kind": "reflective_getattr",
    "path": "app/backend/tiangong-backend/v3/zongdiaodu.py",
-   "line": 2313,
+   "line": 2330,
    "target": "key",
    "classification": "verified",
    "verified_category": "structural_field_access"
@@ -223,7 +223,7 @@
   {
    "kind": "reflective_getattr",
    "path": "app/backend/tiangong-backend/v3/zongdiaodu.py",
-   "line": 5071,
+   "line": 5195,
    "target": "field.name",
    "classification": "verified",
    "verified_category": "structural_field_access"
@@ -231,7 +231,7 @@
   {
    "kind": "reflective_getattr",
    "path": "app/backend/tiangong-backend/v3/zongdiaodu.py",
-   "line": 5248,
+   "line": 5372,
    "target": "key",
    "classification": "verified",
    "verified_category": "structural_field_access"
@@ -791,7 +791,7 @@
   {
    "kind": "reflective_getattr",
    "path": "src/total_gateway/frozen_backend_compat.py",
-   "line": 827,
+   "line": 830,
    "target": "key",
    "classification": "verified",
    "verified_category": "structural_field_access"

@@ -92,10 +92,11 @@ def goujian_shenti_tishi(
     shenti: ShentiZhuangtai,
     *,
     include_legacy_affect: bool = True,
+    include_world_context: bool = True,
 ) -> str:
     """构建每轮变化的身体状态提示，并在授权之后附加独立世界上下文槽。"""
     body = _ganzhi_shenti(shenti, include_legacy_affect=include_legacy_affect)
-    slot = _world_context_slot_if_enabled()
+    slot = _world_context_slot_if_enabled() if include_world_context else ""
     return body if not slot else body + "\n\n" + slot
 
 

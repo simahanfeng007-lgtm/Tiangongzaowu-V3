@@ -20,7 +20,7 @@ MAX_LEAVES = 32
 _ID = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{0,63}$")
 
 
-def composition_prompt(release) -> str:
+def composition_prompt(release, *, include_catalog: bool = True) -> str:
     # Capability names are drawn from actual dictionary definitions; this is
     # protocol guidance, never a prewritten task/industry Skill.
     available = [name for name, row in release.tools.items()
@@ -32,8 +32,9 @@ def composition_prompt(release) -> str:
         f"当前字典 {release.version}，摘要 {release.sha256}。\n"
         "根据用户语义自行生成任务 Tool 和 Skill。字典不提供预置业务 Skill。"
         "Tool 是一个或多个原子动作的有序组合；Skill 是对本轮生成 Tool 的步骤编排。"
-        "所有任务动作必须由 omni_body 的 composition 提交；不得在顶层直接调用任务动作。"
-        "纯聊天不需要组合。只可直接调用 system.capabilities、system.action_schema、system.health 发现能力。\n"
+        "任务优先由 omni_body 的 composition 提交。兼容顶层 action、target、args 简写："
+        "宿主会原样编译为组合并登记后执行，不增加动作或权限；多条简写按提交顺序执行。"
+        "纯聊天不需要组合。system.capabilities、system.action_schema、system.health 可直接发现能力。\n"
         "组合结构：{\"composition\":{\"tools\":[{\"id\":\"read_input\",\"description\":\"读取需要的信息\","
         "\"actions\":[{\"action\":\"file.read\",\"target\":\"实际输入路径\",\"args\":{}}]}],"
         "\"skill\":{\"id\":\"inspect\",\"description\":\"取得事实供下一轮组合\","
@@ -59,7 +60,15 @@ def composition_prompt(release) -> str:
         "不覆盖未采样时段或音轨，模型不支持相应模态时必须补观察，不能用元数据替代。"
         "browser.chrome.goto 是静态抓取；真实渲染使用 browser.playwright.*，"
         "browser.chrome.click 在独立页面点击一次并观察，不能假定跨调用保留浏览器会话。\n"
-        "可组合的已实现原子能力（依赖与权限在执行时检查）：" + ", ".join(available)
+        + (
+            "可组合的已实现原子能力（依赖与权限在执行时检查）：" + ", ".join(available)
+            if include_catalog else
+            "能力分类索引（具体动作与参数按需查询）："
+            + ", ".join(sorted({name.split(".", 1)[0] for name in available}))
+            + "。\n需要某项能力时，用 system.action_schema(target=动作名) 获取真实契约；"
+            "不知道动作名时，用 system.capabilities(args={include_actions:true}) 查询能力目录。"
+            "不要为普通聊天查询字典；不确定的动作不得猜测执行。"
+        )
     )
 
 
@@ -202,10 +211,44 @@ def compile_task_composition(proposal, *, release=None) -> dict:
     return {**program, "program_sha256": digest(program)}
 
 
+def normalize_task_calls(calls):
+    """Losslessly wrap explicit shorthand; never infer arguments or authority.
+
+    Returns (proposal, per_call_results). Discovery stays on its existing path.
+    Compilation and Gateway admission must still validate the entire program
+    before any leaf runs. Mixed modes are ambiguous and must be corrected.
+    """
+    if not calls or len(calls) > MAX_LEAVES:
+        raise DictionaryError("composition.call_count_invalid")
+    for index, (name, args) in enumerate(calls):
+        if name != "omni_body":
+            raise DictionaryError("composition.tool_name_invalid")
+        if type(args) is not dict:
+            raise DictionaryError("composition.invocation_invalid")
+        if "composition" in args:
+            if len(calls) != 1:
+                raise DictionaryError("composition.one_program_per_turn")
+            _object(args, {"composition"}, path=f"calls[{index}]")
+            return copy.deepcopy(args["composition"]), False
+        _object(args, {"action"}, {"target", "args", "repair_of"}, path=f"calls[{index}]")
+        if (type(args["action"]) is not str or not args["action"]
+                or type(args.get("target", "")) is not str or type(args.get("args", {})) is not dict):
+            raise DictionaryError("composition.invocation_invalid")
+        _data(args.get("args", {}))
+    if all(args["action"] in DISCOVERY_ACTIONS and "repair_of" not in args for _, args in calls):
+        return None, False
+    actions = [{"args": {}, **copy.deepcopy(args)} for _, args in calls]
+    return {"tools": [{"id": "submitted_actions", "description": "Model-submitted actions in order",
+                       "actions": actions}],
+            "skill": {"id": "submitted_task", "description": "Execute the submitted actions",
+                      "steps": [{"id": "submitted", "tool": "submitted_actions", "depends_on": []}]}}, True
+
+
 class CompositionCursor:
     """In-memory projection only; durable registration/effects live in Gateway."""
-    def __init__(self, program: dict, registration: dict, provider_turn):
+    def __init__(self, program: dict, registration: dict, provider_turn, *, per_call_results=False):
         self.program, self.registration, self.provider_turn = program, registration, provider_turn
+        self.per_call_results = per_call_results
         self.index = 0
         self.results = []
 
@@ -234,3 +277,18 @@ class CompositionCursor:
             "results": self.results,
             "not_executed": [row["id"] for row in self.program["leaves"][self.index:]],
             "instruction": "根据实际结果继续组合剩余能力；本组合成功不代表用户总任务完成。"}
+
+    def provider_results(self):
+        """One truthful result for every original native call, including skips."""
+        if not self.per_call_results:
+            return [self.result()]
+        observed = {row["leaf_id"]: row for row in self.results}
+        results = []
+        for leaf in self.program["leaves"]:
+            row = observed.get(leaf["id"])
+            results.append({"ok": row["ok"] if row else False,
+                "composition_id": self.registration["composition_id"],
+                "program_sha256": self.program["program_sha256"], "leaf_id": leaf["id"],
+                **({"result": row["result"]} if row else
+                   {"error": "composition.predecessor_failed", "not_executed": True})})
+        return results

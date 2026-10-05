@@ -398,6 +398,23 @@ def _authoritative_life_soul_prompt(rendered_context: str) -> str | None:
     )
 
 
+def _without_promoted_life_soul(rendered_context: str) -> str:
+    """Consume only the validated leading host envelope, not user lookalikes.
+
+    Soul is already in the system prompt. Its transport JSON and the legacy
+    display copy must not be sent again in the user context.
+    """
+    if _authoritative_life_soul_prompt(rendered_context) is None:
+        return rendered_context
+    end = rendered_context.index(_LIFE_SOUL_SUFFIX, len(_LIFE_SOUL_PREFIX))
+    soul = json.loads(rendered_context[len(_LIFE_SOUL_PREFIX):end])
+    remaining = rendered_context[end + len(_LIFE_SOUL_SUFFIX):].lstrip("\n")
+    legacy = "【当前生命 Soul（权威人格底稿）】\n" + soul["prompt"]
+    if remaining.startswith(legacy):
+        remaining = remaining[len(legacy):].lstrip("\n")
+    return remaining
+
+
 BIAOXIAN_SYSTEM_PROMPT = """
 [Avatar performance channel - required]
 When replying to the user, append exactly one XML block at the very end
@@ -903,7 +920,7 @@ def _omni_body_skill_prompt(user_message: str = "", max_chars: int = 5200) -> st
     from capability_dictionary import load_dictionary
     release = load_dictionary()
     from capability_dictionary.composition import composition_prompt
-    return composition_prompt(release)
+    return composition_prompt(release, include_catalog=False)
 
 
 def _minimax_m3_context_packing_enabled() -> bool:
@@ -2325,8 +2342,12 @@ class Zongdiaodu:
             run_state["recovery_checkpoint"] = _run_state_safe_value(recovery_checkpoint, limit=5000)
         _simple_chain_emit_event(run_state, "chain_started", "run created", "system")
         run_state["mode"] = "chat" if response_only_without_tools else "work"
-        if judge_completion:
-            run_state["completion_authority"] = "adversarial_agent"
+        # A restored task may already have dictionary effects. A fresh text
+        # response has no external result for the completion judge to assess.
+        run_state["dictionary_used"] = bool(recovery_checkpoint)
+        run_state["completion_authority"] = (
+            "adversarial_agent" if run_state["dictionary_used"] else "model_response"
+        )
         run_state["task_contract"] = initialize_task_contract(
             xiaoxi,
             chat_mode=response_only_without_tools,
@@ -2359,6 +2380,8 @@ class Zongdiaodu:
                           if os.environ.get("TIANGONG_MODEL_CONTEXT_REUSE", "1") == "1" else None)
         native_history: list[dict[str, Any]] = []
         composition_cursor = None
+        protocol_failures = []
+        protocol_progress = 0
         from .adversarial_review import ReviewSession
         review_session = ReviewSession(self.http_kehuduan)
 
@@ -2368,6 +2391,9 @@ class Zongdiaodu:
             pinned = run_state.setdefault("dictionary_sha256", release.sha256)
             if pinned != release.sha256:
                 raise RuntimeError("dictionary_version_migration_required")
+            from .composition_turn import composition_planner_mode
+            if not run_state["dictionary_used"] and composition_planner_mode() != "controlled":
+                return system_tishi
             from .world_context_integration import refresh_world_context_in_prompt
             from .run_context import current_run_context
             return refresh_world_context_in_prompt(system_tishi, run_context=current_run_context(), user_text=xiaoxi)
@@ -2452,9 +2478,12 @@ class Zongdiaodu:
                     # the model generated a new call or inventing provider IDs.
                     return shenti, cursor.provider_turn
                 payload = cursor.result()
-                provider_turn, provider_tool_results = cursor.provider_turn, [payload]
+                provider_turn, provider_tool_results = cursor.provider_turn, cursor.provider_results()
                 composition_cursor = None
-            if isinstance(provider_turn, ProviderTurnEnvelope) and provider_tool_results:
+            native_result_bound = bool(isinstance(provider_turn, ProviderTurnEnvelope)
+                and provider_turn.tool_call_bindings and provider_tool_results
+                and len(provider_turn.tool_call_bindings) == len(provider_tool_results))
+            if native_result_bound:
                 if not any(item["turn"].turn_id == provider_turn.turn_id for item in native_history):
                     native_history.append({"turn": provider_turn, "results": list(provider_tool_results)})
                 # Compact whole call/result groups only. Durable fact receipts
@@ -2490,7 +2519,8 @@ class Zongdiaodu:
                                 "单独提供的历史观察仍可使用；需要缺失的完整内容时请重新读取，不要假设已完成未核实事项。"
                                 if run_state.get("native_history_dropped_groups") else ""
                             ),
-                            include_current_result=isinstance(payload, dict) and payload.get("schema") in {"tiangong.adversarial-review.v1", COMPLETION_SCHEMA, "tiangong.v3.user_guidance.v1"},
+                            include_current_result=(bool(provider_tool_results) and not native_result_bound) or
+                                (isinstance(payload, dict) and payload.get("schema") in {"tiangong.adversarial-review.v1", COMPLETION_SCHEMA, "tiangong.v3.user_guidance.v1", "tiangong.v3.tool_parse_retry.v1"}),
                         )
                 return self.gutong.jixu(
                     _dictionary_system_prompt(), payload, shenti, xiaoxi,
@@ -2505,10 +2535,22 @@ class Zongdiaodu:
                         "单独提供的历史观察仍可使用；需要缺失的完整内容时请重新读取，不要假设已完成未核实事项。"
                         if run_state.get("native_history_dropped_groups") else ""
                     ),
-                    include_current_result=isinstance(payload, dict) and payload.get("schema") in {"tiangong.adversarial-review.v1", COMPLETION_SCHEMA, "tiangong.v3.user_guidance.v1"},
+                    include_current_result=(bool(provider_tool_results) and not native_result_bound) or
+                        (isinstance(payload, dict) and payload.get("schema") in {"tiangong.adversarial-review.v1", COMPLETION_SCHEMA, "tiangong.v3.user_guidance.v1", "tiangong.v3.tool_parse_retry.v1"}),
                 )
 
             return _run_scoped_model(_call_jixu)
+
+        def _protocol_repair_scoped(payload, **kwargs):
+            # Protocol correction is a model turn too. A connection exception
+            # here must reach the same terminal failure path as any other turn.
+            try:
+                return _llm_jixu_scoped(payload, **kwargs)
+            except Exception as exc:
+                from .model_protocol_contract import ProviderTurnEnvelope
+                return shenti, ProviderTurnEnvelope("[LLM错误: protocol repair failed]", visible_text="",
+                    finish_reason="error", stop_semantics="error",
+                    stream_metadata={"exception_type": type(exc).__name__})
 
         def _llm_closeout_scoped(payload: Any, on_chunk=None, on_reasoning_chunk=None) -> tuple[ShentiZhuangtai, str]:
             # 收尾必须是“新的一轮用户指令”，不能走 jixu 的工具结果续写框架，
@@ -2594,10 +2636,14 @@ class Zongdiaodu:
 
         review_reserve_seconds = min(120.0, max(95.0, effective_wall_clock_seconds * 0.2),
                                      effective_wall_clock_seconds * 0.5) if judge_completion else 0.0
-        run_state.setdefault("budget", {})["review_reserved_seconds"] = review_reserve_seconds
+        run_state.setdefault("budget", {})["review_reserved_seconds"] = (
+            review_reserve_seconds if run_state["dictionary_used"] else 0.0
+        )
 
         def _execution_seconds_left():
-            return max(0.0, effective_wall_clock_seconds - review_reserve_seconds - (time.monotonic() - loop_started_at))
+            reserve = review_reserve_seconds if run_state["dictionary_used"] else 0.0
+            run_state["budget"]["review_reserved_seconds"] = reserve
+            return max(0.0, effective_wall_clock_seconds - reserve - (time.monotonic() - loop_started_at))
 
         def _natural_closeout(
             status: str,
@@ -2822,7 +2868,7 @@ class Zongdiaodu:
             run_control.step(
                 "llm_call", "model thinking", "failed" if initial_failure else "done",
                 ("模型服务未返回有效结果。" if initial_failure else
-                 "候选响应已返回，完成状态待对抗智能体确认。" if judge_completion else
+                 "候选响应已返回，完成状态待对抗智能体确认。" if judge_completion and run_state["dictionary_used"] else
                  _llm_reply_progress_summary(huifu)),
                 meta={"error_type": initial_failure} if initial_failure else None,
             )
@@ -2978,11 +3024,21 @@ class Zongdiaodu:
             # textual tool call while native tools are disabled must never turn
             # an explicit response-only request into a side effect.
             tools = [] if response_only_without_tools else self.gutong.jiexi_duogongju(huifu)
-            if not tools and parse_retry_used < 1 and not response_only_without_tools:
+            if not tools and not response_only_without_tools:
                 # 疑似工具调用但解析失败：模型可能输出了畸形的调用格式，
                 # 静默当普通回复终止会让它以为工具已经执行。给一次纠错。
                 suspected = _SUSPECTED_TOOL_CALL_PATTERN.search(str(getattr(huifu, "visible_text", "") or huifu or ""))
                 if suspected:
+                    run_state["dictionary_used"] = True
+                    run_state["completion_authority"] = "adversarial_agent"
+                    run_state["tool_call_attempts"] = int(run_state.get("tool_call_attempts") or 0) + 1
+                    if parse_retry_used >= 1:
+                        final_guard_exhausted = True
+                        final_chain_status = "failed"
+                        shenti, huifu = _natural_closeout("failed", [
+                            "模型连续返回无法解析的工具调用，纠错后仍未得到有效格式；这些调用没有执行。"])
+                        run_state["terminal_reason"] = "tool_call_parse_failed"
+                        break
                     parse_retry_used += 1
                     parse_error_payload = {
                         "schema": "tiangong.v3.tool_parse_retry.v1",
@@ -3005,45 +3061,58 @@ class Zongdiaodu:
                             "suspected unparsable tool call; asking model to resend",
                             meta={"retry": parse_retry_used},
                         )
-                    shenti, huifu = _llm_jixu_scoped(
+                    shenti, huifu = _protocol_repair_scoped(
                         parse_error_payload,
                         on_chunk=_on_text_chunk,
                         on_reasoning_chunk=_on_reasoning_chunk,
                     )
-                    tools = self.gutong.jiexi_duogongju(huifu)
+                    # Re-enter the normal failure/cancellation checks before
+                    # considering the repair, never classify a failed repair as chat.
+                    continue
             tools = [(name, _simple_chain_accept_task_profile(run_state, xiaoxi, name, args)) for name, args in tools]
+            if tools or composition_cursor is not None:
+                # Monotonic within the run, including rejected/failed calls.
+                # Never infer this from the user's words or model assertions.
+                run_state["dictionary_used"] = True
+                run_state["completion_authority"] = "adversarial_agent"
+                run_state["budget"]["review_reserved_seconds"] = review_reserve_seconds
+                _simple_chain_save_run_state(run_state)
             if composition_cursor is not None:
                 tools = [("omni_body", composition_cursor.leaf["invocation"])]
                 run_state["active_composition_ref"] = composition_cursor.reference()
             elif tools:
                 from capability_dictionary.composition import (
-                    CompositionCursor, DISCOVERY_ACTIONS, compile_task_composition,
+                    CompositionCursor, compile_task_composition, normalize_task_calls, digest,
                 )
                 from .simple_chain.kernel import _simple_chain_regenerative_call
+                run_state["tool_call_attempts"] = int(run_state.get("tool_call_attempts") or 0) + len(tools)
+                if gongju_cishu != protocol_progress:
+                    protocol_failures.clear()
+                    protocol_progress = gongju_cishu
                 try:
-                    if len(tools) == 1 and tools[0][0] == "omni_body" and set(tools[0][1]) == {"composition"}:
-                        proposal = tools[0][1]["composition"]
+                    proposal, per_call_results = normalize_task_calls(tools)
+                    if proposal is not None:
                         program = compile_task_composition(proposal, release=dictionary_release)
                         registered = _simple_chain_regenerative_call(run_state, "register_composition",
                             proposal=proposal, epoch_index=int(turn_loop.epoch_index))
                         if not registered or registered.get("program_sha256") != program["program_sha256"]:
                             raise RuntimeError("composition.gateway_registration_required")
-                        composition_cursor = CompositionCursor(program, registered, huifu)
+                        composition_cursor = CompositionCursor(program, registered, huifu, per_call_results=per_call_results)
                         run_state["generated_compositions"].append({
                             **registered, "generated_tool_ids": [item["id"] for item in proposal["tools"]],
                             "generated_skill_id": proposal["skill"]["id"],
+                            "input_format": "action_shorthand" if per_call_results else "composition",
                             "leaf_count": len(program["leaves"]), "completed_leaves": 0, "status": "registered"})
                         run_state["active_composition_ref"] = composition_cursor.reference()
                         _simple_chain_save_run_state(run_state)
                         tools = [("omni_body", composition_cursor.leaf["invocation"])]
-                    elif not all(name == "omni_body" and isinstance(args, dict)
-                            and set(args) <= {"action", "target", "args"}
-                            and args.get("action") in DISCOVERY_ACTIONS for name, args in tools):
-                        raise ValueError("composition.required_for_task_execution")
+                    parse_retry_used = 0
                 except (ValueError, TypeError) as exc:
                     blocked = {"ok": False, "error": str(exc)[:300],
-                        "received_argument_fields": [sorted(args) for _, args in tools],
-                        "instruction": "请通过 composition 生成 Tool 和 Skill；仅能力发现可直接调用。整份组合未登记、未执行。修正后返回一个完整组合调用。"}
+                        "received_argument_fields": [sorted(str(key) for key in args) if isinstance(args, dict)
+                                                     else [type(args).__name__] for _, args in tools],
+                        "not_executed": True,
+                        "instruction": "本批调用未通过登记校验，没有执行。按 error/repair 修正字段；只提交一个完整 composition，或 action、target、args 简写，不可混用。不要原样重发。"}
                     repair = getattr(exc, "composition_repair", None)
                     if isinstance(repair, dict):
                         blocked["repair"] = repair
@@ -3053,8 +3122,33 @@ class Zongdiaodu:
                         **({"repair": repair} if isinstance(repair, dict) else {}),
                         "at": time.time()})
                     run_state["composition_rejections"] = rejections[-12:]
+                    run_state["protocol_rejection_count"] = int(run_state.get("protocol_rejection_count") or 0) + 1
+                    # Stop repeated invalid submissions before the generic
+                    # no-progress guard consumes many model turns. Real tool
+                    # progress resets this consecutive repair window.
+                    try:
+                        fingerprint = digest({"calls": tools, "error": blocked["error"]})
+                    except (ValueError, TypeError):
+                        fingerprint = blocked["error"]
+                    protocol_failures.append(fingerprint)
+                    exhausted = len(protocol_failures) >= 3 or protocol_failures.count(fingerprint) >= 2
+                    blocked["repair_attempts_remaining"] = 0 if exhausted else 3 - len(protocol_failures)
+                    if run_control:
+                        run_control.step("tool_protocol", "工具调用格式校验", "failed", blocked["error"],
+                            meta={"attempted_calls": run_state["tool_call_attempts"],
+                                  "executed_tool_rounds": gongju_cishu,
+                                  "protocol_rejections": run_state["protocol_rejection_count"],
+                                  "repair_attempts_remaining": blocked["repair_attempts_remaining"]})
                     _simple_chain_save_run_state(run_state)
-                    shenti, huifu = _llm_jixu_scoped(blocked,
+                    if exhausted:
+                        final_guard_exhausted = True
+                        final_chain_status = "failed"
+                        shenti, huifu = _natural_closeout("failed", [
+                            "模型连续提交不合规的工具调用，已停止重复纠错；被拒绝的调用均未执行。",
+                            blocked["error"]])
+                        run_state["terminal_reason"] = "tool_protocol_repair_exhausted"
+                        break
+                    shenti, huifu = _protocol_repair_scoped(blocked,
                         on_chunk=_on_text_chunk, on_reasoning_chunk=_on_reasoning_chunk,
                         provider_turn=huifu, provider_tool_results=[blocked for _ in tools])
                     continue
@@ -3762,6 +3856,15 @@ class Zongdiaodu:
                     except Exception:
                         pass
             if not tool_name:
+                if judge_completion and not run_state["dictionary_used"]:
+                    if _render_delivery(huifu, approved=False).strip():
+                        final_chain_status = "chat_reply"
+                    else:
+                        final_guard_exhausted = True
+                        final_chain_status = "failed"
+                        run_state["terminal_reason"] = "empty_model_reply"
+                        huifu = "模型没有返回可用回复，请重试。"
+                    break
                 if judge_completion:
                     feedback = _judge_candidate()
                     decision = feedback["review"]["decision"]
@@ -4583,7 +4686,25 @@ class Zongdiaodu:
             if run_control:
                 run_control.step("llm_continue", "model integrates tool result", "done", ("候选响应已返回，完成状态待对抗智能体确认。" if judge_completion else _llm_reply_progress_summary(huifu)))
 
-        if judge_completion:
+        if judge_completion and not run_state["dictionary_used"]:
+            cancelled = bool(run_control and getattr(run_control, "should_stop", lambda: False)())
+            if cancelled:
+                final_guard_exhausted = True
+                final_chain_status = "force_stopped"
+                huifu = "任务已停止，最终结果未提交。"
+            elif not final_guard_exhausted:
+                final_chain_status = "chat_reply"
+                run_state["mode"] = "chat"
+                run_state["review_phase"] = "not_required_no_dictionary"
+                run_state["terminal_reason"] = "no_dictionary_call"
+                run_state["last_transition"] = {
+                    "type": "chat_reply", "source": "model", "reason": "未使用字典，直接返回模型回复。",
+                    "round": int(run_state.get("round") or 0),
+                    "at": datetime.now().isoformat(timespec="seconds"),
+                }
+                _simple_chain_emit_event(run_state, "chain_completed", "对话回复，无字典调用。",
+                                         "model", extra={"status": "chat_reply"})
+        elif judge_completion:
             cancelled = bool(run_control and getattr(run_control, "should_stop", lambda: False)())
             if not final_guard_exhausted and not cancelled:
                 candidate = _render_delivery(huifu, approved=True)
@@ -4714,12 +4835,12 @@ class Zongdiaodu:
             run_control.step(
                 "simple_chain_status",
                 "Simple chain status",
-                "done" if final_chain_status == "complete" else ("failed" if final_chain_status == "failed" else "incomplete"),
+                "done" if final_chain_status in {"complete", "chat_reply"} else ("failed" if final_chain_status == "failed" else "incomplete"),
                 final_chain_status,
                 meta={
                     "schema": "tiangong.v3.simple_chain.status.v1",
                     "simple_chain_status": final_chain_status,
-                    "mode": "chat" if response_only_without_tools else "work",
+                    "mode": run_state["mode"],
                     "run_state": _simple_chain_run_state_view(run_state),
                 },
             )
@@ -4815,6 +4936,8 @@ class Zongdiaodu:
             # ① 加载Soul
             authoritative_soul = _authoritative_life_soul_prompt(duihua_shangxiawen)
             soul_text = authoritative_soul if authoritative_soul is not None else duqu_soul()
+            if authoritative_soul is not None:
+                duihua_shangxiawen = _without_promoted_life_soul(duihua_shangxiawen)
             QUANZHUIXIAN.jilu_kuadu(zhuizong_id, "jiazai_soul", "wancheng")
             if run_control:
                 run_control.step("load_soul", "加载人格与上下文", "done", "Soul 已加载。")
@@ -4838,6 +4961,7 @@ class Zongdiaodu:
                 goujian_shenti_tishi(
                     shenti,
                     include_legacy_affect=authoritative_soul is None,
+                    include_world_context=chufa_yuan != "yonghu_xiaoxi",
                 )
             ]
             if skill_context:

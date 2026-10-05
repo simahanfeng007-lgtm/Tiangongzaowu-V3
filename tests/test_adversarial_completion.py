@@ -217,7 +217,9 @@ def test_text_only_task_and_incidental_failed_tool_are_judged_by_model():
         assert reviewer.approved(state, evidence, "candidate")
 
 
-def run_orchestrator(monkeypatch, tmp_path, decisions, replies=("未修复候选", "修复后候选"), guidance=None):
+def run_orchestrator(monkeypatch, tmp_path, decisions, replies=("未修复候选", "修复后候选"), guidance=None,
+                     *, dictionary_call=True, user_text="仅生成一句文本", dynamic_context="",
+                     model_requests=None, should_stop=None, tool_result=None, control_steps=None):
     """Exercise the real orchestration loop with deterministic model transport."""
     from v3 import zongdiaodu as zd
     from v3.simple_chain import kernel
@@ -234,11 +236,20 @@ def run_orchestrator(monkeypatch, tmp_path, decisions, replies=("未修复候选
     client.scoped_native_history = lambda *a, **k: nullcontext()
     client.scoped_tools = lambda **k: nullcontext()
     client.scoped_native_audio = lambda *a, **k: nullcontext()
-    candidates = iter(replies)
+    from v3.model_protocol_contract import ProviderTurnEnvelope
+    initial = ([ProviderTurnEnvelope("", visible_text="", tool_calls=[{
+        "id": "discovery-call", "name": "omni_body", "arguments": {
+            "action": "system.capabilities", "args": {}}}], finish_reason="tool_calls")]
+        if dictionary_call else [])
+    candidates = iter([*initial, *replies])
     feedbacks, callbacks, events, snapshots = [], [], [], []
     def model(*args, **kwargs):
         callbacks.append(kwargs.get("on_text_chunk"))
-        if len(args) > 1 and isinstance(args[1], dict): feedbacks.append(deepcopy(args[1]))
+        if model_requests is not None:
+            model_requests.append((args, kwargs))
+        if len(args) > 1 and isinstance(args[1], dict) and args[1].get("schema") in {
+                review.COMPLETION_SCHEMA, "tiangong.v3.user_guidance.v1"}:
+            feedbacks.append(deepcopy(args[1]))
         return SimpleNamespace(), next(candidates)
     host = zd.Zongdiaodu.__new__(zd.Zongdiaodu)
     host.http_kehuduan = client
@@ -246,6 +257,16 @@ def run_orchestrator(monkeypatch, tmp_path, decisions, replies=("未修复候选
     host._baocun_shenti = lambda *a: None
     monkeypatch.setattr(zd, "TONGBU", SimpleNamespace(tuibo=lambda *a: None))
     monkeypatch.setattr(zd, "QUANZHUIXIAN", SimpleNamespace(jilu_kuadu=lambda *a: None, jieshu=lambda *a: None))
+    if dictionary_call:
+        # Exercise the actual dictionary action with the deterministic model
+        # transport. Gateway admission has separate integration coverage.
+        from omni_body_skill.tools.omni_body_tool import BodyRuntime, BodyRuntimeConfig
+        runtime = BodyRuntime(BodyRuntimeConfig(workspace=str(tmp_path), run_id="judge-loop"))
+        def execute(_host, _state, _loop, **kw):
+            args = kw["tool_args"]
+            return tool_result if tool_result is not None else runtime.run(
+                args["action"], args.get("target"), args.get("args", {}))
+        monkeypatch.setattr(zd, "_simple_chain_regenerative_execute_tool", execute)
     original_save = kernel._simple_chain_save_run_state
     def save(state):
         original_save(state)
@@ -254,11 +275,11 @@ def run_orchestrator(monkeypatch, tmp_path, decisions, replies=("未修复候选
     def forbidden(*a, **k): raise AssertionError("legacy system completion must not run")
     monkeypatch.setattr(zd, "_simple_chain_life_completion_gate", forbidden)
     monkeypatch.setattr(zd, "_simple_chain_regenerative_verify_completion", forbidden)
-    control = SimpleNamespace(request_id="judge-test", step=lambda *a, **k: None,
-                              should_stop=lambda: False, check_stop=lambda *a: None, consume_guidance=guidance or (lambda: ""),
+    control = SimpleNamespace(request_id="judge-test", step=lambda *a, **k: control_steps.append((a, k)) if control_steps is not None else None,
+                              should_stop=should_stop or (lambda: False), check_stop=lambda *a: None, consume_guidance=guidance or (lambda: ""),
                               interim_reply=lambda *a, **k: events.append((a, k)))
-    result = host._huanxing_simple_chain(xiaoxi="仅生成一句文本", shenti=SimpleNamespace(),
-        yonghu_tishi="仅生成一句文本", system_tishi="test", dynamic_context="", zhuizong_id="judge-test",
+    result = host._huanxing_simple_chain(xiaoxi=user_text, shenti=SimpleNamespace(),
+        yonghu_tishi=user_text, system_tishi="test", dynamic_context=dynamic_context, zhuizong_id="judge-test",
         run_control=control, started_at=time.monotonic(), on_event=events.append)
     return result, snapshots, client.calls, feedbacks, callbacks, events
 
@@ -271,7 +292,8 @@ def test_real_loop_retries_before_delivery_and_never_uses_old_gates(monkeypatch,
     assert feedbacks[0]["schema"] == review.COMPLETION_SCHEMA
     assert snapshots[-1]["status"] == "complete"
     assert snapshots[-1]["last_transition"]["source"] == "adversarial_agent"
-    assert all(cb is None for cb in callbacks) and not events
+    assert all(cb is None for cb in callbacks)
+    assert "未修复候选" not in str(events) and "修复后候选" not in str(events)
     assert all(s["task_contract"]["goal_state"]["completion_percentage"] is None
                for s in snapshots if s.get("status") != "complete")
 
@@ -282,7 +304,7 @@ def test_real_loop_blocked_or_unavailable_never_delivers_candidate(monkeypatch, 
     assert "最终结果未提交" in result and "未修复候选" not in result
     assert snapshots[-1]["status"] == "incomplete"
     assert snapshots[-1]["task_contract"]["acceptance_status"] == "blocked"
-    assert not feedbacks and not events
+    assert not feedbacks and "未修复候选" not in str(events)
 
 
 def test_timed_out_judge_cannot_approve_late_or_overlap(monkeypatch):
@@ -342,7 +364,7 @@ def test_completion_record_is_valid_gateway_signed_contract_data():
 
 
 def test_user_guidance_arriving_during_judgment_requires_fresh_review(monkeypatch, tmp_path):
-    messages = iter(["", "改成另一句文本", "", ""])
+    messages = iter(["", "", "改成另一句文本", "", ""])
     result, snapshots, calls, feedbacks, _, _ = run_orchestrator(
         monkeypatch, tmp_path, [verdict(), verdict()], guidance=lambda: next(messages, ""))
     assert result == "修复后候选" and len(calls) == 2

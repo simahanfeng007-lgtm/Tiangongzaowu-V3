@@ -591,6 +591,11 @@ def _canonical_to_omni_arguments(call: dict[str, Any], raw_args: dict[str, Any] 
             if field in envelope and envelope[field] == empty:
                 envelope.pop(field)
         return envelope
+    if "action" in raw and set(raw) <= {"action", "target", "args", "repair_of", "_task_profile"}:
+        # Canonical shorthand is already an envelope. Do not stringify an
+        # invalid action/target, discard a non-object args, or move metadata
+        # inside args: the shared admission boundary must see the exact input.
+        return {"target": "", "args": {}, **raw}
     known = {
         "action", "command", "operation", "op", "target", "path", "url", "resource",
         "args", "payload", "confirm", "confirmed",
