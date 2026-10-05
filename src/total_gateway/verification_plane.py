@@ -42,6 +42,8 @@ from __future__ import annotations
 # 1.70 records finite provider failure categories and prevents provider
 # error details from becoming a completion signal or leaking URL credentials.
 # 1.71 binds source Gateway health to the actual checkout and desktop owner.
-VERIFICATION_PLANE_VERSION = "1.71"
+# 1.72 scopes adversarial completion to dictionary runs and defers retrievable
+# context without removing execution, permission or output verification gates.
+VERIFICATION_PLANE_VERSION = "1.72"
 
 __all__ = ["VERIFICATION_PLANE_VERSION"]

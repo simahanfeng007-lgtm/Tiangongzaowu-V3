@@ -816,6 +816,9 @@ class FrozenBackendCompatibilityTransport(BackendExecutionTransport):
         *,
         created_at_ms: int,
     ) -> tuple[list[dict[str, Any]], tuple[str, ...]]:
+        if backend_payload.get("completion_authority") == "model_response":
+            # A no-dictionary reply is text, never proof of a produced file.
+            return [], ()
         if (backend_payload.get("completion_authority") == "adversarial_agent"
                 and backend_payload.get("simple_chain_status") != "complete"):
             return [], ()

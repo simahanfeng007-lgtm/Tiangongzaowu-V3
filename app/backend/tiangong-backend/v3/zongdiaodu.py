@@ -398,6 +398,23 @@ def _authoritative_life_soul_prompt(rendered_context: str) -> str | None:
     )
 
 
+def _without_promoted_life_soul(rendered_context: str) -> str:
+    """Consume only the validated leading host envelope, not user lookalikes.
+
+    Soul is already in the system prompt. Its transport JSON and the legacy
+    display copy must not be sent again in the user context.
+    """
+    if _authoritative_life_soul_prompt(rendered_context) is None:
+        return rendered_context
+    end = rendered_context.index(_LIFE_SOUL_SUFFIX, len(_LIFE_SOUL_PREFIX))
+    soul = json.loads(rendered_context[len(_LIFE_SOUL_PREFIX):end])
+    remaining = rendered_context[end + len(_LIFE_SOUL_SUFFIX):].lstrip("\n")
+    legacy = "【当前生命 Soul（权威人格底稿）】\n" + soul["prompt"]
+    if remaining.startswith(legacy):
+        remaining = remaining[len(legacy):].lstrip("\n")
+    return remaining
+
+
 BIAOXIAN_SYSTEM_PROMPT = """
 [Avatar performance channel - required]
 When replying to the user, append exactly one XML block at the very end
@@ -903,7 +920,7 @@ def _omni_body_skill_prompt(user_message: str = "", max_chars: int = 5200) -> st
     from capability_dictionary import load_dictionary
     release = load_dictionary()
     from capability_dictionary.composition import composition_prompt
-    return composition_prompt(release)
+    return composition_prompt(release, include_catalog=False)
 
 
 def _minimax_m3_context_packing_enabled() -> bool:
@@ -2325,8 +2342,12 @@ class Zongdiaodu:
             run_state["recovery_checkpoint"] = _run_state_safe_value(recovery_checkpoint, limit=5000)
         _simple_chain_emit_event(run_state, "chain_started", "run created", "system")
         run_state["mode"] = "chat" if response_only_without_tools else "work"
-        if judge_completion:
-            run_state["completion_authority"] = "adversarial_agent"
+        # A restored task may already have dictionary effects. A fresh text
+        # response has no external result for the completion judge to assess.
+        run_state["dictionary_used"] = bool(recovery_checkpoint)
+        run_state["completion_authority"] = (
+            "adversarial_agent" if run_state["dictionary_used"] else "model_response"
+        )
         run_state["task_contract"] = initialize_task_contract(
             xiaoxi,
             chat_mode=response_only_without_tools,
@@ -2368,6 +2389,9 @@ class Zongdiaodu:
             pinned = run_state.setdefault("dictionary_sha256", release.sha256)
             if pinned != release.sha256:
                 raise RuntimeError("dictionary_version_migration_required")
+            from .composition_turn import composition_planner_mode
+            if not run_state["dictionary_used"] and composition_planner_mode() != "controlled":
+                return system_tishi
             from .world_context_integration import refresh_world_context_in_prompt
             from .run_context import current_run_context
             return refresh_world_context_in_prompt(system_tishi, run_context=current_run_context(), user_text=xiaoxi)
@@ -2594,10 +2618,14 @@ class Zongdiaodu:
 
         review_reserve_seconds = min(120.0, max(95.0, effective_wall_clock_seconds * 0.2),
                                      effective_wall_clock_seconds * 0.5) if judge_completion else 0.0
-        run_state.setdefault("budget", {})["review_reserved_seconds"] = review_reserve_seconds
+        run_state.setdefault("budget", {})["review_reserved_seconds"] = (
+            review_reserve_seconds if run_state["dictionary_used"] else 0.0
+        )
 
         def _execution_seconds_left():
-            return max(0.0, effective_wall_clock_seconds - review_reserve_seconds - (time.monotonic() - loop_started_at))
+            reserve = review_reserve_seconds if run_state["dictionary_used"] else 0.0
+            run_state["budget"]["review_reserved_seconds"] = reserve
+            return max(0.0, effective_wall_clock_seconds - reserve - (time.monotonic() - loop_started_at))
 
         def _natural_closeout(
             status: str,
@@ -2822,7 +2850,7 @@ class Zongdiaodu:
             run_control.step(
                 "llm_call", "model thinking", "failed" if initial_failure else "done",
                 ("模型服务未返回有效结果。" if initial_failure else
-                 "候选响应已返回，完成状态待对抗智能体确认。" if judge_completion else
+                 "候选响应已返回，完成状态待对抗智能体确认。" if judge_completion and run_state["dictionary_used"] else
                  _llm_reply_progress_summary(huifu)),
                 meta={"error_type": initial_failure} if initial_failure else None,
             )
@@ -3012,6 +3040,13 @@ class Zongdiaodu:
                     )
                     tools = self.gutong.jiexi_duogongju(huifu)
             tools = [(name, _simple_chain_accept_task_profile(run_state, xiaoxi, name, args)) for name, args in tools]
+            if tools or composition_cursor is not None:
+                # Monotonic within the run, including rejected/failed calls.
+                # Never infer this from the user's words or model assertions.
+                run_state["dictionary_used"] = True
+                run_state["completion_authority"] = "adversarial_agent"
+                run_state["budget"]["review_reserved_seconds"] = review_reserve_seconds
+                _simple_chain_save_run_state(run_state)
             if composition_cursor is not None:
                 tools = [("omni_body", composition_cursor.leaf["invocation"])]
                 run_state["active_composition_ref"] = composition_cursor.reference()
@@ -3762,6 +3797,15 @@ class Zongdiaodu:
                     except Exception:
                         pass
             if not tool_name:
+                if judge_completion and not run_state["dictionary_used"]:
+                    if _render_delivery(huifu, approved=False).strip():
+                        final_chain_status = "chat_reply"
+                    else:
+                        final_guard_exhausted = True
+                        final_chain_status = "failed"
+                        run_state["terminal_reason"] = "empty_model_reply"
+                        huifu = "模型没有返回可用回复，请重试。"
+                    break
                 if judge_completion:
                     feedback = _judge_candidate()
                     decision = feedback["review"]["decision"]
@@ -4583,7 +4627,25 @@ class Zongdiaodu:
             if run_control:
                 run_control.step("llm_continue", "model integrates tool result", "done", ("候选响应已返回，完成状态待对抗智能体确认。" if judge_completion else _llm_reply_progress_summary(huifu)))
 
-        if judge_completion:
+        if judge_completion and not run_state["dictionary_used"]:
+            cancelled = bool(run_control and getattr(run_control, "should_stop", lambda: False)())
+            if cancelled:
+                final_guard_exhausted = True
+                final_chain_status = "force_stopped"
+                huifu = "任务已停止，最终结果未提交。"
+            elif not final_guard_exhausted:
+                final_chain_status = "chat_reply"
+                run_state["mode"] = "chat"
+                run_state["review_phase"] = "not_required_no_dictionary"
+                run_state["terminal_reason"] = "no_dictionary_call"
+                run_state["last_transition"] = {
+                    "type": "chat_reply", "source": "model", "reason": "未使用字典，直接返回模型回复。",
+                    "round": int(run_state.get("round") or 0),
+                    "at": datetime.now().isoformat(timespec="seconds"),
+                }
+                _simple_chain_emit_event(run_state, "chain_completed", "对话回复，无字典调用。",
+                                         "model", extra={"status": "chat_reply"})
+        elif judge_completion:
             cancelled = bool(run_control and getattr(run_control, "should_stop", lambda: False)())
             if not final_guard_exhausted and not cancelled:
                 candidate = _render_delivery(huifu, approved=True)
@@ -4714,12 +4776,12 @@ class Zongdiaodu:
             run_control.step(
                 "simple_chain_status",
                 "Simple chain status",
-                "done" if final_chain_status == "complete" else ("failed" if final_chain_status == "failed" else "incomplete"),
+                "done" if final_chain_status in {"complete", "chat_reply"} else ("failed" if final_chain_status == "failed" else "incomplete"),
                 final_chain_status,
                 meta={
                     "schema": "tiangong.v3.simple_chain.status.v1",
                     "simple_chain_status": final_chain_status,
-                    "mode": "chat" if response_only_without_tools else "work",
+                    "mode": run_state["mode"],
                     "run_state": _simple_chain_run_state_view(run_state),
                 },
             )
@@ -4815,6 +4877,8 @@ class Zongdiaodu:
             # ① 加载Soul
             authoritative_soul = _authoritative_life_soul_prompt(duihua_shangxiawen)
             soul_text = authoritative_soul if authoritative_soul is not None else duqu_soul()
+            if authoritative_soul is not None:
+                duihua_shangxiawen = _without_promoted_life_soul(duihua_shangxiawen)
             QUANZHUIXIAN.jilu_kuadu(zhuizong_id, "jiazai_soul", "wancheng")
             if run_control:
                 run_control.step("load_soul", "加载人格与上下文", "done", "Soul 已加载。")
@@ -4838,6 +4902,7 @@ class Zongdiaodu:
                 goujian_shenti_tishi(
                     shenti,
                     include_legacy_affect=authoritative_soul is None,
+                    include_world_context=chufa_yuan != "yonghu_xiaoxi",
                 )
             ]
             if skill_context:

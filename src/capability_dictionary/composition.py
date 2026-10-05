@@ -20,7 +20,7 @@ MAX_LEAVES = 32
 _ID = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{0,63}$")
 
 
-def composition_prompt(release) -> str:
+def composition_prompt(release, *, include_catalog: bool = True) -> str:
     # Capability names are drawn from actual dictionary definitions; this is
     # protocol guidance, never a prewritten task/industry Skill.
     available = [name for name, row in release.tools.items()
@@ -59,7 +59,15 @@ def composition_prompt(release) -> str:
         "不覆盖未采样时段或音轨，模型不支持相应模态时必须补观察，不能用元数据替代。"
         "browser.chrome.goto 是静态抓取；真实渲染使用 browser.playwright.*，"
         "browser.chrome.click 在独立页面点击一次并观察，不能假定跨调用保留浏览器会话。\n"
-        "可组合的已实现原子能力（依赖与权限在执行时检查）：" + ", ".join(available)
+        + (
+            "可组合的已实现原子能力（依赖与权限在执行时检查）：" + ", ".join(available)
+            if include_catalog else
+            "能力分类索引（具体动作与参数按需查询）："
+            + ", ".join(sorted({name.split(".", 1)[0] for name in available}))
+            + "。\n需要某项能力时，用 system.action_schema(target=动作名) 获取真实契约；"
+            "不知道动作名时，用 system.capabilities(args={include_actions:true}) 查询能力目录。"
+            "不要为普通聊天查询字典；不确定的动作不得猜测执行。"
+        )
     )
 
 

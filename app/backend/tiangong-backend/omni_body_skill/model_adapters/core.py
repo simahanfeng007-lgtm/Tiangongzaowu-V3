@@ -167,7 +167,7 @@ def render_tool_schema(profile_id: str | None = None, provider: str | None = Non
         prompt = (
             "可用工具：omni_body。按以下 XML 输出工具调用：\n"
             "<tool_call><name>omni_body</name><arguments>完整 JSON 参数对象</arguments></tool_call>\n"
-            + composition_prompt(load_dictionary()) + "\n"
+            + composition_prompt(load_dictionary(), include_catalog=False) + "\n"
             "可选在顶层 _task_profile 给出 schema、proposed_level、desired_facts、"
             "可变 plan_hint 与 constraints；轻量任务可省略，计划不参与硬验收。"
         )

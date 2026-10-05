@@ -285,6 +285,7 @@ def _simple_chain_run_state_view(run_state: dict[str, Any] | None) -> dict[str, 
         "gaps": list(run_state.get("gaps") or [])[-8:],
         "adversarial_review": run_state.get("adversarial_review") or {},
         "completion_authority": run_state.get("completion_authority"),
+        "dictionary_used": run_state.get("dictionary_used", False),
         "adversarial_completion": run_state.get("adversarial_completion") or {},
         "review_phase": run_state.get("review_phase") or "executing",
         "model_failure": (
@@ -310,11 +311,13 @@ def _simple_chain_run_state_view(run_state: dict[str, Any] | None) -> dict[str, 
 def _simple_chain_save_run_state(run_state: dict[str, Any] | None) -> None:
     if not isinstance(run_state, dict):
         return
-    if run_state.get("completion_authority") == "adversarial_agent":
+    if run_state.get("completion_authority") in {"adversarial_agent", "model_response"}:
         contract = run_state.get("task_contract")
         if isinstance(contract, dict):
             approved = (run_state.get("status") == "complete" and
                         (run_state.get("adversarial_completion") or {}).get("decision") == "complete")
+            if run_state["completion_authority"] == "model_response":
+                approved = run_state.get("status") == "chat_reply"
             contract["acceptance_status"] = "accepted" if approved else (
                 "blocked" if run_state.get("status") in {"failed", "incomplete", "force_stopped"} else "pending")
             contract.setdefault("goal_state", {})["completion_percentage"] = 100.0 if approved else None
