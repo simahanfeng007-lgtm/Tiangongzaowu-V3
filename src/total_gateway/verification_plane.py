@@ -44,6 +44,8 @@ from __future__ import annotations
 # 1.71 binds source Gateway health to the actual checkout and desktop owner.
 # 1.72 scopes adversarial completion to dictionary runs and defers retrievable
 # context without removing execution, permission or output verification gates.
-VERIFICATION_PLANE_VERSION = "1.72"
+# 1.73 admits lossless action shorthand through registered compositions and
+# bounds protocol correction without reclassifying failed calls as chat.
+VERIFICATION_PLANE_VERSION = "1.73"
 
 __all__ = ["VERIFICATION_PLANE_VERSION"]

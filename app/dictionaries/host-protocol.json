@@ -1,23 +1,54 @@
 {
   "schema": "tiangong.dictionary.host-protocol.v1",
   "name": "omni_body",
-  "description": "根据用户语义组合字典原子能力，生成本轮 Tool 与 Skill 并执行。任务动作须放入 composition：Tool 的 actions 顺序执行，Skill 的 steps 组合 Tool。需要未知信息时先生成观察组合，收到结果后再生成后续组合。每次只提交一个组合。仅 system.capabilities、system.action_schema、system.health 可直接发现能力。没有预置业务 Skill。",
+  "description": "根据用户语义组合字典原子能力，生成本轮 Tool 与 Skill 并执行。任务优先放入 composition；也接受 action、target、args 简写，宿主将原样编译为组合并登记后执行，不增加动作或权限。Tool 的 actions 顺序执行，Skill 的 steps 组合 Tool。需要未知信息时先生成观察组合，收到结果后再生成后续组合。每次只提交一个组合。多条简写按提交顺序执行；system.capabilities、system.action_schema、system.health 可直接发现能力。没有预置业务 Skill。",
   "parameters": {
     "type": "object",
     "oneOf": [
       {
-        "required": ["composition"],
-        "not": {"anyOf": [{"required": ["action"]}, {"required": ["target"]}, {"required": ["args"]}]}
+        "required": [
+          "composition"
+        ],
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "action"
+              ]
+            },
+            {
+              "required": [
+                "target"
+              ]
+            },
+            {
+              "required": [
+                "args"
+              ]
+            },
+            {
+              "required": [
+                "repair_of"
+              ]
+            }
+          ]
+        }
       },
       {
-        "required": ["action"],
-        "not": {"required": ["composition"]}
+        "required": [
+          "action"
+        ],
+        "not": {
+          "required": [
+            "composition"
+          ]
+        }
       }
     ],
     "properties": {
       "composition": {
         "type": "object",
-        "description": "执行任务时只提交此字段。外层不能同时出现 action、target 或 args；请把原子动作放到 tools[].actions 中。一次仅调用一次 omni_body，可在该组合内编排多个动作。",
+        "description": "使用组合格式时只提交此字段。外层不能同时出现 action、target 或 args；请把原子动作放到 tools[].actions 中。一次仅调用一次 omni_body，可在该组合内编排多个动作。",
         "properties": {
           "experience_refs": {
             "type": "array",
@@ -135,11 +166,8 @@
       },
       "action": {
         "type": "string",
-        "enum": [
-          "system.capabilities",
-          "system.action_schema",
-          "system.health"
-        ]
+        "minLength": 1,
+        "description": "字典中的原子动作名；除三项能力发现外，宿主会把简写转为组合并登记校验。不能与 composition 混用。"
       },
       "target": {
         "type": "string"
@@ -249,6 +277,11 @@
           "proposed_level"
         ],
         "additionalProperties": false
+      },
+      "repair_of": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$",
+        "description": "可选：正在修正的失败回执 execution_evidence.event_hash。宿主核对同一任务、同一动作的真实失败；允许纠正 target，不代表用户认可或因果已证实。"
       }
     },
     "additionalProperties": false

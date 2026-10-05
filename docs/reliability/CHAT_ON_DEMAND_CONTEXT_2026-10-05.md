@@ -1,6 +1,6 @@
 # 无字典对话与按需上下文 · 2026-10-05
 
-基线：`origin/main` 的 `0a29f25c8ea629c4ef529a752cc4b655865452b6`。工作分支：`codex/chat-on-demand-context`。本次为本地源码优化，未推送、合并或更新安装版。
+基线：`origin/main` 的 `0a29f25c8ea629c4ef529a752cc4b655865452b6`。工作分支：`codex/chat-on-demand-context`。下文保留 `b777ed7` 的本地验收记录；随后已上传 PR #119，未合并或更新安装版。后续修复与验证见 [工具调用兼容报告](TOOL_PROTOCOL_COMPATIBILITY_2026-10-05.md)。
 
 用户要求：未使用字典时不进行质检，并借鉴 Codex 的上下文加载方式。
 

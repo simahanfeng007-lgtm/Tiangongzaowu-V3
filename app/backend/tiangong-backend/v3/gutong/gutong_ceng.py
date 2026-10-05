@@ -21,6 +21,15 @@ from ..context_compactor import (
 _log = logging.getLogger("tiangong.gutong")
 
 
+def _unique_json_object(pairs):
+    value = {}
+    for key, item in pairs:
+        if key in value:
+            raise ValueError("duplicate tool argument")
+        value[key] = item
+    return value
+
+
 # ── 结构分区来源标记（D-08：工具输出 taint，提示注入防线）────────────────────
 # 与 v3.duihua_qiaojie 中同一格式保持一致（该模块体量过大且持有运行时单例，
 # 此处保留三行同构助手以避免无谓的模块级副作用）。工具执行结果、网页正文、
@@ -311,23 +320,47 @@ class GutongCeng:
                 if name:
                     results.append(GutongCeng._normalize_tool_call(name, args))
 
+        if results:
+            # A complete JSON call owns its argument strings. Do not rescan
+            # embedded code/HTML as XML calls, and preserve intentional repeats.
+            return results
+
+        # Protect JSON argument regions while finding XML boundaries. Literal
+        # </invoke>, </arguments>, or a nested tool call inside file contents
+        # must not terminate the enclosing call or create a second action.
+        source = str(huifu or "")
+        regions = GutongCeng._json_regions(source)
+        replacements = {}
+        xml_source = source
+        for start, end, _ in reversed(regions):
+            token = f"\x00json:{start}:{end}\x00"
+            while token in source:
+                token += "\x00"
+            replacements[token] = source[start:end]
+            xml_source = xml_source[:start] + token + xml_source[end:]
+
+        def restore(value):
+            for token, original in replacements.items():
+                value = value.replace(token, original)
+            return value
+
         # 2. 多个 <omni_body> / <omnibody> 标签
         for match in re.finditer(
             r"<(?:omni[_-]?body|omnibody)\b([^>]*)>(.*?)(?:</(?:omni[_-]?body|omnibody)>|(?=<(?:omni|function|tool|invoke))|$)",
-            str(huifu or ""),
+            xml_source,
             re.DOTALL | re.IGNORECASE,
         ):
-            name, args = GutongCeng._omni_body_parse_one(match)
+            name, args = GutongCeng._omni_body_parse_one(match, restore=restore)
             if name:
                 results.append(GutongCeng._normalize_tool_call(name, args))
 
         # 3. 多个 <invoke> 标签
         container_match = re.search(
             r"<function_?calls?\b[^>]*>(.*?)(?:</function_?calls?>|$)",
-            str(huifu or ""),
+            xml_source,
             re.DOTALL | re.IGNORECASE,
         )
-        search_block = container_match.group(1) if container_match else str(huifu or "")
+        search_block = container_match.group(1) if container_match else xml_source
         for match in re.finditer(
             r"<invoke\b[^>]*\bname\s*=\s*([\"'])(.*?)\1[^>]*>(.*?)(?:</invoke>|(?=<invoke\b|</function)|$)",
             search_block,
@@ -344,8 +377,17 @@ class GutongCeng:
                 key = html.unescape(pm.group(2)).strip()
                 raw_value = re.sub(r"</parameter>\s*$", "", pm.group(3), flags=re.IGNORECASE).strip()
                 if key:
-                    args[key] = html.unescape(raw_value)
+                    # Decode XML syntax before restoring protected JSON data.
+                    args[key] = restore(html.unescape(raw_value))
+                    if key in {"args", "composition", "_task_profile"}:
+                        try:
+                            decoded = json.loads(args[key], object_pairs_hook=_unique_json_object)
+                            if isinstance(decoded, dict):
+                                args[key] = decoded
+                        except (ValueError, TypeError):
+                            pass  # Preserve malformed input for admission to reject.
             if not args:
+                args_text = restore(args_text)
                 for data in GutongCeng._json_duixiang(args_text):
                     if isinstance(data, dict) and data:
                         args = data
@@ -360,32 +402,21 @@ class GutongCeng:
         # 4. 多个 <tool_call> XML 标签
         for match in re.finditer(
             r"<tool_call>\s*<name>([^<]+)</name>\s*<arguments>(.*?)</arguments>",
-            str(huifu or ""),
+            xml_source,
             re.DOTALL | re.IGNORECASE,
         ):
             tool_name = match.group(1).strip()
-            args = GutongCeng._json_arguments(match.group(2).strip())
+            args = GutongCeng._json_arguments(restore(match.group(2).strip()))
             if tool_name:
                 results.append(GutongCeng._normalize_tool_call(tool_name, args))
 
-        # 去重
-        seen: set[str] = set()
-        unique: list[tuple[str, dict]] = []
-        for name, args in results:
-            try:
-                key = f"{name}:{json.dumps(args, sort_keys=True, ensure_ascii=False)}"
-            except Exception:
-                key = f"{name}:{str(args)}"
-            if key not in seen:
-                seen.add(key)
-                unique.append((name, args))
-        return unique
+        return results
 
     @staticmethod
-    def _omni_body_parse_one(match: re.Match) -> tuple[str, dict]:
+    def _omni_body_parse_one(match: re.Match, *, restore=lambda value: value) -> tuple[str, dict]:
         """从单个 <omni_body> 正则匹配中解析工具调用"""
         attrs_raw = match.group(1).strip()
-        body = html.unescape(match.group(2).strip())
+        body = restore(html.unescape(match.group(2).strip()))
 
         # ---- attribute format: <omni_body action="..." code="..." ...> ----
         if attrs_raw:
@@ -506,6 +537,9 @@ class GutongCeng:
     @staticmethod
     def _normalize_tool_args(tool_name: str, args: dict) -> dict:
         data = dict(args) if isinstance(args, dict) else {}
+        if tool_name == "omni_body" and "composition" in data:
+            from ..jineng.http_kehuduan import _canonical_to_omni_arguments
+            return _canonical_to_omni_arguments({}, data)
         return data
 
     @staticmethod
@@ -514,10 +548,15 @@ class GutongCeng:
 
     @staticmethod
     def _json_duixiang(text: str) -> list[dict]:
-        result: list[dict] = []
-        value = str(text or "")
-        starts = [index for index, char in enumerate(value) if char == "{"]
-        for start in starts:
+        return [value for _, _, value in GutongCeng._json_regions(str(text or "")) if isinstance(value, dict)]
+
+    @staticmethod
+    def _json_regions(value: str) -> list[tuple[int, int, dict | None]]:
+        result = []
+        consumed_until = 0
+        for start, char in enumerate(value):
+            if char != "{" or start < consumed_until:
+                continue
             depth = 0
             in_string = False
             escaped = False
@@ -538,14 +577,20 @@ class GutongCeng:
                 elif char == "}":
                     depth -= 1
                     if depth == 0:
+                        # Even invalid outer JSON owns its nested data. Never
+                        # extract a valid-looking call from its arguments.
+                        consumed_until = index + 1
                         try:
-                            parsed = json.loads(value[start:index + 1])
+                            parsed = json.loads(value[start:index + 1], object_pairs_hook=_unique_json_object)
                         except Exception:
-                            break
-                        if isinstance(parsed, dict):
-                            result.append(parsed)
+                            parsed = None
+                        result.append((start, consumed_until, parsed))
                         break
-        return result[:8]
+            else:
+                # An incomplete outer argument still owns all its nested data.
+                result.append((start, len(value), None))
+                break
+        return result
 
     @staticmethod
     def _json_gongju_diaoyong(data: dict) -> tuple[str, dict]:

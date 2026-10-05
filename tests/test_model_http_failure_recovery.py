@@ -182,7 +182,7 @@ def test_first_model_http_failure_finishes_without_completion_approval(monkeypat
         provider_identity="loopback", model_id="test-model",
     )
     reply, snapshots, judge_calls, _, _, _ = run_orchestrator(
-        monkeypatch, tmp_path, [], replies=(failed,)
+        monkeypatch, tmp_path, [], replies=(failed,), dictionary_call=False
     )
     assert "HTTP 503" in reply and "http_error" not in reply
     assert "是否继续处理" not in reply and "任务尚未完成" in reply
@@ -242,7 +242,7 @@ def test_model_http_failure_after_tool_does_not_replay_effect_or_approve(monkeyp
         provider_identity="loopback", model_id="test-model",
     )
     reply, snapshots, judge_calls, _, _, _ = run_orchestrator(
-        monkeypatch, tmp_path, [], replies=(tool_turn, failed)
+        monkeypatch, tmp_path, [], replies=(tool_turn, failed), dictionary_call=False
     )
     assert effects == ["file.write"], (reply, snapshots[-1].get("terminal_reason"), snapshots[-1].get("tool_calls"))
     assert (tmp_path / "result.txt").read_text(encoding="utf-8") == "written once"
@@ -257,7 +257,7 @@ def test_initial_model_exception_is_reported_as_failure_not_stuck_loop(monkeypat
     from test_adversarial_completion import run_orchestrator
 
     reply, snapshots, judge_calls, _, _, _ = run_orchestrator(
-        monkeypatch, tmp_path, [], replies=()
+        monkeypatch, tmp_path, [], replies=(), dictionary_call=False
     )
     assert "模型调用失败" in reply and "任务尚未完成" in reply
     assert "一直重复" not in reply and "本轮尚未执行工具动作" in reply
