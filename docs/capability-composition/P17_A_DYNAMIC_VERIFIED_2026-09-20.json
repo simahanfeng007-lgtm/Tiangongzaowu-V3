@@ -546,12 +546,12 @@
    "reason": "Explicit opt-in compatibility catalog flag; default is disabled and no module is loaded from this value.",
    "reviewed_line": "include_learned_catalog = str(os.getenv(\"TIANGONG_ENABLE_LEARNED_SKILL_CATALOG\") or \"\").strip().lower() in {\"1\", \"true\", \"yes\", \"on\"}"
   },
-  "app/backend/tiangong-backend/omni_body_skill/tools/omni_body_tool.py:1677": {
+  "app/backend/tiangong-backend/omni_body_skill/tools/omni_body_tool.py:1678": {
    "category": "optional_dependency",
    "reason": "Reviewed fixed installed-library probe list: docx, pptx, openpyxl, PIL, pypdf, reportlab, imageio_ffmpeg. No model-supplied import name. Returns dependency availability only; does not claim application execution or grant authority.",
    "reviewed_line": "__import__(mod)"
   },
-  "app/backend/tiangong-backend/omni_body_skill/tools/omni_body_tool.py:960": {
+  "app/backend/tiangong-backend/omni_body_skill/tools/omni_body_tool.py:961": {
    "category": "tool_handler_dispatch",
    "reason": "Reviewed for ontology v1.55: handler name comes from the validated published dictionary binding after lifecycle/readiness checks, never arbitrary model attribute text. The generated mirror is checked against src/omni_body_skill/tools/omni_body_tool.py. Missing handlers fail before execution.",
    "reviewed_line": "handler = getattr(self, handler_name, None)"
@@ -571,12 +571,12 @@
    "reason": "Reads fixed emotional/state fields or probes named confirmation/lifecycle methods; it does not resolve model-supplied tool authority.",
    "reviewed_line": "intensity = sum(getattr(q, n) for n in _EMOTION_NAMES) / len(_EMOTION_NAMES)"
   },
-  "src/omni_body_skill/tools/omni_body_tool.py:1677": {
+  "src/omni_body_skill/tools/omni_body_tool.py:1678": {
    "category": "optional_dependency",
    "reason": "Reviewed fixed installed-library probe list: docx, pptx, openpyxl, PIL, pypdf, reportlab, imageio_ffmpeg. No model-supplied import name. Returns dependency availability only; does not claim application execution or grant authority.",
    "reviewed_line": "__import__(mod)"
   },
-  "src/omni_body_skill/tools/omni_body_tool.py:960": {
+  "src/omni_body_skill/tools/omni_body_tool.py:961": {
    "category": "tool_handler_dispatch",
    "reason": "Reviewed for ontology v1.55: handler name comes from the validated published dictionary binding after lifecycle/readiness checks, never arbitrary model attribute text. The generated mirror is checked against src/omni_body_skill/tools/omni_body_tool.py. Missing handlers fail before execution.",
    "reviewed_line": "handler = getattr(self, handler_name, None)"

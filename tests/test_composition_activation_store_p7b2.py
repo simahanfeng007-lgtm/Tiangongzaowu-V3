@@ -198,8 +198,8 @@ def test_p7b2_explicitly_advances_store_and_p19_compatibility() -> None:
     # Isolated desktop native tool PATH excludes inherited host tools in 1.75.
     # Rejected uploads drain one bounded window before close in 1.76.
     # Capability surface self-describes and evidence keeps raise sites in 1.77.
-    # Cache reset integrity and context-failure classification advance to 1.78.
-    assert VERIFICATION_PLANE_VERSION == "1.78"
+    # Short-name aliases retain the installed runtime's no-redirection boundary.
+    assert VERIFICATION_PLANE_VERSION == "1.79"
 
 
 def test_v29_store_migrates_additively_through_v30_to_current() -> None:

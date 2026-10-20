@@ -665,8 +665,9 @@ def _resolve_python_interpreter(*, controlled: bool = False) -> str:
                     or not all(item.is_dir() for item in directories)):
                 raise ValueError("bundled runtime files are missing")
             for item in [executable, *files, *directories]:
-                if (_is_link_or_reparse(item)
-                        or os.path.normcase(str(item.resolve(strict=True))) != os.path.normcase(str(item.absolute()))):
+                # A Windows 8.3 alias resolves to different text without redirecting
+                # the file. Inspect every ancestor rather than comparing spellings.
+                if any(_is_link_or_reparse(part) for part in (item, *item.parents)):
                     raise ValueError("bundled runtime contains a link or redirected ancestor")
             if not _is_python_interpreter(bundled):
                 raise ValueError("bundled Python launcher is unavailable")

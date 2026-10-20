@@ -58,6 +58,8 @@ from __future__ import annotations
 # continuation exceptions keep their message and raise site in evidence.
 # 1.78 preserves complete world snapshots after cache resets and distinguishes
 # context assembly failures from execution budget exhaustion.
-VERIFICATION_PLANE_VERSION = "1.78"
+# 1.79 accepts Windows short-name aliases while rejecting actual redirected
+# ancestors when selecting the installed private Python runtime.
+VERIFICATION_PLANE_VERSION = "1.79"
 
 __all__ = ["VERIFICATION_PLANE_VERSION"]

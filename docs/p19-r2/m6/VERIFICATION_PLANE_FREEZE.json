@@ -1,5 +1,5 @@
 {
- "verification_plane_version": "1.78",
+ "verification_plane_version": "1.79",
  "baseline_sha": "9a3344de9fe468fa845d2ff501166484439b8ec4",
  "store_schema_version": 33,
  "contract_schema_versions": {
@@ -71,7 +71,7 @@
   "src/total_gateway/desktop_composition.py": "944ec4af1f88a1331b2d5c408d770bfd71a34040a8822edb969b706e39e448e2",
   "src/total_gateway/desktop_api.py": "065597c1ef448a6e17448ae14ed62edf40f3860a7072f13e130b239ffa794208",
   "src/total_gateway/installed_composition_sources.py": "60b2798bf83a9fa6ee71195a528732616b399f1033ce96fa7a536cff2f9f6497",
-  "src/omni_body_skill/tools/omni_body_tool.py": "9140c329f540ccd9de277d9aa199e27fba546314c772e436e25adffff81de424",
+  "src/omni_body_skill/tools/omni_body_tool.py": "002613d794bc476cc3e9231495c98afe3fa4e27ca0380370bc357533f3c7d122",
   "src/omni_body_skill/tools/windows_appcontainer.py": "a7d3da036137a021bdc1a429e099a454f343b20600951ff9274184b5e64ee9b2",
   "src/omni_body_skill/tools/windows_python_compat.py": "f86fa7ddb4dd708b3fa8c6aef2dda4614a670b735b4bca899af202f6824b14c5",
   "src/omni_body_skill/tools/path_identity.py": "761a921a44237e8668597435c37775f094467a25f4f7cc01258cedd45cc98747",
@@ -180,7 +180,7 @@
   "src/total_gateway/verification_repair_coordinator.py": "089efa6a4c888d4e06d4bdd5044a0adc283d69648463a859f42e2c063f0187f6",
   "src/total_gateway/verification_repair_policy.py": "bb2ac036d01a516729d43cc068b37bb3e92f71983004275937fcfab82b2e9eaf",
   "src/total_gateway/verification_plan_executor.py": "63a27353f037dca87e64e8ef80ceee187260949650d404e6ea9fd83d84174452",
-  "src/total_gateway/verification_plane.py": "1477c34ccc17d3fa8662078c06cefee5d0038721a2fc51864ccfd0bd7b3b96bd",
+  "src/total_gateway/verification_plane.py": "9ad67e433436b6c71e74e9bcf89ebf38d25167dd4aad249b4f1a5800330d4d52",
   "src/total_gateway/verification_readiness.py": "3c1e7f89fb958ba82cb2aed7de85a237a007717839727a5146a3d29d532a8a39",
   "src/total_gateway/verification_failure_evidence.py": "955b1d3c2e77b2ec229ebdd8da612f8ce26794d6fdfc849967ffaaef6fd73dea",
   "src/total_gateway/verification_registry.py": "afab7caae8079c241953c42d85945fbeb5b106114e16963219c1f8c5524b310a",

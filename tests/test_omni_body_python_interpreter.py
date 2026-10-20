@@ -142,6 +142,65 @@ class OmniBodyPythonInterpreterTests(unittest.TestCase):
                 finally:
                     item.write_bytes(saved)
 
+    @unittest.skipUnless(os.name == "nt", "Windows 8.3 aliases")
+    def test_installed_gateway_accepts_short_directory_alias(self) -> None:
+        import ctypes
+        from ctypes import wintypes
+
+        helpers = _load_interpreter_helpers()
+        with tempfile.TemporaryDirectory(prefix="tiangong-python-short-alias-") as temporary:
+            root = Path(temporary).resolve()
+            gateway, bundled = self.installed_fixture(root)
+            get_short_path = ctypes.WinDLL("kernel32", use_last_error=True).GetShortPathNameW
+            get_short_path.argtypes = [wintypes.LPCWSTR, wintypes.LPWSTR, wintypes.DWORD]
+            get_short_path.restype = wintypes.DWORD
+            buffer = ctypes.create_unicode_buffer(32768)
+            length = get_short_path(str(root), buffer, len(buffer))
+            self.assertTrue(0 < length < len(buffer), ctypes.get_last_error())
+            short_root = Path(buffer.value)
+            if os.path.normcase(str(short_root)) == os.path.normcase(str(root)):
+                self.skipTest("The test volume does not provide an 8.3 alias")
+            alias_gateway = short_root / gateway.relative_to(root)
+            for controlled in (False, True):
+                with self.subTest(controlled=controlled), \
+                        mock.patch.object(sys, "frozen", True, create=True), \
+                        mock.patch.object(sys, "executable", str(alias_gateway)), \
+                        mock.patch.object(shutil, "which", side_effect=AssertionError("must use private Python")):
+                    self.assertEqual(
+                        Path(helpers["_resolve_python_interpreter"](controlled=controlled)), bundled.resolve(),
+                    )
+
+    def test_installed_runtime_redirected_ancestor_is_rejected(self) -> None:
+        helpers = _load_interpreter_helpers()
+        with tempfile.TemporaryDirectory(prefix="tiangong-python-ancestor-") as temporary:
+            root = Path(temporary).resolve()
+            gateway, bundled = self.installed_fixture(root / "actual-install")
+            alias = root / "redirected-install"
+            if os.name == "nt":
+                command = Path(os.environ["SystemRoot"]) / "System32" / "cmd.exe"
+                created = subprocess.run(
+                    [str(command), "/d", "/c", "mklink", "/J", str(alias), str(gateway.parents[2])],
+                    capture_output=True, timeout=10,
+                )
+                self.assertEqual(created.returncode, 0, created.stderr)
+            else:
+                alias.symlink_to(gateway.parents[2], target_is_directory=True)
+            try:
+                redirected = alias / gateway.relative_to(gateway.parents[2])
+                for controlled in (False, True):
+                    with self.subTest(controlled=controlled), mock.patch.object(sys, "platform", "win32"), \
+                            mock.patch.object(sys, "frozen", True, create=True), \
+                            mock.patch.object(sys, "executable", str(redirected)), \
+                            mock.patch.object(shutil, "which", side_effect=AssertionError("must fail closed")):
+                        with self.assertRaisesRegex(helpers["OmniBodyError"], "trusted bundled Python"):
+                            helpers["_resolve_python_interpreter"](controlled=controlled)
+            finally:
+                if os.name == "nt":
+                    alias.rmdir()
+                else:
+                    alias.unlink()
+            self.assertTrue(bundled.is_file())
+
     def test_installed_runtime_directory_link_is_rejected(self) -> None:
         helpers = _load_interpreter_helpers()
         with tempfile.TemporaryDirectory(prefix="tiangong-python-linked-") as temporary:
