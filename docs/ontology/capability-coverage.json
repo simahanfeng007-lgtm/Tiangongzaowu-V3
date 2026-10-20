@@ -2328,7 +2328,7 @@
         "kind": "method",
         "target": "_action_adobe_photoshop_document_create"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3901",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3920",
       "canonical_action": "adobe.photoshop.document.create",
       "connection_discovery": [
         {
@@ -2384,7 +2384,7 @@
         "kind": "method",
         "target": "_action_adobe_photoshop_document_open"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3908",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3927",
       "canonical_action": "adobe.photoshop.document.open",
       "connection_discovery": [
         {
@@ -2438,7 +2438,7 @@
         "kind": "method",
         "target": "_action_adobe_photoshop_export_png"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3952",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3971",
       "canonical_action": "adobe.photoshop.export.png",
       "connection_discovery": [
         {
@@ -2602,7 +2602,7 @@
         "kind": "method",
         "target": "_action_adobe_photoshop_image_crop"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3965",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3984",
       "canonical_action": "adobe.photoshop.image.crop",
       "connection_discovery": [
         {
@@ -2656,7 +2656,7 @@
         "kind": "method",
         "target": "_action_adobe_photoshop_image_resize"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3962",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3981",
       "canonical_action": "adobe.photoshop.image.resize",
       "connection_discovery": [
         {
@@ -2710,7 +2710,7 @@
         "kind": "method",
         "target": "_action_adobe_photoshop_layer_create"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3915",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3934",
       "canonical_action": "adobe.photoshop.layer.create",
       "connection_discovery": [
         {
@@ -2766,7 +2766,7 @@
         "kind": "method",
         "target": "_action_adobe_photoshop_layer_update"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3934",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3953",
       "canonical_action": "adobe.photoshop.layer.update",
       "connection_discovery": [
         {
@@ -2928,7 +2928,7 @@
         "kind": "method",
         "target": "_action_adobe_photoshop_text_add"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3928",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3947",
       "canonical_action": "adobe.photoshop.text.add",
       "connection_discovery": [
         {
@@ -4996,7 +4996,7 @@
         "kind": "method",
         "target": "_action_audio_concat"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3294",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3313",
       "canonical_action": "audio.concat",
       "connection_discovery": [],
       "contract_entries": {
@@ -5095,7 +5095,7 @@
         "kind": "method",
         "target": "_action_audio_tone"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3261",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3280",
       "canonical_action": "audio.tone",
       "connection_discovery": [],
       "contract_entries": {
@@ -5145,7 +5145,7 @@
         "kind": "method",
         "target": "_action_audio_trim"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3279",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3298",
       "canonical_action": "audio.trim",
       "connection_discovery": [],
       "contract_entries": {
@@ -5195,7 +5195,7 @@
         "kind": "method",
         "target": "_action_audio_tts"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:4113",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:4132",
       "canonical_action": "audio.tts",
       "connection_discovery": [],
       "contract_entries": {
@@ -5394,7 +5394,7 @@
         "kind": "method",
         "target": "_action_browser_chrome_click"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3752",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3771",
       "canonical_action": "browser.chrome.click",
       "connection_discovery": [
         {
@@ -5436,7 +5436,7 @@
       "retry": "observe_before_retry",
       "review_scope": "source_definition_and_binding_review",
       "runtime_literal_references": [
-        "src/omni_body_skill/tools/omni_body_tool.py:3754",
+        "src/omni_body_skill/tools/omni_body_tool.py:3773",
         "src/omni_body_skill/tools/pro_apps_v34.py:669",
         "src/omni_body_skill/tools/pro_apps_v34.py:698"
       ],
@@ -5562,7 +5562,7 @@
         "kind": "method",
         "target": "_action_browser_chrome_download"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3713",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3732",
       "canonical_action": "browser.chrome.download",
       "connection_discovery": [
         {
@@ -5618,7 +5618,7 @@
         "kind": "method",
         "target": "_action_browser_chrome_extract_dom"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3706",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3725",
       "canonical_action": "browser.chrome.extract_dom",
       "connection_discovery": [
         {
@@ -5672,7 +5672,7 @@
         "kind": "method",
         "target": "_action_browser_chrome_extract_text"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3686",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3705",
       "canonical_action": "browser.chrome.extract_text",
       "connection_discovery": [
         {
@@ -5834,7 +5834,7 @@
         "kind": "method",
         "target": "_action_browser_chrome_goto"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3606",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3625",
       "canonical_action": "browser.chrome.goto",
       "connection_discovery": [
         {
@@ -5944,7 +5944,7 @@
         "kind": "method",
         "target": "_action_browser_chrome_open"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3655",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3674",
       "canonical_action": "browser.chrome.open",
       "connection_discovery": [
         {
@@ -6000,7 +6000,7 @@
         "kind": "method",
         "target": "_action_browser_chrome_pdf_print"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3737",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3756",
       "canonical_action": "browser.chrome.pdf.print",
       "connection_discovery": [
         {
@@ -6164,7 +6164,7 @@
         "kind": "method",
         "target": "_action_browser_chrome_screenshot"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3741",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3760",
       "canonical_action": "browser.chrome.screenshot",
       "connection_discovery": [
         {
@@ -7406,7 +7406,7 @@
         "kind": "method",
         "target": "_action_browser_open"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3658",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3677",
       "canonical_action": "browser.open",
       "connection_discovery": [],
       "contract_entries": {
@@ -7589,7 +7589,7 @@
       "retry": "observe_before_retry",
       "review_scope": "source_definition_and_binding_review",
       "runtime_literal_references": [
-        "src/omni_body_skill/tools/omni_body_tool.py:3739",
+        "src/omni_body_skill/tools/omni_body_tool.py:3758",
         "src/omni_body_skill/tools/pro_apps_v34.py:100",
         "src/omni_body_skill/tools/pro_apps_v34.py:44",
         "src/omni_body_skill/tools/pro_apps_v34.py:703"
@@ -7641,7 +7641,7 @@
       "retry": "observe_before_retry",
       "review_scope": "source_definition_and_binding_review",
       "runtime_literal_references": [
-        "src/omni_body_skill/tools/omni_body_tool.py:3747",
+        "src/omni_body_skill/tools/omni_body_tool.py:3766",
         "src/omni_body_skill/tools/pro_apps_v34.py:100",
         "src/omni_body_skill/tools/pro_apps_v34.py:42",
         "src/omni_body_skill/tools/pro_apps_v34.py:698"
@@ -7707,7 +7707,7 @@
         "kind": "method",
         "target": "_action_browser_search_web"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3814",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3833",
       "canonical_action": "browser.search_web",
       "connection_discovery": [],
       "contract_entries": {
@@ -8991,7 +8991,7 @@
         "kind": "method",
         "target": "_action_code_patch_replace"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:2176",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:2195",
       "canonical_action": "code.patch_replace",
       "connection_discovery": [],
       "contract_entries": {
@@ -9029,8 +9029,8 @@
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:2965",
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:3688",
         "app/backend/tiangong-backend/v3/tool_result_contract.py:69",
-        "app/backend/tiangong-backend/v3/zongdiaodu.py:1149",
-        "app/backend/tiangong-backend/v3/zongdiaodu.py:1286",
+        "app/backend/tiangong-backend/v3/zongdiaodu.py:1168",
+        "app/backend/tiangong-backend/v3/zongdiaodu.py:1305",
         "src/omni_body_skill/tool_contracts.py:1214",
         "src/omni_body_skill/tool_contracts.py:1658",
         "src/omni_body_skill/tool_contracts.py:270",
@@ -9053,7 +9053,7 @@
         "kind": "method",
         "target": "_action_code_read"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:2141",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:2160",
       "canonical_action": "code.read",
       "connection_discovery": [],
       "contract_entries": {
@@ -9093,7 +9093,7 @@
         "app/backend/tiangong-backend/v3/permission_settings.py:67",
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:1485",
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:2764",
-        "app/backend/tiangong-backend/v3/simple_chain/kernel.py:4292",
+        "app/backend/tiangong-backend/v3/simple_chain/kernel.py:4320",
         "src/omni_body_skill/tool_contracts.py:72"
       ],
       "semantic_atomicity_review": "not_claimed_complete",
@@ -9108,7 +9108,7 @@
         "kind": "method",
         "target": "_action_code_write"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:2154",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:2173",
       "canonical_action": "code.write",
       "connection_discovery": [],
       "contract_entries": {
@@ -9150,9 +9150,9 @@
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:3247",
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:3688",
         "app/backend/tiangong-backend/v3/tool_result_contract.py:70",
-        "app/backend/tiangong-backend/v3/zongdiaodu.py:1148",
-        "app/backend/tiangong-backend/v3/zongdiaodu.py:1286",
-        "app/backend/tiangong-backend/v3/zongdiaodu.py:855",
+        "app/backend/tiangong-backend/v3/zongdiaodu.py:1167",
+        "app/backend/tiangong-backend/v3/zongdiaodu.py:1305",
+        "app/backend/tiangong-backend/v3/zongdiaodu.py:856",
         "src/omni_body_skill/tool_contracts.py:1202",
         "src/omni_body_skill/tool_contracts.py:1658",
         "src/omni_body_skill/tool_contracts.py:273",
@@ -12741,7 +12741,7 @@
         "src/omni_body_skill/tools/_stub_actions.py:9",
         "src/omni_body_skill/tools/delivery_kernel.py:185",
         "src/omni_body_skill/tools/delivery_kernel.py:76",
-        "src/omni_body_skill/tools/omni_body_tool.py:315"
+        "src/omni_body_skill/tools/omni_body_tool.py:325"
       ],
       "semantic_atomicity_review": "not_claimed_complete",
       "summary": "Package final deliverables, QC reports, source notes, and manifests into a zip archive."
@@ -12852,7 +12852,7 @@
         "kind": "method",
         "target": "_action_desktop_click"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:4208",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:4227",
       "canonical_action": "desktop.click",
       "connection_discovery": [],
       "contract_entries": {
@@ -12897,7 +12897,7 @@
         "kind": "method",
         "target": "_action_desktop_hotkey"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:4220",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:4239",
       "canonical_action": "desktop.hotkey",
       "connection_discovery": [],
       "contract_entries": {
@@ -12942,7 +12942,7 @@
         "kind": "method",
         "target": "_action_desktop_screenshot"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:4188",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:4207",
       "canonical_action": "desktop.screenshot",
       "connection_discovery": [],
       "contract_entries": {
@@ -12987,7 +12987,7 @@
         "kind": "method",
         "target": "_action_desktop_type"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:4214",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:4233",
       "canonical_action": "desktop.type",
       "connection_discovery": [],
       "contract_entries": {
@@ -14205,7 +14205,7 @@
         "kind": "method",
         "target": "_action_docx_create"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:2400",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:2419",
       "canonical_action": "docx.create",
       "connection_discovery": [],
       "contract_entries": {
@@ -14246,16 +14246,16 @@
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:3247",
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:3688",
         "app/backend/tiangong-backend/v3/tool_result_contract.py:71",
-        "app/backend/tiangong-backend/v3/zongdiaodu.py:1155",
-        "app/backend/tiangong-backend/v3/zongdiaodu.py:855",
+        "app/backend/tiangong-backend/v3/zongdiaodu.py:1174",
+        "app/backend/tiangong-backend/v3/zongdiaodu.py:856",
         "src/omni_body_skill/tool_contracts.py:1037",
         "src/omni_body_skill/tool_contracts.py:1287",
         "src/omni_body_skill/tool_contracts.py:1288",
         "src/omni_body_skill/tool_contracts.py:1306",
         "src/omni_body_skill/tool_contracts.py:85",
-        "src/omni_body_skill/tools/omni_body_tool.py:1341",
-        "src/omni_body_skill/tools/omni_body_tool.py:1348",
-        "src/omni_body_skill/tools/omni_body_tool.py:836"
+        "src/omni_body_skill/tools/omni_body_tool.py:1356",
+        "src/omni_body_skill/tools/omni_body_tool.py:1363",
+        "src/omni_body_skill/tools/omni_body_tool.py:851"
       ],
       "semantic_atomicity_review": "not_claimed_complete",
       "summary": "Create a Word .docx document from structured sections/tables."
@@ -14271,7 +14271,7 @@
         "kind": "method",
         "target": "_action_elevenlabs_tts_create"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:4169",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:4188",
       "canonical_action": "elevenlabs.tts.create",
       "connection_discovery": [
         {
@@ -14536,7 +14536,7 @@
         "kind": "method",
         "target": "_action_feishu_docs_doc_create"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:4074",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:4093",
       "canonical_action": "feishu.docs.doc.create",
       "connection_discovery": [
         {
@@ -14590,7 +14590,7 @@
         "kind": "method",
         "target": "_action_feishu_docs_doc_read"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:4089",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:4108",
       "canonical_action": "feishu.docs.doc.read",
       "connection_discovery": [
         {
@@ -14644,7 +14644,7 @@
         "kind": "method",
         "target": "_action_feishu_docs_doc_update"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:4092",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:4111",
       "canonical_action": "feishu.docs.doc.update",
       "connection_discovery": [
         {
@@ -14698,7 +14698,7 @@
         "kind": "method",
         "target": "_action_feishu_docs_export_docx"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:4100",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:4119",
       "canonical_action": "feishu.docs.export.docx",
       "connection_discovery": [
         {
@@ -14752,7 +14752,7 @@
         "kind": "method",
         "target": "_action_feishu_docs_export_pdf"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:4107",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:4126",
       "canonical_action": "feishu.docs.export.pdf",
       "connection_discovery": [
         {
@@ -16645,7 +16645,7 @@
         "kind": "method",
         "target": "_action_file_append"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:1968",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:1987",
       "canonical_action": "file.append",
       "connection_discovery": [],
       "contract_entries": {
@@ -16687,8 +16687,8 @@
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:3247",
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:3688",
         "app/backend/tiangong-backend/v3/tool_result_contract.py:72",
-        "app/backend/tiangong-backend/v3/zongdiaodu.py:1147",
-        "app/backend/tiangong-backend/v3/zongdiaodu.py:1286",
+        "app/backend/tiangong-backend/v3/zongdiaodu.py:1166",
+        "app/backend/tiangong-backend/v3/zongdiaodu.py:1305",
         "src/omni_body_skill/tool_contracts.py:1204",
         "src/omni_body_skill/tool_contracts.py:1658",
         "src/omni_body_skill/tool_contracts.py:74"
@@ -16705,7 +16705,7 @@
         "kind": "method",
         "target": "_action_file_copy"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:1992",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:2011",
       "canonical_action": "file.copy",
       "connection_discovery": [],
       "contract_entries": {
@@ -16743,7 +16743,7 @@
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:2966",
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:3688",
         "app/backend/tiangong-backend/v3/tool_result_contract.py:73",
-        "app/backend/tiangong-backend/v3/zongdiaodu.py:1286",
+        "app/backend/tiangong-backend/v3/zongdiaodu.py:1305",
         "src/omni_body_skill/tool_contracts.py:1166",
         "src/omni_body_skill/tool_contracts.py:1206",
         "src/omni_body_skill/tool_contracts.py:1667",
@@ -16762,7 +16762,7 @@
         "kind": "method",
         "target": "_action_file_delete_to_trash"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:2040",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:2059",
       "canonical_action": "file.delete_to_trash",
       "connection_discovery": [],
       "contract_entries": {
@@ -16802,7 +16802,7 @@
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:3243",
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:3689",
         "app/backend/tiangong-backend/v3/tool_result_contract.py:74",
-        "app/backend/tiangong-backend/v3/zongdiaodu.py:1286",
+        "app/backend/tiangong-backend/v3/zongdiaodu.py:1305",
         "src/omni_body_skill/tool_contracts.py:1658",
         "src/omni_body_skill/tool_contracts.py:76",
         "src/omni_body_skill/tool_contracts.py:957",
@@ -16820,7 +16820,7 @@
         "kind": "method",
         "target": "_action_file_hash"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:2086",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:2105",
       "canonical_action": "file.hash",
       "connection_discovery": [],
       "contract_entries": {
@@ -16859,7 +16859,7 @@
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:3236",
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:3434",
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:3896",
-        "app/backend/tiangong-backend/v3/simple_chain/kernel.py:4291",
+        "app/backend/tiangong-backend/v3/simple_chain/kernel.py:4319",
         "src/omni_body_skill/tool_contracts.py:1171",
         "src/omni_body_skill/tool_contracts.py:1175",
         "src/omni_body_skill/tool_contracts.py:239",
@@ -16878,7 +16878,7 @@
         "kind": "method",
         "target": "_action_file_list"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:1815",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:1834",
       "canonical_action": "file.list",
       "connection_discovery": [],
       "contract_entries": {
@@ -16919,9 +16919,9 @@
         "app/backend/tiangong-backend/v3/permission_settings.py:67",
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:2764",
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:3236",
-        "app/backend/tiangong-backend/v3/simple_chain/kernel.py:4291",
+        "app/backend/tiangong-backend/v3/simple_chain/kernel.py:4319",
         "app/backend/tiangong-backend/v3/world_dictionary_binding.py:55",
-        "app/backend/tiangong-backend/v3/zongdiaodu.py:1151",
+        "app/backend/tiangong-backend/v3/zongdiaodu.py:1170",
         "src/omni_body_skill/tool_contracts.py:1171",
         "src/omni_body_skill/tool_contracts.py:1174",
         "src/omni_body_skill/tool_contracts.py:221",
@@ -16940,7 +16940,7 @@
         "kind": "method",
         "target": "_action_file_mkdir"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:2027",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:2046",
       "canonical_action": "file.mkdir",
       "connection_discovery": [],
       "contract_entries": {
@@ -16978,8 +16978,8 @@
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:2966",
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:3689",
         "app/backend/tiangong-backend/v3/tool_result_contract.py:75",
-        "app/backend/tiangong-backend/v3/zongdiaodu.py:1145",
-        "app/backend/tiangong-backend/v3/zongdiaodu.py:1286",
+        "app/backend/tiangong-backend/v3/zongdiaodu.py:1164",
+        "app/backend/tiangong-backend/v3/zongdiaodu.py:1305",
         "src/omni_body_skill/tool_contracts.py:266",
         "src/omni_body_skill/tool_contracts.py:273",
         "src/omni_body_skill/tool_contracts.py:599",
@@ -17002,7 +17002,7 @@
         "kind": "method",
         "target": "_action_file_move"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:1999",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:2018",
       "canonical_action": "file.move",
       "connection_discovery": [],
       "contract_entries": {
@@ -17041,7 +17041,7 @@
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:3243",
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:3689",
         "app/backend/tiangong-backend/v3/tool_result_contract.py:76",
-        "app/backend/tiangong-backend/v3/zongdiaodu.py:1286",
+        "app/backend/tiangong-backend/v3/zongdiaodu.py:1305",
         "src/omni_body_skill/tool_contracts.py:1166",
         "src/omni_body_skill/tool_contracts.py:1206",
         "src/omni_body_skill/tool_contracts.py:1658",
@@ -17106,7 +17106,7 @@
         "kind": "method",
         "target": "_action_file_read"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:1865",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:1884",
       "canonical_action": "file.read",
       "connection_discovery": [],
       "contract_entries": {
@@ -17149,15 +17149,15 @@
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:2764",
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:3236",
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:3896",
-        "app/backend/tiangong-backend/v3/simple_chain/kernel.py:4291",
+        "app/backend/tiangong-backend/v3/simple_chain/kernel.py:4319",
         "app/backend/tiangong-backend/v3/world_dictionary_binding.py:55",
-        "app/backend/tiangong-backend/v3/zongdiaodu.py:1150",
+        "app/backend/tiangong-backend/v3/zongdiaodu.py:1169",
         "src/omni_body_skill/tool_contracts.py:1171",
         "src/omni_body_skill/tool_contracts.py:1173",
         "src/omni_body_skill/tool_contracts.py:205",
         "src/omni_body_skill/tool_contracts.py:81",
         "src/omni_body_skill/tool_contracts.py:959",
-        "src/omni_body_skill/tools/omni_body_tool.py:1880",
+        "src/omni_body_skill/tools/omni_body_tool.py:1899",
         "src/omni_body_skill/tools/omni_capability.py:35"
       ],
       "semantic_atomicity_review": "not_claimed_complete",
@@ -17172,7 +17172,7 @@
         "kind": "method",
         "target": "_action_file_rename"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:2011",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:2030",
       "canonical_action": "file.rename",
       "connection_discovery": [],
       "contract_entries": {
@@ -17229,7 +17229,7 @@
         "kind": "method",
         "target": "_action_file_search"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:2050",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:2069",
       "canonical_action": "file.search",
       "connection_discovery": [],
       "contract_entries": {
@@ -17264,7 +17264,7 @@
       "runtime_literal_references": [
         "app/backend/tiangong-backend/v3/permission_settings.py:67",
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:2764",
-        "app/backend/tiangong-backend/v3/simple_chain/kernel.py:4291",
+        "app/backend/tiangong-backend/v3/simple_chain/kernel.py:4319",
         "src/omni_body_skill/tool_contracts.py:83"
       ],
       "semantic_atomicity_review": "not_claimed_complete",
@@ -17279,7 +17279,7 @@
         "kind": "method",
         "target": "_action_file_write"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:1888",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:1907",
       "canonical_action": "file.write",
       "connection_discovery": [],
       "contract_entries": {
@@ -17322,9 +17322,9 @@
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:3689",
         "app/backend/tiangong-backend/v3/tool_result_contract.py:78",
         "app/backend/tiangong-backend/v3/world_dictionary_binding.py:55",
-        "app/backend/tiangong-backend/v3/zongdiaodu.py:1146",
-        "app/backend/tiangong-backend/v3/zongdiaodu.py:1286",
-        "app/backend/tiangong-backend/v3/zongdiaodu.py:855",
+        "app/backend/tiangong-backend/v3/zongdiaodu.py:1165",
+        "app/backend/tiangong-backend/v3/zongdiaodu.py:1305",
+        "app/backend/tiangong-backend/v3/zongdiaodu.py:856",
         "src/omni_body_skill/tool_contracts.py:1202",
         "src/omni_body_skill/tool_contracts.py:1658",
         "src/omni_body_skill/tool_contracts.py:273",
@@ -18375,7 +18375,7 @@
         "kind": "method",
         "target": "_action_git_clone"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:2322",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:2341",
       "canonical_action": "git.clone",
       "connection_discovery": [],
       "contract_entries": {
@@ -21353,7 +21353,7 @@
         "kind": "method",
         "target": "_action_http_get"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3661",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3680",
       "canonical_action": "http.get",
       "connection_discovery": [],
       "contract_entries": {
@@ -21724,7 +21724,7 @@
         "kind": "method",
         "target": "_action_image_add_text"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3204",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3223",
       "canonical_action": "image.add_text",
       "connection_discovery": [],
       "contract_entries": {
@@ -21776,7 +21776,7 @@
         "kind": "method",
         "target": "_action_image_compose"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3231",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3250",
       "canonical_action": "image.compose",
       "connection_discovery": [],
       "contract_entries": {
@@ -21829,7 +21829,7 @@
         "kind": "method",
         "target": "_action_image_convert"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3249",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3268",
       "canonical_action": "image.convert",
       "connection_discovery": [],
       "contract_entries": {
@@ -21882,7 +21882,7 @@
         "kind": "method",
         "target": "_action_image_create_canvas"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3145",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3164",
       "canonical_action": "image.create_canvas",
       "connection_discovery": [],
       "contract_entries": {
@@ -21935,7 +21935,7 @@
         "kind": "method",
         "target": "_action_image_crop"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3179",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3198",
       "canonical_action": "image.crop",
       "connection_discovery": [],
       "contract_entries": {
@@ -21988,7 +21988,7 @@
         "kind": "method",
         "target": "_action_image_info"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3139",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3158",
       "canonical_action": "image.info",
       "connection_discovery": [],
       "contract_entries": {
@@ -22025,7 +22025,7 @@
       "runtime_literal_references": [
         "app/backend/tiangong-backend/v3/permission_settings.py:68",
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:1488",
-        "app/backend/tiangong-backend/v3/simple_chain/kernel.py:4292"
+        "app/backend/tiangong-backend/v3/simple_chain/kernel.py:4320"
       ],
       "semantic_atomicity_review": "not_claimed_complete",
       "summary": "Inspect image size/mode/format."
@@ -22086,7 +22086,7 @@
         "kind": "method",
         "target": "_action_image_resize"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3156",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3175",
       "canonical_action": "image.resize",
       "connection_discovery": [],
       "contract_entries": {
@@ -22139,7 +22139,7 @@
         "kind": "method",
         "target": "_action_image_rotate"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3193",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3212",
       "canonical_action": "image.rotate",
       "connection_discovery": [],
       "contract_entries": {
@@ -22518,7 +22518,7 @@
         "kind": "method",
         "target": "_action_jianying_cover_create"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:4024",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:4043",
       "canonical_action": "jianying.cover.create",
       "connection_discovery": [
         {
@@ -22626,7 +22626,7 @@
         "kind": "method",
         "target": "_action_jianying_export_mp4"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:4030",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:4049",
       "canonical_action": "jianying.export.mp4",
       "connection_discovery": [
         {
@@ -22680,7 +22680,7 @@
         "kind": "method",
         "target": "_action_jianying_media_import"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3993",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:4012",
       "canonical_action": "jianying.media.import",
       "connection_discovery": [
         {
@@ -22734,7 +22734,7 @@
         "kind": "method",
         "target": "_action_jianying_music_add"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:4015",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:4034",
       "canonical_action": "jianying.music.add",
       "connection_discovery": [
         {
@@ -22788,7 +22788,7 @@
         "kind": "method",
         "target": "_action_jianying_project_create"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3988",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:4007",
       "canonical_action": "jianying.project.create",
       "connection_discovery": [
         {
@@ -22842,7 +22842,7 @@
         "kind": "method",
         "target": "_action_jianying_subtitle_add"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:4009",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:4028",
       "canonical_action": "jianying.subtitle.add",
       "connection_discovery": [
         {
@@ -23004,7 +23004,7 @@
         "kind": "method",
         "target": "_action_jianying_timeline_cut"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:4003",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:4022",
       "canonical_action": "jianying.timeline.cut",
       "connection_discovery": [
         {
@@ -24293,7 +24293,7 @@
         "kind": "method",
         "target": "_action_learning_ingest"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:1688",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:1707",
       "canonical_action": "learning.ingest",
       "connection_discovery": [],
       "contract_entries": {
@@ -24333,8 +24333,8 @@
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:3348",
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:3530",
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:3723",
-        "app/backend/tiangong-backend/v3/zongdiaodu.py:4158",
-        "app/backend/tiangong-backend/v3/zongdiaodu.py:4601"
+        "app/backend/tiangong-backend/v3/zongdiaodu.py:4177",
+        "app/backend/tiangong-backend/v3/zongdiaodu.py:4620"
       ],
       "semantic_atomicity_review": "not_claimed_complete",
       "summary": "Create a pending learning card from a host-verified explicit user learning request; never compiles, activates, registers, or releases tools."
@@ -24348,7 +24348,7 @@
         "kind": "method",
         "target": "_action_life_activity_query"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:1584",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:1603",
       "canonical_action": "life.activity.query",
       "connection_discovery": [],
       "contract_entries": {
@@ -24393,7 +24393,7 @@
         "kind": "method",
         "target": "_action_life_body_state_query"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:1607",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:1626",
       "canonical_action": "life.body.state.query",
       "connection_discovery": [],
       "contract_entries": {
@@ -24713,7 +24713,7 @@
         "kind": "method",
         "target": "_action_linux_desktop_click"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:4239",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:4258",
       "canonical_action": "linux.desktop.click",
       "connection_discovery": [
         {
@@ -24929,7 +24929,7 @@
         "kind": "method",
         "target": "_action_linux_desktop_hotkey"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:4241",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:4260",
       "canonical_action": "linux.desktop.hotkey",
       "connection_discovery": [
         {
@@ -25037,7 +25037,7 @@
         "kind": "method",
         "target": "_action_linux_desktop_screenshot"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:4238",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:4257",
       "canonical_action": "linux.desktop.screenshot",
       "connection_discovery": [
         {
@@ -25091,7 +25091,7 @@
         "kind": "method",
         "target": "_action_linux_desktop_type"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:4240",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:4259",
       "canonical_action": "linux.desktop.type",
       "connection_discovery": [
         {
@@ -25253,7 +25253,7 @@
         "kind": "method",
         "target": "_action_macos_desktop_click"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:4235",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:4254",
       "canonical_action": "macos.desktop.click",
       "connection_discovery": [
         {
@@ -25469,7 +25469,7 @@
         "kind": "method",
         "target": "_action_macos_desktop_hotkey"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:4237",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:4256",
       "canonical_action": "macos.desktop.hotkey",
       "connection_discovery": [
         {
@@ -25577,7 +25577,7 @@
         "kind": "method",
         "target": "_action_macos_desktop_screenshot"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:4234",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:4253",
       "canonical_action": "macos.desktop.screenshot",
       "connection_discovery": [
         {
@@ -25631,7 +25631,7 @@
         "kind": "method",
         "target": "_action_macos_desktop_type"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:4236",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:4255",
       "canonical_action": "macos.desktop.type",
       "connection_discovery": [
         {
@@ -28951,7 +28951,7 @@
         "kind": "method",
         "target": "_action_mindmap_create"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:2785",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:2804",
       "canonical_action": "mindmap.create",
       "connection_discovery": [],
       "contract_entries": {
@@ -28990,14 +28990,14 @@
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:3249",
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:3690",
         "app/backend/tiangong-backend/v3/tool_result_contract.py:86",
-        "app/backend/tiangong-backend/v3/zongdiaodu.py:855",
+        "app/backend/tiangong-backend/v3/zongdiaodu.py:856",
         "src/omni_body_skill/tool_contracts.py:1037",
         "src/omni_body_skill/tool_contracts.py:1287",
         "src/omni_body_skill/tool_contracts.py:1288",
         "src/omni_body_skill/tool_contracts.py:1308",
         "src/omni_body_skill/tool_contracts.py:88",
-        "src/omni_body_skill/tools/omni_body_tool.py:1353",
-        "src/omni_body_skill/tools/omni_body_tool.py:836"
+        "src/omni_body_skill/tools/omni_body_tool.py:1368",
+        "src/omni_body_skill/tools/omni_body_tool.py:851"
       ],
       "semantic_atomicity_review": "not_claimed_complete",
       "summary": "Create Mermaid mindmap markdown and optional OPML."
@@ -29044,7 +29044,7 @@
       "retry": "read_retry",
       "review_scope": "source_definition_and_binding_review",
       "runtime_literal_references": [
-        "app/backend/tiangong-backend/v3/simple_chain/kernel.py:4288",
+        "app/backend/tiangong-backend/v3/simple_chain/kernel.py:4316",
         "src/omni_body_skill/model_adapters/core.py:25",
         "src/omni_body_skill/model_adapters/core.py:424"
       ],
@@ -29093,7 +29093,7 @@
       "retry": "read_retry",
       "review_scope": "source_definition_and_binding_review",
       "runtime_literal_references": [
-        "app/backend/tiangong-backend/v3/simple_chain/kernel.py:4288",
+        "app/backend/tiangong-backend/v3/simple_chain/kernel.py:4316",
         "src/omni_body_skill/model_adapters/core.py:23",
         "src/omni_body_skill/model_adapters/core.py:410"
       ],
@@ -29142,7 +29142,7 @@
       "retry": "read_retry",
       "review_scope": "source_definition_and_binding_review",
       "runtime_literal_references": [
-        "app/backend/tiangong-backend/v3/simple_chain/kernel.py:4288",
+        "app/backend/tiangong-backend/v3/simple_chain/kernel.py:4316",
         "src/omni_body_skill/model_adapters/core.py:24",
         "src/omni_body_skill/model_adapters/core.py:413"
       ],
@@ -29191,7 +29191,7 @@
       "retry": "read_retry",
       "review_scope": "source_definition_and_binding_review",
       "runtime_literal_references": [
-        "app/backend/tiangong-backend/v3/simple_chain/kernel.py:4289",
+        "app/backend/tiangong-backend/v3/simple_chain/kernel.py:4317",
         "src/omni_body_skill/model_adapters/core.py:27",
         "src/omni_body_skill/model_adapters/core.py:431"
       ],
@@ -29240,7 +29240,7 @@
       "retry": "read_retry",
       "review_scope": "source_definition_and_binding_review",
       "runtime_literal_references": [
-        "app/backend/tiangong-backend/v3/simple_chain/kernel.py:4290",
+        "app/backend/tiangong-backend/v3/simple_chain/kernel.py:4318",
         "src/omni_body_skill/model_adapters/core.py:28",
         "src/omni_body_skill/model_adapters/core.py:434"
       ],
@@ -29289,7 +29289,7 @@
       "retry": "read_retry",
       "review_scope": "source_definition_and_binding_review",
       "runtime_literal_references": [
-        "app/backend/tiangong-backend/v3/simple_chain/kernel.py:4289",
+        "app/backend/tiangong-backend/v3/simple_chain/kernel.py:4317",
         "src/omni_body_skill/model_adapters/core.py:26",
         "src/omni_body_skill/model_adapters/core.py:428"
       ],
@@ -29338,7 +29338,7 @@
       "retry": "read_retry",
       "review_scope": "source_definition_and_binding_review",
       "runtime_literal_references": [
-        "app/backend/tiangong-backend/v3/simple_chain/kernel.py:4290",
+        "app/backend/tiangong-backend/v3/simple_chain/kernel.py:4318",
         "src/omni_body_skill/model_adapters/core.py:29",
         "src/omni_body_skill/model_adapters/core.py:437"
       ],
@@ -31722,7 +31722,7 @@
         "kind": "method",
         "target": "_action_pdf_create_from_text"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3026",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3045",
       "canonical_action": "pdf.create_from_text",
       "connection_discovery": [],
       "contract_entries": {
@@ -31760,7 +31760,7 @@
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:3250",
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:3691",
         "app/backend/tiangong-backend/v3/tool_result_contract.py:87",
-        "app/backend/tiangong-backend/v3/zongdiaodu.py:1158"
+        "app/backend/tiangong-backend/v3/zongdiaodu.py:1177"
       ],
       "semantic_atomicity_review": "not_claimed_complete",
       "summary": "Create a simple PDF from text via reportlab."
@@ -31774,7 +31774,7 @@
         "kind": "method",
         "target": "_action_pdf_extract_text"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:2965",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:2984",
       "canonical_action": "pdf.extract_text",
       "connection_discovery": [],
       "contract_entries": {
@@ -31813,7 +31813,7 @@
         "app/backend/tiangong-backend/v3/execution_integrity.py:928",
         "app/backend/tiangong-backend/v3/permission_settings.py:68",
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:1487",
-        "app/backend/tiangong-backend/v3/simple_chain/kernel.py:4292"
+        "app/backend/tiangong-backend/v3/simple_chain/kernel.py:4320"
       ],
       "semantic_atomicity_review": "not_claimed_complete",
       "summary": "Extract text from a PDF via pypdf."
@@ -32810,7 +32810,7 @@
         "kind": "method",
         "target": "_action_pptx_create"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:2513",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:2532",
       "canonical_action": "pptx.create",
       "connection_discovery": [],
       "contract_entries": {
@@ -32851,16 +32851,16 @@
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:3250",
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:3691",
         "app/backend/tiangong-backend/v3/tool_result_contract.py:88",
-        "app/backend/tiangong-backend/v3/zongdiaodu.py:1157",
+        "app/backend/tiangong-backend/v3/zongdiaodu.py:1176",
         "src/omni_body_skill/tool_contracts.py:1037",
         "src/omni_body_skill/tool_contracts.py:1287",
         "src/omni_body_skill/tool_contracts.py:1288",
         "src/omni_body_skill/tool_contracts.py:1307",
         "src/omni_body_skill/tool_contracts.py:1313",
         "src/omni_body_skill/tool_contracts.py:86",
-        "src/omni_body_skill/tools/omni_body_tool.py:1341",
-        "src/omni_body_skill/tools/omni_body_tool.py:359",
-        "src/omni_body_skill/tools/omni_body_tool.py:836"
+        "src/omni_body_skill/tools/omni_body_tool.py:1356",
+        "src/omni_body_skill/tools/omni_body_tool.py:369",
+        "src/omni_body_skill/tools/omni_body_tool.py:851"
       ],
       "semantic_atomicity_review": "not_claimed_complete",
       "summary": "Create a PowerPoint .pptx deck from structured slide specs."
@@ -32874,7 +32874,7 @@
         "kind": "method",
         "target": "_action_pptx_read"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:2550",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:2569",
       "canonical_action": "pptx.read",
       "connection_discovery": [],
       "contract_entries": {
@@ -32913,7 +32913,7 @@
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:3237",
         "src/omni_body_skill/tool_contracts.py:1330",
         "src/omni_body_skill/tool_contracts.py:87",
-        "src/omni_body_skill/tools/omni_body_tool.py:359"
+        "src/omni_body_skill/tools/omni_body_tool.py:369"
       ],
       "semantic_atomicity_review": "not_claimed_complete",
       "summary": "Inspect PowerPoint slide text, dimensions, placeholders, fonts, and meaningful visual evidence."
@@ -32978,7 +32978,7 @@
         "kind": "method",
         "target": "_action_python_run"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:2268",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:2287",
       "canonical_action": "python.run",
       "connection_discovery": [],
       "contract_entries": {
@@ -33025,17 +33025,17 @@
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:3894",
         "app/backend/tiangong-backend/v3/tool_result_contract.py:99",
         "app/backend/tiangong-backend/v3/world_dictionary_binding.py:55",
-        "app/backend/tiangong-backend/v3/zongdiaodu.py:1153",
-        "app/backend/tiangong-backend/v3/zongdiaodu.py:1166",
-        "app/backend/tiangong-backend/v3/zongdiaodu.py:1284",
+        "app/backend/tiangong-backend/v3/zongdiaodu.py:1172",
+        "app/backend/tiangong-backend/v3/zongdiaodu.py:1185",
+        "app/backend/tiangong-backend/v3/zongdiaodu.py:1303",
         "src/omni_body_skill/api/v1/v3/tools/omni_body.py:331",
         "src/omni_body_skill/api/v1/v3/tools/omni_body.py:332",
         "src/omni_body_skill/tool_contracts.py:1239",
         "src/omni_body_skill/tool_contracts.py:1677",
         "src/omni_body_skill/tool_contracts.py:275",
         "src/omni_body_skill/tool_contracts.py:717",
-        "src/omni_body_skill/tools/omni_body_tool.py:1416",
-        "src/omni_body_skill/tools/omni_body_tool.py:2277",
+        "src/omni_body_skill/tools/omni_body_tool.py:1431",
+        "src/omni_body_skill/tools/omni_body_tool.py:2296",
         "src/omni_body_skill/tools/omni_capability.py:111",
         "src/omni_body_skill/tools/omni_capability.py:62",
         "src/omni_body_skill/tools/omni_capability.py:93"
@@ -33281,7 +33281,7 @@
         "src/omni_body_skill/tool_contracts.py:89",
         "src/omni_body_skill/tools/delivery_kernel.py:169",
         "src/omni_body_skill/tools/delivery_kernel.py:67",
-        "src/omni_body_skill/tools/omni_body_tool.py:313"
+        "src/omni_body_skill/tools/omni_body_tool.py:323"
       ],
       "semantic_atomicity_review": "explicit_change_review",
       "summary": "Observe real PPT text and structure. Only explicit min_slides is checked; layout and content quality belong to the adversarial judge. No keyword, aspect-ratio or quality score gate."
@@ -33391,7 +33391,7 @@
         "kind": "method",
         "target": "_action_quality_javascript_syntax"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:2238",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:2257",
       "canonical_action": "quality.javascript_syntax",
       "connection_discovery": [],
       "contract_entries": {
@@ -33438,7 +33438,7 @@
         "kind": "method",
         "target": "_action_quality_python_syntax"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:2231",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:2250",
       "canonical_action": "quality.python_syntax",
       "connection_discovery": [],
       "contract_entries": {
@@ -33486,7 +33486,7 @@
         "kind": "method",
         "target": "_action_quality_run_tests"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:2250",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:2269",
       "canonical_action": "quality.run_tests",
       "connection_discovery": [],
       "contract_entries": {
@@ -33527,13 +33527,13 @@
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:3684",
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:3894",
         "app/backend/tiangong-backend/v3/tool_result_contract.py:99",
-        "app/backend/tiangong-backend/v3/zongdiaodu.py:1154",
-        "app/backend/tiangong-backend/v3/zongdiaodu.py:1166",
-        "app/backend/tiangong-backend/v3/zongdiaodu.py:1284",
+        "app/backend/tiangong-backend/v3/zongdiaodu.py:1173",
+        "app/backend/tiangong-backend/v3/zongdiaodu.py:1185",
+        "app/backend/tiangong-backend/v3/zongdiaodu.py:1303",
         "src/omni_body_skill/api/v1/v3/tools/omni_body.py:331",
         "src/omni_body_skill/api/v1/v3/tools/omni_body.py:332",
         "src/omni_body_skill/tools/delivery_kernel.py:582",
-        "src/omni_body_skill/tools/omni_body_tool.py:2254"
+        "src/omni_body_skill/tools/omni_body_tool.py:2273"
       ],
       "semantic_atomicity_review": "not_claimed_complete",
       "summary": "Run a test command inside workspace; requires allow_shell=True."
@@ -34231,7 +34231,7 @@
         "src/omni_body_skill/tools/_stub_actions.py:11",
         "src/omni_body_skill/tools/delivery_kernel.py:183",
         "src/omni_body_skill/tools/delivery_kernel.py:75",
-        "src/omni_body_skill/tools/omni_body_tool.py:314"
+        "src/omni_body_skill/tools/omni_body_tool.py:324"
       ],
       "semantic_atomicity_review": "not_claimed_complete",
       "summary": "Write a repair plan file from QC issues; does not autonomously modify deliverables."
@@ -34293,7 +34293,7 @@
         "kind": "method",
         "target": "_action_rollback_apply"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:4258",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:4277",
       "canonical_action": "rollback.apply",
       "connection_discovery": [],
       "contract_entries": {
@@ -34344,7 +34344,7 @@
         "kind": "method",
         "target": "_action_rollback_list"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:4245",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:4264",
       "canonical_action": "rollback.list",
       "connection_discovery": [],
       "contract_entries": {
@@ -35130,7 +35130,7 @@
         "kind": "method",
         "target": "_action_sheet_create"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:2571",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:2590",
       "canonical_action": "sheet.create",
       "connection_discovery": [],
       "contract_entries": {
@@ -35168,8 +35168,8 @@
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:3250",
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:3691",
         "app/backend/tiangong-backend/v3/tool_result_contract.py:90",
-        "app/backend/tiangong-backend/v3/zongdiaodu.py:1156",
-        "app/backend/tiangong-backend/v3/zongdiaodu.py:855"
+        "app/backend/tiangong-backend/v3/zongdiaodu.py:1175",
+        "app/backend/tiangong-backend/v3/zongdiaodu.py:856"
       ],
       "semantic_atomicity_review": "not_claimed_complete",
       "summary": "Create an .xlsx workbook from structured sheets."
@@ -35183,7 +35183,7 @@
         "kind": "method",
         "target": "_action_sheet_read"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:2647",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:2666",
       "canonical_action": "sheet.read",
       "connection_discovery": [],
       "contract_entries": {
@@ -35223,7 +35223,7 @@
         "app/backend/tiangong-backend/v3/permission_settings.py:67",
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:1486",
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:3239",
-        "app/backend/tiangong-backend/v3/simple_chain/kernel.py:4292"
+        "app/backend/tiangong-backend/v3/simple_chain/kernel.py:4320"
       ],
       "semantic_atomicity_review": "not_claimed_complete",
       "summary": "Read preview rows from .xlsx or .csv."
@@ -35237,7 +35237,7 @@
         "kind": "method",
         "target": "_action_shell_run"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:2349",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:2368",
       "canonical_action": "shell.run",
       "connection_discovery": [],
       "contract_entries": {
@@ -35282,15 +35282,15 @@
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:3894",
         "app/backend/tiangong-backend/v3/tool_result_contract.py:99",
         "app/backend/tiangong-backend/v3/world_dictionary_binding.py:55",
-        "app/backend/tiangong-backend/v3/zongdiaodu.py:1152",
-        "app/backend/tiangong-backend/v3/zongdiaodu.py:1166",
+        "app/backend/tiangong-backend/v3/zongdiaodu.py:1171",
+        "app/backend/tiangong-backend/v3/zongdiaodu.py:1185",
         "src/omni_body_skill/api/v1/v3/tools/omni_body.py:331",
         "src/omni_body_skill/api/v1/v3/tools/omni_body.py:332",
         "src/omni_body_skill/tool_contracts.py:1231",
         "src/omni_body_skill/tool_contracts.py:1677",
         "src/omni_body_skill/tool_contracts.py:1678",
         "src/omni_body_skill/tool_contracts.py:1682",
-        "src/omni_body_skill/tools/omni_body_tool.py:2355"
+        "src/omni_body_skill/tools/omni_body_tool.py:2374"
       ],
       "semantic_atomicity_review": "not_claimed_complete",
       "summary": "Run shell command in workspace; requires allow_shell=True."
@@ -35944,13 +35944,13 @@
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:3239",
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:3718",
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:3773",
-        "app/backend/tiangong-backend/v3/simple_chain/kernel.py:4286",
-        "app/backend/tiangong-backend/v3/zongdiaodu.py:1187",
-        "app/backend/tiangong-backend/v3/zongdiaodu.py:2368",
-        "app/backend/tiangong-backend/v3/zongdiaodu.py:3352",
-        "app/backend/tiangong-backend/v3/zongdiaodu.py:3359",
-        "app/backend/tiangong-backend/v3/zongdiaodu.py:4148",
-        "app/backend/tiangong-backend/v3/zongdiaodu.py:4237",
+        "app/backend/tiangong-backend/v3/simple_chain/kernel.py:4314",
+        "app/backend/tiangong-backend/v3/zongdiaodu.py:1206",
+        "app/backend/tiangong-backend/v3/zongdiaodu.py:2387",
+        "app/backend/tiangong-backend/v3/zongdiaodu.py:3371",
+        "app/backend/tiangong-backend/v3/zongdiaodu.py:3378",
+        "app/backend/tiangong-backend/v3/zongdiaodu.py:4167",
+        "app/backend/tiangong-backend/v3/zongdiaodu.py:4256",
         "src/omni_body_skill/tools/skill_router.py:112",
         "src/omni_body_skill/tools/skill_router.py:19",
         "src/omni_body_skill/tools/skill_router.py:222",
@@ -36005,7 +36005,7 @@
       "runtime_literal_references": [
         "app/backend/tiangong-backend/v3/permission_settings.py:65",
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:2765",
-        "app/backend/tiangong-backend/v3/simple_chain/kernel.py:4286",
+        "app/backend/tiangong-backend/v3/simple_chain/kernel.py:4314",
         "src/omni_body_skill/tools/skill_router.py:111",
         "src/omni_body_skill/tools/skill_router.py:222",
         "src/omni_body_skill/tools/skill_router.py:242",
@@ -36122,13 +36122,13 @@
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:3239",
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:3718",
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:3773",
-        "app/backend/tiangong-backend/v3/simple_chain/kernel.py:4286",
-        "app/backend/tiangong-backend/v3/zongdiaodu.py:1187",
-        "app/backend/tiangong-backend/v3/zongdiaodu.py:2368",
-        "app/backend/tiangong-backend/v3/zongdiaodu.py:3352",
-        "app/backend/tiangong-backend/v3/zongdiaodu.py:3359",
-        "app/backend/tiangong-backend/v3/zongdiaodu.py:4148",
-        "app/backend/tiangong-backend/v3/zongdiaodu.py:4237",
+        "app/backend/tiangong-backend/v3/simple_chain/kernel.py:4314",
+        "app/backend/tiangong-backend/v3/zongdiaodu.py:1206",
+        "app/backend/tiangong-backend/v3/zongdiaodu.py:2387",
+        "app/backend/tiangong-backend/v3/zongdiaodu.py:3371",
+        "app/backend/tiangong-backend/v3/zongdiaodu.py:3378",
+        "app/backend/tiangong-backend/v3/zongdiaodu.py:4167",
+        "app/backend/tiangong-backend/v3/zongdiaodu.py:4256",
         "src/omni_body_skill/tools/skill_router.py:113",
         "src/omni_body_skill/tools/skill_router.py:24",
         "src/omni_body_skill/tools/skill_router.py:352",
@@ -36190,11 +36190,11 @@
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:2765",
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:3712",
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:3773",
-        "app/backend/tiangong-backend/v3/simple_chain/kernel.py:4286",
-        "app/backend/tiangong-backend/v3/zongdiaodu.py:1187",
-        "app/backend/tiangong-backend/v3/zongdiaodu.py:2368",
-        "app/backend/tiangong-backend/v3/zongdiaodu.py:3359",
-        "app/backend/tiangong-backend/v3/zongdiaodu.py:4237",
+        "app/backend/tiangong-backend/v3/simple_chain/kernel.py:4314",
+        "app/backend/tiangong-backend/v3/zongdiaodu.py:1206",
+        "app/backend/tiangong-backend/v3/zongdiaodu.py:2387",
+        "app/backend/tiangong-backend/v3/zongdiaodu.py:3378",
+        "app/backend/tiangong-backend/v3/zongdiaodu.py:4256",
         "src/omni_body_skill/model_adapters/core.py:384",
         "src/omni_body_skill/tools/skill_router.py:110",
         "src/omni_body_skill/tools/skill_router.py:14",
@@ -36921,7 +36921,7 @@
         "kind": "method",
         "target": "_action_system_action_schema"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:1642",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:1661",
       "canonical_action": "system.action_schema",
       "connection_discovery": [],
       "contract_entries": {
@@ -36956,7 +36956,7 @@
       "runtime_literal_references": [
         "app/backend/tiangong-backend/v3/permission_settings.py:66",
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:3326",
-        "app/backend/tiangong-backend/v3/simple_chain/kernel.py:4287",
+        "app/backend/tiangong-backend/v3/simple_chain/kernel.py:4315",
         "app/backend/tiangong-backend/v3/world_dictionary_binding.py:55",
         "src/omni_body_skill/tool_contracts.py:1718"
       ],
@@ -36972,7 +36972,7 @@
         "kind": "method",
         "target": "_action_system_app_registry"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:1628",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:1647",
       "canonical_action": "system.app_registry",
       "connection_discovery": [],
       "contract_entries": {
@@ -37006,7 +37006,7 @@
       "review_scope": "source_definition_and_binding_review",
       "runtime_literal_references": [
         "app/backend/tiangong-backend/v3/permission_settings.py:66",
-        "app/backend/tiangong-backend/v3/simple_chain/kernel.py:4287"
+        "app/backend/tiangong-backend/v3/simple_chain/kernel.py:4315"
       ],
       "semantic_atomicity_review": "not_claimed_complete",
       "summary": "List mounted application tool groups and their action names."
@@ -37020,7 +37020,7 @@
         "kind": "method",
         "target": "_action_system_capabilities"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:1535",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:1550",
       "canonical_action": "system.capabilities",
       "connection_discovery": [],
       "contract_entries": {
@@ -37055,7 +37055,7 @@
       "runtime_literal_references": [
         "app/backend/tiangong-backend/v3/permission_settings.py:66",
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:3326",
-        "app/backend/tiangong-backend/v3/simple_chain/kernel.py:4287",
+        "app/backend/tiangong-backend/v3/simple_chain/kernel.py:4315",
         "app/backend/tiangong-backend/v3/world_dictionary_binding.py:55"
       ],
       "semantic_atomicity_review": "not_claimed_complete",
@@ -37070,7 +37070,7 @@
         "kind": "method",
         "target": "_action_system_health"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:1654",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:1673",
       "canonical_action": "system.health",
       "connection_discovery": [],
       "contract_entries": {
@@ -37105,7 +37105,7 @@
       "runtime_literal_references": [
         "app/backend/tiangong-backend/v3/permission_settings.py:66",
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:2766",
-        "app/backend/tiangong-backend/v3/simple_chain/kernel.py:4287",
+        "app/backend/tiangong-backend/v3/simple_chain/kernel.py:4315",
         "app/backend/tiangong-backend/v3/world_dictionary_binding.py:55"
       ],
       "semantic_atomicity_review": "not_claimed_complete",
@@ -37374,7 +37374,7 @@
         "src/omni_body_skill/tool_contracts.py:1341",
         "src/omni_body_skill/tools/delivery_kernel.py:163",
         "src/omni_body_skill/tools/delivery_kernel.py:63",
-        "src/omni_body_skill/tools/omni_body_tool.py:312"
+        "src/omni_body_skill/tools/omni_body_tool.py:322"
       ],
       "semantic_atomicity_review": "not_claimed_complete",
       "summary": "Apply a template skeleton and create a structured draft markdown/json file."
@@ -37862,7 +37862,7 @@
         "kind": "method",
         "target": "_action_video_add_audio"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3375",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3394",
       "canonical_action": "video.add_audio",
       "connection_discovery": [],
       "contract_entries": {
@@ -37914,7 +37914,7 @@
         "kind": "method",
         "target": "_action_video_cut"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3348",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3367",
       "canonical_action": "video.cut",
       "connection_discovery": [],
       "contract_entries": {
@@ -37966,7 +37966,7 @@
         "kind": "method",
         "target": "_action_video_extract_audio"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3365",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3384",
       "canonical_action": "video.extract_audio",
       "connection_discovery": [],
       "contract_entries": {
@@ -38018,7 +38018,7 @@
         "kind": "method",
         "target": "_action_video_info"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3317",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3336",
       "canonical_action": "video.info",
       "connection_discovery": [],
       "contract_entries": {
@@ -38055,7 +38055,7 @@
       "runtime_literal_references": [
         "app/backend/tiangong-backend/v3/permission_settings.py:68",
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:1489",
-        "app/backend/tiangong-backend/v3/simple_chain/kernel.py:4292"
+        "app/backend/tiangong-backend/v3/simple_chain/kernel.py:4320"
       ],
       "semantic_atomicity_review": "not_claimed_complete",
       "summary": "Inspect video metadata using ffprobe."
@@ -38117,7 +38117,7 @@
         "kind": "method",
         "target": "_action_video_slideshow"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3417",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3436",
       "canonical_action": "video.slideshow",
       "connection_discovery": [],
       "contract_entries": {
@@ -38643,7 +38643,7 @@
         "kind": "method",
         "target": "_action_web_download"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3734",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:3753",
       "canonical_action": "web.download",
       "connection_discovery": [],
       "contract_entries": {
@@ -39786,7 +39786,7 @@
         "kind": "method",
         "target": "_action_windows_desktop_click"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:4231",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:4250",
       "canonical_action": "windows.desktop.click",
       "connection_discovery": [
         {
@@ -40002,7 +40002,7 @@
         "kind": "method",
         "target": "_action_windows_desktop_hotkey"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:4233",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:4252",
       "canonical_action": "windows.desktop.hotkey",
       "connection_discovery": [
         {
@@ -40110,7 +40110,7 @@
         "kind": "method",
         "target": "_action_windows_desktop_screenshot"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:4230",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:4249",
       "canonical_action": "windows.desktop.screenshot",
       "connection_discovery": [
         {
@@ -40164,7 +40164,7 @@
         "kind": "method",
         "target": "_action_windows_desktop_type"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:4232",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:4251",
       "canonical_action": "windows.desktop.type",
       "connection_discovery": [
         {
@@ -40594,7 +40594,7 @@
         "kind": "method",
         "target": "_action_word_create"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:2362",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:2381",
       "canonical_action": "word.create",
       "connection_discovery": [],
       "contract_entries": {
@@ -40630,9 +40630,9 @@
       "review_scope": "source_definition_and_binding_review",
       "runtime_literal_references": [
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:2757",
-        "src/omni_body_skill/tools/omni_body_tool.py:1341",
-        "src/omni_body_skill/tools/omni_body_tool.py:1348",
-        "src/omni_body_skill/tools/omni_body_tool.py:836"
+        "src/omni_body_skill/tools/omni_body_tool.py:1356",
+        "src/omni_body_skill/tools/omni_body_tool.py:1363",
+        "src/omni_body_skill/tools/omni_body_tool.py:851"
       ],
       "semantic_atomicity_review": "not_claimed_complete",
       "summary": "Alias for docx.create — create a Word document."
@@ -40646,7 +40646,7 @@
         "kind": "method",
         "target": "_action_word_read"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:2366",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:2385",
       "canonical_action": "word.read",
       "connection_discovery": [],
       "contract_entries": {
@@ -41977,7 +41977,7 @@
         "kind": "method",
         "target": "_action_zip_create"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:2094",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:2113",
       "canonical_action": "zip.create",
       "connection_discovery": [],
       "contract_entries": {
@@ -42016,9 +42016,9 @@
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:3251",
         "app/backend/tiangong-backend/v3/simple_chain/kernel.py:3692",
         "app/backend/tiangong-backend/v3/tool_result_contract.py:95",
-        "app/backend/tiangong-backend/v3/zongdiaodu.py:1159",
-        "app/backend/tiangong-backend/v3/zongdiaodu.py:1286",
-        "app/backend/tiangong-backend/v3/zongdiaodu.py:855",
+        "app/backend/tiangong-backend/v3/zongdiaodu.py:1178",
+        "app/backend/tiangong-backend/v3/zongdiaodu.py:1305",
+        "app/backend/tiangong-backend/v3/zongdiaodu.py:856",
         "src/omni_body_skill/tools/pro_apps_v34.py:475",
         "src/omni_body_skill/tools/pro_apps_v34.py:795"
       ],
@@ -42034,7 +42034,7 @@
         "kind": "method",
         "target": "_action_zip_extract"
       },
-      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:2114",
+      "binding_source": "src/omni_body_skill/tools/omni_body_tool.py:2133",
       "canonical_action": "zip.extract",
       "connection_discovery": [],
       "contract_entries": {
