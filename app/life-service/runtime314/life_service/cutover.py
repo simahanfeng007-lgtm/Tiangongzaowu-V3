@@ -19,6 +19,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PublicKey,
 )
 
+from .identity_migration import _io_path
 from .legacy_adapter import (
     LegacySnapshotError,
     LegacySnapshotReader,
@@ -1203,13 +1204,13 @@ def install_cutover_state_bundle(
         if incoming_base.exists():
             raise LifeCutoverError("cutover.bundle_base_incoming_exists")
         try:
-            shutil.copytree(source_snapshot, incoming_base)
+            shutil.copytree(_io_path(source_snapshot), _io_path(incoming_base))
             copied_reader = LegacySnapshotReader(incoming_base)
             if snapshot_tree_sha256(copied_reader.root) != final_manifest.source_tree_sha256:
                 raise LifeCutoverError("cutover.bundle_base_copy_mismatch")
             incoming_base.rename(base_snapshot)
         except Exception:
-            shutil.rmtree(incoming_base, ignore_errors=True)
+            shutil.rmtree(_io_path(incoming_base), ignore_errors=True)
             raise
     elif snapshot_tree_sha256(base_snapshot) != final_manifest.source_tree_sha256:
         raise LifeCutoverError("cutover.bundle_base_copy_mismatch")

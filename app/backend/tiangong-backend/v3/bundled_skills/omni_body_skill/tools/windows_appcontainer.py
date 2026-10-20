@@ -8,7 +8,10 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
+import stat
 import subprocess
+import sys
 import tempfile
 import time
 from typing import Mapping, Sequence, Any
@@ -370,6 +373,172 @@ def _open_inheritable_null() -> wintypes.HANDLE:
     return handle
 
 
+def _unlinked_bundle_path(path: Path, *, directory=False) -> Path:
+    for item in (path, *path.parents):
+        metadata = item.stat(follow_symlinks=False)
+        expected = stat.S_ISDIR(metadata.st_mode) if item != path or directory else stat.S_ISREG(metadata.st_mode)
+        if (not expected or item.is_symlink()
+                or getattr(metadata, "st_file_attributes", 0) & 0x400):
+            raise ValueError("bundled_git_link_or_invalid_path")
+    if os.path.normcase(str(path.resolve(strict=True))) != os.path.normcase(str(path.absolute())):
+        raise ValueError("bundled_git_redirected_path")
+    return path
+
+
+def _bundled_resource_context():
+    broker = Path(sys.executable).absolute()
+    frozen_gateway = (getattr(sys, "frozen", False) is True
+                      and broker.name.casefold() == "tiangong-total-gateway.exe"
+                      and broker.parent.name.casefold() == "total-gateway")
+    resource_python = (not getattr(sys, "frozen", False)
+                       and broker.name.casefold() == "python.exe"
+                       and broker.parent.name.casefold() == "python")
+    resources = broker.parent.parent
+    if not (frozen_gateway or resource_python) or resources.name.casefold() != "resources":
+        return None
+    return broker, resources, resource_python
+
+
+def _validate_bundled_python_runtime(resources, *, deadline, cancel_check=None):
+    _check_budget(deadline, cancel_check)
+    python_root = resources / "python"
+    for name in ("python.exe", "python3.dll", "python312.dll", "python312.zip", "python312._pth", "runtime-manifest.json"):
+        _unlinked_bundle_path(python_root / name)
+    _unlinked_bundle_path(python_root / "Lib" / "site-packages", directory=True)
+    manifest = json.loads((python_root / "runtime-manifest.json").read_bytes())
+    if not isinstance(manifest, dict) or manifest.get("schema") != "tiangong.embedded-python.v1":
+        raise ValueError("bundled_python_manifest_invalid")
+    return python_root
+
+
+def _validate_bundled_resource_context(context, *, deadline, cancel_check=None):
+    broker, resources, resource_python = context
+    _check_budget(deadline, cancel_check)
+    _unlinked_bundle_path(broker)
+    _unlinked_bundle_path(resources, directory=True)
+    _unlinked_bundle_path(resources / "app.asar")
+    if resource_python:
+        _validate_bundled_python_runtime(resources, deadline=deadline, cancel_check=cancel_check)
+
+
+def _runtime_root_for_executable(executable: Path, *, deadline, cancel_check=None) -> Path:
+    """Expand RX only for this installed bundle's Git for Windows launcher."""
+    context = _bundled_resource_context()
+    if context is None:
+        return executable.resolve(strict=True).parent
+    _, resources, _ = context
+    git_root = resources / "git"
+    if os.path.normcase(str(executable.absolute())) != os.path.normcase(str(git_root / "cmd" / "git.exe")):
+        return executable.resolve(strict=True).parent
+
+    # sys.executable is the anchor, never an inherited caller override. A broken
+    # matched bundle must fail before adding any reader capability to its token.
+    try:
+        _validate_bundled_resource_context(context, deadline=deadline, cancel_check=cancel_check)
+        for relative in ("", "bin", "cmd", "etc", "mingw64/bin", "mingw64/libexec/git-core", "usr/bin"):
+            _unlinked_bundle_path(git_root / relative, directory=True)
+        manifest_path = _unlinked_bundle_path(git_root / "bundle-manifest.json")
+        manifest = json.loads(manifest_path.read_bytes())
+        if not isinstance(manifest, dict):
+            raise ValueError("bundled_git_manifest_invalid")
+        roots = {"bin", "cmd", "etc", "mingw64", "usr", "LICENSE.txt"}
+        records = manifest.get("files")
+        if (manifest.get("schema") != "tiangong.isolated-tools.git.v1" or manifest.get("toolId") != "git"
+                or not isinstance(manifest.get("payloadRoots"), list)
+                or set(manifest["payloadRoots"]) != roots
+                or not isinstance(records, list) or not records
+                or manifest.get("fileCount") != len(records)):
+            raise ValueError("bundled_git_manifest_invalid")
+        files = {}
+        pending = [git_root]
+        while pending:
+            _check_budget(deadline, cancel_check)
+            with os.scandir(pending.pop()) as entries:
+                for entry in entries:
+                    _check_budget(deadline, cancel_check)
+                    metadata = entry.stat(follow_symlinks=False)
+                    if entry.is_symlink() or getattr(metadata, "st_file_attributes", 0) & 0x400:
+                        raise ValueError("bundled_git_link_or_invalid_path")
+                    if stat.S_ISDIR(metadata.st_mode):
+                        pending.append(Path(entry.path))
+                    elif stat.S_ISREG(metadata.st_mode):
+                        files[Path(entry.path).relative_to(git_root).as_posix()] = metadata.st_size
+                    else:
+                        raise ValueError("bundled_git_link_or_invalid_path")
+        indexed = {}
+        for record in records:
+            _check_budget(deadline, cancel_check)
+            if not isinstance(record, dict):
+                raise ValueError("bundled_git_manifest_file_invalid")
+            relative = record.get("path", "")
+            if (not isinstance(relative, str) or "\\" in relative
+                    or any(part in {"", ".", ".."} for part in relative.split("/"))
+                    or relative.split("/")[0] not in roots or relative in indexed
+                    or type(record.get("sizeBytes")) is not int or record["sizeBytes"] < 0
+                    or not isinstance(record.get("sha256"), str)
+                    or re.fullmatch(r"[0-9a-f]{64}", record["sha256"]) is None
+                    or files.get(relative) != record["sizeBytes"]):
+                raise ValueError("bundled_git_manifest_file_invalid")
+            indexed[relative] = record
+        if manifest.get("sizeBytes") != sum(row["sizeBytes"] for row in indexed.values()):
+            raise ValueError("bundled_git_manifest_size_invalid")
+        for relative in ("cmd/git.exe", "mingw64/bin/git.exe", "mingw64/libexec/git-core/git.exe", "usr/bin/sh.exe",
+                         "mingw64/bin/libiconv-2.dll", "mingw64/bin/libintl-8.dll", "mingw64/bin/libpcre2-8-0.dll",
+                         "mingw64/bin/zlib1.dll", "LICENSE.txt"):
+            _check_budget(deadline, cancel_check)
+            record = indexed.get(relative)
+            if record is None or hashlib.sha256((git_root / relative).read_bytes()).hexdigest() != record["sha256"]:
+                raise ValueError("bundled_git_core_invalid")
+        return git_root
+    except (OSError, RuntimeError, TypeError, ValueError) as exc:
+        if isinstance(exc, (TimeoutError, RuntimeError)):
+            raise
+        raise OSError("trusted_bundled_git_runtime_invalid") from exc
+
+
+def _system_shell_runtime_roots(executable: Path, env: Mapping[str, str], *, deadline, cancel_check=None):
+    """Give only native Windows shell tokens access to explicit private PATH roots."""
+    context = _bundled_resource_context()
+    if context is None or executable.name.casefold() not in {"cmd.exe", "powershell.exe"}:
+        return []
+    _check_budget(deadline, cancel_check)
+    windows = ctypes.create_unicode_buffer(32768)
+    length = kernel32.GetWindowsDirectoryW(windows, len(windows))
+    if not length or length >= len(windows):
+        raise OSError("native_windows_directory_unavailable")
+    system = Path(windows.value)
+    shells = (system / "System32/cmd.exe", system / "System32/WindowsPowerShell/v1.0/powershell.exe")
+    if os.path.normcase(str(executable.absolute())) not in {os.path.normcase(str(item)) for item in shells}:
+        return []
+    _, resources, _ = context
+    python_root = resources / "python"
+    python_directories = (python_root, python_root / "Lib/site-packages/playwright/driver",
+                          python_root / "Lib/site-packages/imageio_ffmpeg/binaries")
+    path_entries = {os.path.normcase(str(Path(part).absolute()))
+                    for key, value in env.items() if key.upper() == "PATH"
+                    for part in str(value).split(os.pathsep) if part and Path(part).is_absolute()}
+    matched_python = [item for item in python_directories if os.path.normcase(str(item)) in path_entries]
+    matched_git = os.path.normcase(str(resources / "git/cmd")) in path_entries
+    if not matched_python and not matched_git:
+        return []
+    try:
+        _validate_bundled_resource_context(context, deadline=deadline, cancel_check=cancel_check)
+        _unlinked_bundle_path(executable)
+        roots = []
+        if matched_python:
+            roots.append(_validate_bundled_python_runtime(resources, deadline=deadline, cancel_check=cancel_check))
+            for directory in matched_python:
+                _unlinked_bundle_path(directory, directory=True)
+        if matched_git:
+            roots.append(_runtime_root_for_executable(resources / "git/cmd/git.exe",
+                                                     deadline=deadline, cancel_check=cancel_check))
+        return roots
+    except (OSError, RuntimeError, TypeError, ValueError) as exc:
+        if isinstance(exc, (TimeoutError, RuntimeError)):
+            raise
+        raise OSError("trusted_bundled_shell_runtime_invalid") from exc
+
+
 def run_appcontainer(command: Sequence[str] | str, *, cwd: Path, env: Mapping[str, str], limits: Any, sandbox_root: Path,
                      moniker: str = "TiangongV3.ToolSandbox", cancel_check=None):
     # Preparation is part of the same deadline; a blocked ACL operation can
@@ -401,15 +570,25 @@ def run_appcontainer(command: Sequence[str] | str, *, cwd: Path, env: Mapping[st
         executable = Path(executable_text).expanduser()
         capability_entries = None
         system_root = Path(os.environ.get("SystemRoot", r"C:\Windows")).resolve()
-        if (executable.is_absolute() and executable.exists()
+        runtime = (_runtime_root_for_executable(executable, deadline=deadline, cancel_check=cancel_check)
+                   if executable.is_absolute() and executable.exists() else None)
+        runtime_roots = []
+        if (runtime is not None
                 and not executable.resolve().is_relative_to(system_root)
                 and not executable.resolve().is_relative_to(sandbox_root.resolve())):
-            runtime = executable.resolve(strict=True).parent
+            runtime_roots.append(runtime)
+        if executable.is_absolute() and executable.exists():
+            runtime_roots.extend(_system_shell_runtime_roots(executable, env, deadline=deadline, cancel_check=cancel_check))
+        reader_sids = []
+        for runtime in dict.fromkeys(runtime_roots):
             reader_sid = resources.enter_context(_runtime_read_capability(runtime))
             # Normal startup provisions this once. A newly installed native tool may
             # cold-provision within this invocation's existing deadline.
             _ensure_runtime_access(runtime, reader_sid, deadline=deadline, cancel_check=cancel_check)
-            capability_entries = (SID_AND_ATTRIBUTES * 1)(SID_AND_ATTRIBUTES(reader_sid, 4))
+            reader_sids.append(reader_sid)
+        if reader_sids:
+            capability_entries = (SID_AND_ATTRIBUTES * len(reader_sids))(
+                *(SID_AND_ATTRIBUTES(reader_sid, 4) for reader_sid in reader_sids))
 
         stdout_path = sandbox_root / "stdout.bin"
         stderr_path = sandbox_root / "stderr.bin"
@@ -422,7 +601,7 @@ def run_appcontainer(command: Sequence[str] | str, *, cwd: Path, env: Mapping[st
         attr_buffer = ctypes.create_string_buffer(attr_size.value)
         _check(kernel32.InitializeProcThreadAttributeList(attr_buffer, 2, 0, ctypes.byref(attr_size)), "InitializeProcThreadAttributeList")
         attributes_initialized = True
-        capabilities = SECURITY_CAPABILITIES(sid, capability_entries, 1 if capability_entries is not None else 0, 0)
+        capabilities = SECURITY_CAPABILITIES(sid, capability_entries, len(reader_sids), 0)
         _check(kernel32.UpdateProcThreadAttribute(attr_buffer, 0, PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES, ctypes.byref(capabilities), ctypes.sizeof(capabilities), None, None), "UpdateProcThreadAttribute")
         inherited = (wintypes.HANDLE * 3)(input_handle, stdout_handle, stderr_handle)
         _check(kernel32.UpdateProcThreadAttribute(attr_buffer, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST,

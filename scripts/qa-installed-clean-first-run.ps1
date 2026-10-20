@@ -13,7 +13,10 @@ param(
 
   [Parameter(Mandatory = $false)]
   [ValidateRange(30, 600)]
-  [int]$TimeoutSeconds = 180
+  [int]$TimeoutSeconds = 180,
+
+  [Parameter(Mandatory = $false)]
+  [switch]$IsolatedInstallation
 )
 
 $ErrorActionPreference = "Stop"
@@ -207,7 +210,8 @@ function Capture-QAEnvironment {
     "HOMEPATH",
     "PORTABLE_EXECUTABLE_DIR",
     "ELECTRON_RUN_AS_NODE",
-    "NODE_OPTIONS"
+    "NODE_OPTIONS",
+    "PATH"
   )
   $TiangongNames = @(
     Get-ChildItem Env: |
@@ -232,7 +236,7 @@ function Restore-QAEnvironment {
   Get-ChildItem Env: |
     Where-Object { $_.Name -like "TIANGONG_*" } |
     ForEach-Object {
-      [Environment]::SetEnvironmentVariable($_.Name, $null, "Process")
+      Remove-Item -LiteralPath ("Env:\" + $_.Name)
     }
 
   foreach ($Name in $Snapshot.Keys) {
@@ -240,7 +244,9 @@ function Restore-QAEnvironment {
     if ($Entry.present) {
       [Environment]::SetEnvironmentVariable($Name, [string]$Entry.value, "Process")
     } else {
-      [Environment]::SetEnvironmentVariable($Name, $null, "Process")
+      if (Test-Path -LiteralPath ("Env:\" + $Name)) {
+        Remove-Item -LiteralPath ("Env:\" + $Name)
+      }
     }
   }
 
@@ -261,10 +267,12 @@ function Set-IsolatedEnvironment {
   Get-ChildItem Env: |
     Where-Object { $_.Name -like "TIANGONG_*" } |
     ForEach-Object {
-      [Environment]::SetEnvironmentVariable($_.Name, $null, "Process")
+      Remove-Item -LiteralPath ("Env:\" + $_.Name)
     }
   foreach ($Name in @("PORTABLE_EXECUTABLE_DIR", "ELECTRON_RUN_AS_NODE", "NODE_OPTIONS")) {
-    [Environment]::SetEnvironmentVariable($Name, $null, "Process")
+    if (Test-Path -LiteralPath ("Env:\" + $Name)) {
+      Remove-Item -LiteralPath ("Env:\" + $Name)
+    }
   }
   foreach ($Entry in $Bindings.GetEnumerator()) {
     [Environment]::SetEnvironmentVariable($Entry.Key, [string]$Entry.Value, "Process")
@@ -283,7 +291,7 @@ function Invoke-CdpExpression {
     [Parameter(Mandatory = $true)][int]$Port
   )
   $env:TIANGONG_CDP_EXPRESSION = $Expression
-  $Json = & node $CdpHelper "http://127.0.0.1:$Port" 2>$null
+  $Json = & $CdpNode $CdpHelper "http://127.0.0.1:$Port" 2>$null
   if ($LASTEXITCODE -ne 0 -or -not $Json) {
     throw "CDP expression failed on port $Port"
   }
@@ -293,7 +301,7 @@ function Invoke-CdpExpression {
 if (-not (Test-Path -LiteralPath $CdpHelper -PathType Leaf)) {
   throw "CDP helper is missing: $CdpHelper"
 }
-if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+if (-not $IsolatedInstallation -and -not (Get-Command node -ErrorAction SilentlyContinue)) {
   throw "Node.js is required by the existing CDP helper"
 }
 if (-not (Test-Path -LiteralPath $InstalledExe -PathType Leaf)) {
@@ -306,6 +314,14 @@ if ($InstalledExeItem.Extension -ine ".exe" -or $InstalledExeItem.Name -like "Un
   throw "InstalledExe must be the installed Tiangong application executable, not an uninstaller"
 }
 $InstallRoot = $InstalledExeItem.Directory.FullName
+$CdpNode = if ($IsolatedInstallation) {
+  Join-Path $InstallRoot "resources\python\Lib\site-packages\playwright\driver\node.exe"
+} else {
+  (Get-Command node).Source
+}
+if (-not (Test-Path -LiteralPath $CdpNode -PathType Leaf)) {
+  throw "CDP Node executable is missing: $CdpNode"
+}
 $InstalledPayloadPresent = (
   (Test-Path -LiteralPath (Join-Path $InstallRoot "resources\app.asar") -PathType Leaf) -or
   (Test-Path -LiteralPath (Join-Path $InstallRoot "resources\app") -PathType Container)
@@ -359,6 +375,26 @@ $KnownFolders = [ordered]@{
   TIANGONG_VIDEOS_PATH = (Join-Path $ProfileRoot "Videos")
   TIANGONG_MUSIC_PATH = (Join-Path $ProfileRoot "Music")
 }
+if ($IsolatedInstallation) {
+  $HomeRoot = Join-Path $ProfileRoot "home"
+  $RoamingRoot = Join-Path $ProfileRoot "AppData\Roaming"
+  $LocalRoot = Join-Path $ProfileRoot "AppData\Local"
+  $TempRoot = Join-Path $ProfileRoot "Temp"
+  $ElectronUserDataRoot = Join-Path $ProfileRoot "electron-user-data"
+  $RuntimeRoot = Join-Path $ProfileRoot "runtime"
+  $RuntimeStateRoot = Join-Path $RuntimeRoot "state"
+  $QaWorkspaceRoot = Join-Path $ProfileRoot "workspace"
+  $LifeDataRoot = Join-Path $ProfileRoot "life-data"
+  $KnownFolders = [ordered]@{
+    TIANGONG_HOME_PATH = $HomeRoot
+    TIANGONG_DOCUMENTS_PATH = (Join-Path $HomeRoot "Documents")
+    TIANGONG_DESKTOP_PATH = (Join-Path $HomeRoot "Desktop")
+    TIANGONG_DOWNLOADS_PATH = (Join-Path $HomeRoot "Downloads")
+    TIANGONG_PICTURES_PATH = (Join-Path $HomeRoot "Pictures")
+    TIANGONG_VIDEOS_PATH = (Join-Path $HomeRoot "Videos")
+    TIANGONG_MUSIC_PATH = (Join-Path $HomeRoot "Music")
+  }
+}
 $Directories = @(
   $ProfileRoot,
   $RoamingRoot,
@@ -404,11 +440,11 @@ try {
   $EnvironmentBindings = [ordered]@{
     APPDATA = $RoamingRoot
     LOCALAPPDATA = $LocalRoot
-    USERPROFILE = $ProfileRoot
-    HOME = $ProfileRoot
+    USERPROFILE = $KnownFolders.TIANGONG_HOME_PATH
+    HOME = $KnownFolders.TIANGONG_HOME_PATH
     TEMP = $TempRoot
     TMP = $TempRoot
-    TIANGONG_HOME_PATH = $ProfileRoot
+    TIANGONG_HOME_PATH = $KnownFolders.TIANGONG_HOME_PATH
     TIANGONG_DOCUMENTS_PATH = $KnownFolders.TIANGONG_DOCUMENTS_PATH
     TIANGONG_DESKTOP_PATH = $KnownFolders.TIANGONG_DESKTOP_PATH
     TIANGONG_DOWNLOADS_PATH = $KnownFolders.TIANGONG_DOWNLOADS_PATH
@@ -430,6 +466,18 @@ try {
     TIANGONG_EXECUTION_RUNTIME_ROOT = (Join-Path $RuntimeStateRoot "life_kernel")
     TIANGONG_EXECUTION_LIFE_ROOT = (Join-Path $RuntimeStateRoot "life_transaction")
     TIANGONG_DESKTOP_TOKEN = $DesktopToken
+  }
+  if ($IsolatedInstallation) {
+    $EnvironmentBindings.TIANGONG_ISOLATED_PROFILE_ROOT = $ProfileRoot
+    $WindowsRoot = [Environment]::GetEnvironmentVariable("SystemRoot", "Process")
+    if (-not $WindowsRoot -or -not [IO.Path]::IsPathRooted($WindowsRoot)) {
+      throw "SystemRoot must be available for the clean installed QA PATH"
+    }
+    $EnvironmentBindings.PATH = @(
+      (Join-Path $WindowsRoot "System32"),
+      $WindowsRoot,
+      (Join-Path $WindowsRoot "System32\WindowsPowerShell\v1.0")
+    ) -join [IO.Path]::PathSeparator
   }
   Set-IsolatedEnvironment -Bindings $EnvironmentBindings
 
@@ -642,6 +690,7 @@ try {
     install_root = $InstallRoot
     qa_root = $QaRoot
     isolated_profile_root = $ProfileRoot
+    isolated_installation = [bool]$IsolatedInstallation
     isolated_appdata_roaming = $RoamingRoot
     isolated_appdata_local = $LocalRoot
     isolated_temp_root = $TempRoot

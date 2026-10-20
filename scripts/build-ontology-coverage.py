@@ -108,5 +108,5 @@ if __name__ == "__main__":
             raise SystemExit("ontology coverage is stale; run scripts/build-ontology-coverage.py")
     else:
         OUTPUT.parent.mkdir(parents=True, exist_ok=True)
-        OUTPUT.write_text(json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        OUTPUT.write_text(json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n")
     print(json.dumps({k: value[k] for k in ("dictionary_version", "registered_actions", "application_count", "counts")}, ensure_ascii=False))

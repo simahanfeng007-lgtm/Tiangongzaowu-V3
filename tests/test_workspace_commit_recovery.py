@@ -91,6 +91,10 @@ def test_partial_commit_rolls_back_all_files(tree, monkeypatch, at, after_replac
 
 def test_reopen_after_process_death_restores_interrupted_commit(tree):
     host, private, root = tree
+    checkout = Path(__file__).resolve().parents[1]
+    import_roots = [str(checkout), str(checkout / "src"), str(checkout / "app/backend/tiangong-backend")]
+    # Embedded Python ignores PYTHONPATH; pin crash and recovery to this source.
+    bootstrap = "import sys; sys.path[:0] = " + repr(import_roots) + "\n"
     code = '''from pathlib import Path
 from omni_body_skill.tools import sandbox_runtime as s
 import os,sys
@@ -103,10 +107,10 @@ s._atomic_copy=die
 s._merge_changes(private,host,s._snapshot(host),max_changed_bytes=1000,trash_root=root,transaction_root=root,operation='op1',input_digest='input')
 '''
     env = {**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)}
-    child = subprocess.run([sys.executable, "-c", code, str(host), str(private), str(root)], env=env)
+    child = subprocess.run([sys.executable, "-c", bootstrap + code, str(host), str(private), str(root)], env=env)
     assert child.returncode == 71
     assert (host / "a").read_text() == "new"
-    result = subprocess.run([sys.executable, "-c", "from pathlib import Path; import sys; from omni_body_skill.tools.workspace_commit import recover; recover(Path(sys.argv[1]),Path(sys.argv[2]))", str(root), str(host)], env=env)
+    result = subprocess.run([sys.executable, "-c", bootstrap + "from pathlib import Path; import sys; from omni_body_skill.tools.workspace_commit import recover; recover(Path(sys.argv[1]),Path(sys.argv[2]))", str(root), str(host)], env=env)
     assert result.returncode == 0
     assert {p.name: p.read_text() for p in host.iterdir()} == {k: "old" for k in ("a", "b", "deleted")}
 

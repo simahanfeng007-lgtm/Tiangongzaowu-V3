@@ -14,6 +14,9 @@ const stageRoot = path.resolve(
     || path.join(workspaceRoot, "release-stage", `${platform}-${architecture}`),
 );
 const requireSigning = process.env.TIANGONG_RELEASE_REQUIRE_SIGNING === "1";
+const isolatedInstallation = process.env.TIANGONG_ISOLATED_INSTALL === "1";
+const isolatedAppId = "com.tiangong.v3.qiyuan.isolated";
+const isolatedNsisGuid = "6095a57b-5cb5-4a21-ae7e-1e2efc353918";
 const flavor = String(
   process.env.TIANGONG_RELEASE_FLAVOR || (requireSigning ? "signed" : "unsigned"),
 ).replace(/[^a-z0-9_-]+/gi, "-");
@@ -168,16 +171,21 @@ function nativeResources() {
     resource(path.join(appRoot, "dictionaries"), "dictionaries"),
     // pip-generated launchers bind the publisher machine's absolute Python
     // path. Product code invokes modules through python.exe -m instead.
-    resource(path.join(appRoot, "runtime", "python312"), "python", ["!Scripts/**"]),
+    resource(path.join(appRoot, "runtime", "python312"), "python", [
+      "!Scripts/**", ...(isolatedInstallation ? ["!git/**"] : []),
+    ]),
+    ...(isolatedInstallation ? [
+      resource(path.join(appRoot, "runtime", "python312", "git"), "git"),
+    ] : []),
   ];
 }
 
 
 module.exports = {
-  appId: "com.tiangong.v3.qiyuan",
+  appId: isolatedInstallation ? isolatedAppId : "com.tiangong.v3.qiyuan",
   productName: "天工造物 v3.0.3 完整版",
   copyright: "Copyright © 2026 于泳翔",
-  artifactName: `天工造物-v${"${version}"}-完整版-${"${os}"}-${"${arch}"}-${flavor}.${"${ext}"}`,
+  artifactName: `天工造物-v${"${version}"}-完整版-${"${os}"}-${"${arch}"}-${isolatedInstallation ? "isolated-" : ""}${flavor}.${"${ext}"}`,
   asar: true,
   compression: "maximum",
   npmRebuild: false,
@@ -244,29 +252,37 @@ module.exports = {
   extraMetadata: {
     author: { name: "于泳翔" },
     developer: "于泳翔",
+    ...(isolatedInstallation ? {
+      // NSIS derives the default Windows directory from this ASCII package
+      // name when productName is localized. Keep it separate from the normal
+      // installation even when the user accepts the default directory.
+      name: "tiangong-v3-isolated",
+      tiangongIsolatedInstallation: true,
+      tiangongAutomaticUpdates: false,
+    } : {}),
   },
   win: {
     target: [{ target: "nsis", arch: ["x64"] }],
     icon: path.join(appRoot, "assets", "tiangong-logo.ico"),
-    executableName: "天工造物 v3.0.3 完整版",
+    executableName: isolatedInstallation ? "天工造物 v3.0.3 独立完整版" : "天工造物 v3.0.3 完整版",
     legalTrademarks: "天工造物",
     signtoolOptions: {
       publisherName: "于泳翔",
     },
   },
   nsis: {
-    guid: "8a691210-edfd-57d2-ac97-15799e433fcd",
+    guid: isolatedInstallation ? isolatedNsisGuid : "8a691210-edfd-57d2-ac97-15799e433fcd",
     oneClick: false,
-    perMachine: true,
-    allowElevation: true,
+    perMachine: !isolatedInstallation,
+    allowElevation: !isolatedInstallation,
     allowToChangeInstallationDirectory: true,
     createDesktopShortcut: "always",
     createStartMenuShortcut: true,
-    menuCategory: "天工造物",
-    shortcutName: "天工造物 v3.0.3 完整版",
-    uninstallDisplayName: "天工造物 v3.0.3 完整版",
+    menuCategory: isolatedInstallation ? "天工造物独立版" : "天工造物",
+    shortcutName: isolatedInstallation ? "天工造物 v3.0.3 独立完整版" : "天工造物 v3.0.3 完整版",
+    uninstallDisplayName: isolatedInstallation ? "天工造物 v3.0.3 独立完整版" : "天工造物 v3.0.3 完整版",
     deleteAppDataOnUninstall: false,
-    runAfterFinish: true,
+    runAfterFinish: !isolatedInstallation,
     unicode: true,
     warningsAsErrors: true,
     differentialPackage: true,
@@ -274,7 +290,7 @@ module.exports = {
     installerIcon: path.join(appRoot, "assets", "tiangong-logo.ico"),
     uninstallerIcon: path.join(appRoot, "assets", "tiangong-logo.ico"),
     installerHeaderIcon: path.join(appRoot, "assets", "tiangong-logo.ico"),
-    include: path.join(buildRoot, "installer.nsh"),
+    include: path.join(buildRoot, isolatedInstallation ? "isolated-installer.nsh" : "installer.nsh"),
   },
   mac: {
     target: ["dmg", "zip"],

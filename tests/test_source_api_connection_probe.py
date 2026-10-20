@@ -2,6 +2,7 @@
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+import http.client
 import json
 import threading
 import time
@@ -308,3 +309,37 @@ def test_backend_http_probe_requires_auth_and_saved_configuration(monkeypatch, t
             server.shutdown()
             server.server_close()
             thread.join(timeout=2)
+
+
+def test_backend_rejection_preserves_response_while_body_is_still_arriving(monkeypatch, tmp_path):
+    from v3.duihua_qiaojie import _ChuliQi
+
+    monkeypatch.setenv('TIANGONG_ALLOW_LOCAL_MODEL_ENDPOINT', '1')
+    monkeypatch.setenv('TIANGONG_DESKTOP_TOKEN', 'internal-test-token')
+    monkeypatch.setattr(peizhi, 'API_PEIZHI_LUJING', tmp_path / 'api_keys.json')
+    monkeypatch.setattr(http_kehuduan, 'L4_OPTIMIZATION_TRACE_PATH', tmp_path / 'trace.jsonl')
+    server = ThreadingHTTPServer(('127.0.0.1', 0), _ChuliQi)
+    thread = threading.Thread(target=server.serve_forever, kwargs={'poll_interval': 0.01}, daemon=True)
+    thread.start()
+    rejections = (
+        ({'Content-Type': 'application/json'}, 401),
+        ({'Content-Type': 'application/json',
+          'X-Tiangong-Token': 'internal-test-token',
+          'Origin': 'https://untrusted.example'}, 403),
+    )
+    try:
+        for _ in range(6):
+            for extra_headers, expected_status in rejections:
+                conn = http.client.HTTPConnection('127.0.0.1', server.server_port, timeout=10)
+                try:
+                    conn.request('POST', '/api/v1/llm/probe', body=b'x' * (72 * 1024),
+                                 headers=extra_headers)
+                    response = conn.getresponse()
+                    response.read()
+                    assert response.status == expected_status
+                finally:
+                    conn.close()
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)

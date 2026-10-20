@@ -389,6 +389,50 @@ def test_composition_watchdog_slot_stays_owned_until_timed_out_call_really_exits
         executor.shutdown(wait=True, cancel_futures=True)
 
 
+def test_composition_watchdog_cancels_queued_call_without_running_handler(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    slot = threading.BoundedSemaphore(value=1)
+    monkeypatch.setattr(orchestration_module, "_EXECUTION_WATCHDOG_POOL", executor)
+    monkeypatch.setattr(orchestration_module, "_COMPOSITION_WATCHDOG_SLOT", slot)
+    occupied = threading.Event()
+    release = threading.Event()
+    handler_started = threading.Event()
+
+    def occupy_worker() -> None:
+        occupied.set()
+        if not release.wait(timeout=2):  # pragma: no cover - cleanup guard
+            raise AssertionError("test did not release the occupied worker")
+
+    def queued_handler() -> dict[str, bool]:
+        handler_started.set()
+        return {"queued": True}
+
+    blocker = executor.submit(occupy_worker)
+    try:
+        assert occupied.wait(timeout=1)
+        with pytest.raises(BackendClientError) as caught:
+            orchestration_module._run_backend_transport_with_watchdog(
+                queued_handler,
+                timeout_seconds=0.05,
+            )
+        assert caught.value.code == "backend.composition.execution_timeout"
+        assert caught.value.ambiguous is True
+        assert caught.value.pending_transport_future is None
+        assert not handler_started.is_set()
+        assert slot.acquire(timeout=1)
+        slot.release()
+
+        release.set()
+        blocker.result(timeout=1)
+        executor.shutdown(wait=True, cancel_futures=False)
+        assert not handler_started.is_set()
+    finally:
+        release.set()
+        executor.shutdown(wait=True, cancel_futures=True)
+
+
 def _parent_execution_timeout_try() -> ast.Try:
     """Return the actual wait reached through the learning-observer wrapper."""
 

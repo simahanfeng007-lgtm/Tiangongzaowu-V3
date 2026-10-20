@@ -46,6 +46,18 @@ from __future__ import annotations
 # context without removing execution, permission or output verification gates.
 # 1.73 admits lossless action shorthand through registered compositions and
 # bounds protocol correction without reclassifying failed calls as chat.
-VERIFICATION_PLANE_VERSION = "1.73"
+# 1.74 binds isolated profiles and complete private native runtimes to named RX
+# capabilities, with portable video metadata and unchanged authority decisions.
+# 1.75 limits the isolated desktop tool PATH to bundled runtimes and Windows
+# system directories, excluding inherited host tool installations.
+# 1.76 keeps refused backend responses observable on Windows: rejected
+# uploads are half-closed and drained within one bounded window before the
+# backend closes the connection.
+# 1.77 makes the capability surface self-describing: core action names are
+# always listed, unknown actions teach their nearest registered names, and
+# continuation exceptions keep their message and raise site in evidence.
+# 1.78 preserves complete world snapshots after cache resets and distinguishes
+# context assembly failures from execution budget exhaustion.
+VERIFICATION_PLANE_VERSION = "1.78"
 
 __all__ = ["VERIFICATION_PLANE_VERSION"]

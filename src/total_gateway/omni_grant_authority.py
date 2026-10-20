@@ -2875,7 +2875,9 @@ class OmniGrantAuthority:
             "gateway_epoch": self.gateway_epoch,
             "trust_bundle_sha256": trust_bundle.bundle_sha256,
             "trust_bundle": trust_bundle.model_dump(mode="json"),
-            "user_path_roots": [],
+            # D-21 与 _issue_once 同口径：组合步骤继承发起请求的用户原文路径根，
+            # 用户亲口指定的位置（桌面/文档/下载/字面路径）不被工作区围栏拦截。
+            "user_path_roots": [str(root) for root in self._user_specified_roots(outer.request_id)],
         }
         response = {
             "status": "OK",

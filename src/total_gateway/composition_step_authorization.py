@@ -1573,7 +1573,9 @@ class CompositionStepAuthorizationArtifacts:
                 )
             )
             or runtime.get("fact_kernel_enabled") is not True
-            or runtime.get("user_path_roots") != []
+            # D-21：组合步携带网关按用户原文提取的路径根是合法签发结果（与
+            # _issue_composition_step_once 同口径）；键集白名单与 grant 等值
+            # 校验已绑定防篡改，不再强制 roots 为空把用户点名的桌面拒之门外。
             or summary.get("decision_id") != decision.get("decision_id")
             or summary.get("decision_sha256") != decision_sha256
             or summary.get("risk_class") != expected_risk

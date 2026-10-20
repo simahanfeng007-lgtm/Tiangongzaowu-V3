@@ -294,7 +294,7 @@ def _simple_chain_run_state_view(run_state: dict[str, Any] | None) -> dict[str, 
         "model_failure": (
             {key: run_state["model_failure"].get(key) for key in (
                 "error_code", "http_status", "retry_count", "provider_error_category", "provider_identity",
-                "model_id", "retryable_after_recovery", "exception_type",
+                "model_id", "retryable_after_recovery", "exception_type", "message", "traceback_tail",
             ) if key in run_state["model_failure"]}
             if isinstance(run_state.get("model_failure"), dict) else {}
         ),
@@ -2976,10 +2976,10 @@ _SIMPLE_CHAIN_MUTATING_ACTIONS = frozenset({
 # hard limits; beyond them the platform terminates the run fail-closed with
 # the best evidence already produced.  Environment overrides exist for
 # operational tuning; defaults are the shipped contract.
-_SIMPLE_CHAIN_MAX_TOOL_ROUNDS = int(os.environ.get("TIANGONG_SIMPLE_CHAIN_MAX_TOOL_ROUNDS", "75"))
+_SIMPLE_CHAIN_MAX_TOOL_ROUNDS = int(os.environ.get("TIANGONG_SIMPLE_CHAIN_MAX_TOOL_ROUNDS", "300"))
 
 _SIMPLE_CHAIN_MAX_GLOBAL_TOOL_ROUNDS = int(
-    os.environ.get("TIANGONG_SIMPLE_CHAIN_MAX_GLOBAL_TOOL_ROUNDS", "1000")
+    os.environ.get("TIANGONG_SIMPLE_CHAIN_MAX_GLOBAL_TOOL_ROUNDS", "4000")
 )
 
 # 疑似工具调用的文本特征：解析失败时据此触发一次格式纠错回传。
@@ -2988,9 +2988,9 @@ _SIMPLE_CHAIN_MAX_GLOBAL_TOOL_ROUNDS = int(
 # 一次修正机会足够给出增量证据，再不行就走确定性模板（2026-08-26，凌霜修 logic 类）
 _SIMPLE_CHAIN_MAX_COMPLETION_CORRECTIONS = 1
 
-_SIMPLE_CHAIN_MAX_LOOP_TURNS = int(os.environ.get("TIANGONG_SIMPLE_CHAIN_MAX_LOOP_TURNS", "180"))
+_SIMPLE_CHAIN_MAX_LOOP_TURNS = int(os.environ.get("TIANGONG_SIMPLE_CHAIN_MAX_LOOP_TURNS", "720"))
 
-_SIMPLE_CHAIN_MAX_WALL_CLOCK_SECONDS = int(os.environ.get("TIANGONG_SIMPLE_CHAIN_MAX_WALL_CLOCK_SECONDS", "5400"))
+_SIMPLE_CHAIN_MAX_WALL_CLOCK_SECONDS = int(os.environ.get("TIANGONG_SIMPLE_CHAIN_MAX_WALL_CLOCK_SECONDS", "21600"))
 
 _SIMPLE_CHAIN_MAX_REPEAT_OBSERVATIONS = int(os.environ.get("TIANGONG_SIMPLE_CHAIN_MAX_REPEAT_OBSERVATIONS", "90"))
 
@@ -3006,7 +3006,7 @@ _SIMPLE_CHAIN_MAX_READONLY_REPEAT_OBSERVATIONS = int(
 # watchdog (720s after the 3x budget raise).  This hard cap applies even when
 # the effect-deadline context is not visible on the executing thread.
 _SIMPLE_CHAIN_MAX_TOOL_EXECUTION_SECONDS = int(
-    os.environ.get("TIANGONG_SIMPLE_CHAIN_MAX_TOOL_EXECUTION_SECONDS", "540")
+    os.environ.get("TIANGONG_SIMPLE_CHAIN_MAX_TOOL_EXECUTION_SECONDS", "2160")
 )
 
 # 状态级卡死判定（替代“单工具重复”作为主判据）：
@@ -3814,7 +3814,7 @@ def _simple_chain_model_payload(payload: Any, max_tokens: int | None = None) -> 
     """Keep the model-facing observation bounded while preserving audit payloads elsewhere."""
     budget = max_tokens
     if budget is None:
-        budget = int(os.environ.get("TIANGONG_SIMPLE_CHAIN_MODEL_PAYLOAD_TOKENS", "24000"))
+        budget = int(os.environ.get("TIANGONG_SIMPLE_CHAIN_MODEL_PAYLOAD_TOKENS", "200000"))
     before = estimate_tokens(payload)
     compacted = compact_tool_result(payload, max(1000, budget))
     after = estimate_tokens(compacted)
@@ -3950,11 +3950,37 @@ _SIMPLE_CHAIN_HISTORY_EXCLUDED_KEYS = frozenset({
     "guidance",
 })
 
+# 历史观测文本上限：全量 tool_result 逐轮复利累积会在保守上下文预算
+# （未知模型 128K 档）下滚雪球至装配失败；超限历史截为头尾并提示可重读。
+_SIMPLE_CHAIN_HISTORY_MAX_CHARS = 7000
+
 def _simple_chain_history_payload_text(payload: dict) -> str:
-    """历史消息文本：保留模型决策所需的完整字段（含工具结果全文与参数），
-    只剔除平台簿记字段（run_state/压缩统计/观察项），在功能与缓存增量间取安全平衡。"""
+    """历史消息文本：保留模型决策所需的字段，剔除平台簿记字段；
+    单条超过 _SIMPLE_CHAIN_HISTORY_MAX_CHARS 时对 tool_result 全文做头尾
+    截断并留下重读标记——最新一轮的完整结果仍由本轮载荷原样提供。"""
     out = {key: value for key, value in payload.items() if key not in _SIMPLE_CHAIN_HISTORY_EXCLUDED_KEYS}
-    return json.dumps(out, ensure_ascii=False, default=str, sort_keys=True)
+    text = json.dumps(out, ensure_ascii=False, default=str, sort_keys=True)
+    if len(text) <= _SIMPLE_CHAIN_HISTORY_MAX_CHARS:
+        return text
+    compact = dict(out)
+    dropped = compact.pop("tool_result", None)
+    remainder = json.dumps(compact, ensure_ascii=False, default=str, sort_keys=True)
+    if dropped is None or len(remainder) > _SIMPLE_CHAIN_HISTORY_MAX_CHARS:
+        head, tail = 4500, 1500
+        return (text[:head]
+                + f" …[_历史观测截断 {len(text) - head - tail} 字符；需要完整内容请重新调用工具读取]… "
+                + text[-tail:])
+    raw = json.dumps(dropped, ensure_ascii=False, default=str, sort_keys=True)
+    budget = max(1000, _SIMPLE_CHAIN_HISTORY_MAX_CHARS - len(remainder))
+    head = max(1000, int(budget * 0.7))
+    tail = max(300, budget - head)
+    if len(raw) > head + tail:
+        compact["tool_result"] = (raw[:head]
+                                  + f" …[_工具结果历史截断 {len(raw) - head - tail} 字符；完整内容用工具重新读取]… "
+                                  + raw[-tail:])
+    else:
+        compact["tool_result"] = dropped
+    return json.dumps(compact, ensure_ascii=False, default=str, sort_keys=True)
 
 # P19-R2 M2: _office_content_gaps 机械迁移至 content_preflight.py；
 # 此处保留符号 re-export 以维持既有 import 路径（行为零变化）。
@@ -4029,6 +4055,8 @@ def _simple_chain_life_completion_gate(
     )
 
 _INCOMPLETE_REASON_RENHUA = (
+    ("contextassemblyerror", "模型上下文装配失败，任务尚未完成；已有工具回执已保留"),
+    ("current_context_exceeds_endpoint_input_budget", "当前上下文超出模型容量，任务尚未完成；已有工具回执已保留"),
     ("http_error", "模型服务请求失败，任务尚未完成；请检查模型连接与账号配置"),
     ("transport_error", "模型服务连接中断，任务尚未完成"),
     ("execution_obligation:", "还没有获得用户明确要求动作对应的真实工具执行证据"),

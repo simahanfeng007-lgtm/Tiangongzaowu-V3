@@ -561,6 +561,19 @@ def test_timeout_retains_store_permit_until_running_handler_really_exits(
     started = threading.Event()
     release = threading.Event()
     exited = threading.Event()
+    submit = executor.submit
+
+    def submit_running_handler(*args, **kwargs):
+        future = submit(*args, **kwargs)
+        # This case exercises a running handler, not pool startup or the
+        # transport's schema validation. Start the real 50ms wait only after
+        # the backend enters, while retaining the real Future and callbacks.
+        assert started.wait(timeout=1)
+        assert future.running()
+        assert not future.cancelled()
+        return future
+
+    monkeypatch.setattr(executor, "submit", submit_running_handler)
 
     try:
         with _runtime_fixture(tmp_path / "timeout-store-permit") as fixture:
@@ -609,6 +622,8 @@ def test_timeout_retains_store_permit_until_running_handler_really_exits(
             ):
                 time.sleep(0.01)
             assert fixture.p7c.store.action_fence_status()["inflight_count"] == 0
+            assert fixture.p7c.store.get_effect(outcome.effect_id).state == "AMBIGUOUS"
+            assert fixture.facts.get_batch_for_effect(outcome.effect_id) is None
             # Explicit release is idempotent after the Future callback.
             fixture.p7c.store.release_dispatch_permit(
                 effect_id=outcome.effect_id,

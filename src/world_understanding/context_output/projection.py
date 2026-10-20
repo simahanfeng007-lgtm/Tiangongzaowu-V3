@@ -188,6 +188,8 @@ class WorldContextProjector:
         )
         base_tokens = max(0, int(self.token_estimator(render_world_context_packet(base_packet))))
         if base_tokens > content_budget:
+            # 必选项全部保留（契约：溢出不删项）；渲染层的 MANDATORY_OVERFLOW
+            # 截断（slot.render_world_context_packet）负责把显示压回预算内。
             overflow = _packet(
                 mandatory_items=mandatory_tuple, ranked_items=(),
                 uncertainty_items=(), prediction_items=(),

@@ -82,7 +82,41 @@ class ReleasePackagingTests(unittest.TestCase):
             '"scripts/update-transaction.ps1"',
         ):
             self.assertIn(required, config)
-        self.assertIn('resource(path.join(appRoot, "runtime", "python312"), "python", ["!Scripts/**"])', config)
+        resource_probe = """
+const configPath = require.resolve("./electron-builder.config.cjs");
+const resources = {};
+for (const isolated of ["0", "1"]) {
+  process.env.TIANGONG_ISOLATED_INSTALL = isolated;
+  delete require.cache[configPath];
+  resources[isolated] = require(configPath).extraResources
+    .filter((entry) => entry.to === "python" || entry.to === "git");
+}
+console.log(JSON.stringify(resources));
+"""
+        completed = subprocess.run(
+            ["node", "-e", resource_probe],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=15,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        resources = json.loads(completed.stdout)
+        for isolated in ("0", "1"):
+            with self.subTest(isolated=isolated):
+                python_resources = [entry for entry in resources[isolated] if entry["to"] == "python"]
+                git_resources = [entry for entry in resources[isolated] if entry["to"] == "git"]
+                self.assertEqual(len(python_resources), 1)
+                self.assertEqual(Path(python_resources[0]["from"]), ROOT / "app/runtime/python312")
+                self.assertIn("!Scripts/**", python_resources[0]["filter"])
+                if isolated == "1":
+                    self.assertIn("!git/**", python_resources[0]["filter"])
+                    self.assertEqual(len(git_resources), 1)
+                    self.assertEqual(Path(git_resources[0]["from"]), ROOT / "app/runtime/python312/git")
+                else:
+                    self.assertNotIn("!git/**", python_resources[0]["filter"])
+                    self.assertEqual(git_resources, [])
         self.assertIn('"audit-portable-paths.py"', release)
         self.assertIn("publisher-bound Python Scripts launchers leaked", release)
         self.assertIn('join(appRoot, "runtime", "python312", "python.exe")', release)

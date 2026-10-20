@@ -36,15 +36,18 @@ class BackendGatewayBoundaryTests(unittest.TestCase):
         handler.headers = Message()
         observed: list[tuple[dict, int]] = []
         handler._write_json = lambda body, status=200: observed.append((body, status))
+        handler._finish_rejected_connection = lambda: None
         with mock.patch.dict(os.environ, {"TIANGONG_DESKTOP_TOKEN": "T" * 48}, clear=False):
             self.assertTrue(handler._authorize_business_route("/health"))
             self.assertFalse(handler._authorize_business_route("/api/v1/llm/settings"))
             self.assertEqual(observed[-1][1], 401)
+            self.assertTrue(handler.close_connection)
             handler.headers["X-Tiangong-Token"] = "T" * 48
             self.assertTrue(handler._authorize_business_route("/api/v1/llm/settings"))
             handler.headers["Origin"] = "https://evil.example"
             self.assertFalse(handler._authorize_business_route("/api/v1/llm/settings"))
             self.assertEqual(observed[-1][1], 403)
+            self.assertTrue(handler.close_connection)
 
     def test_backend_never_accepts_plaintext_key_in_settings_json(self) -> None:
         from v3.duihua_qiaojie import _save_llm_settings

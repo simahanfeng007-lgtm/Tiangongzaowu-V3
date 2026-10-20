@@ -27,6 +27,7 @@ except ModuleNotFoundError as exc:
 from life_service.embedded_runtime import EmbeddedLifeError, EmbeddedLifeRuntime
 from life_service.identity_migration import (
     IDENTITY_SCHEMA,
+    _io_path,
     migrate_legacy_identities,
 )
 
@@ -389,7 +390,10 @@ class LifeIdentityMigrationTests(unittest.TestCase):
 
     @unittest.skipUnless(__import__("os").name == "nt", "Windows extended paths only")
     def test_long_unicode_profile_migrates_without_winerror_206(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
+        directory = tempfile.TemporaryDirectory()
+        with directory as temporary:
+            # Keep ordinary input paths while making fixture cleanup long-path safe.
+            directory.name = str(_io_path(Path(temporary)))
             root = Path(temporary) / ("长路径 用户 " + "x" * 120)
             legacy = "org_" + "9" * 32
             write_v1(root / "life-kernel", legacy, "2020-01-01T00:00:00.000Z")

@@ -15,6 +15,7 @@ import hmac
 import os
 import queue
 import re
+import socket
 import sqlite3
 import threading
 import tempfile
@@ -1665,10 +1666,10 @@ class _ChuliQi(BaseHTTPRequestHandler):
             return True
         # A renderer or arbitrary web page is never an internal service.
         if str(self.headers.get("Origin") or "").strip():
-            self._write_json({"ok": False, "error": "browser_origin_forbidden"}, 403)
+            self._reject_json({"ok": False, "error": "browser_origin_forbidden"}, 403)
             return False
         if not self._is_internal_request():
-            self._write_json({"ok": False, "error": "backend_internal_token_required"}, 401)
+            self._reject_json({"ok": False, "error": "backend_internal_token_required"}, 401)
             return False
         return True
 
@@ -1682,6 +1683,43 @@ class _ChuliQi(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps(data, ensure_ascii=False).encode("utf-8"))
         except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError, OSError):
             self.close_connection = True
+
+    def _reject_json(self, data, status: int):
+        # Rejections may precede reading the body. Never parse remaining
+        # upload bytes as another request, and finish the connection so an
+        # in-flight body cannot replace the response with a Windows reset.
+        self.close_connection = True
+        self._write_json(data, status)
+        self._finish_rejected_connection()
+
+    def _finish_rejected_connection(self) -> None:
+        # Preserve the error response when a rejected upload is still arriving.
+        # Closing with unread TCP bytes can replace the response with a reset on
+        # Windows. Half-close the response first, then discard (never dispatch)
+        # at most 64 KiB within one 250 ms deadline, including slow trickles.
+        self.wfile.flush()
+        previous_timeout = self.connection.gettimeout()
+        deadline = time.monotonic() + 0.25
+        remaining = 64 * 1024
+        try:
+            self.connection.shutdown(socket.SHUT_WR)
+            while remaining:
+                budget = deadline - time.monotonic()
+                if budget <= 0:
+                    break
+                self.connection.settimeout(budget)
+                chunk = self.rfile.read1(min(remaining, 8192))
+                if not chunk:
+                    break
+                remaining -= len(chunk)
+        except OSError:
+            # The peer may have left, or the bounded drain may have timed out.
+            pass
+        finally:
+            try:
+                self.connection.settimeout(previous_timeout)
+            except OSError:
+                pass
 
     def _read_json_body(self, max_bytes: int = MAX_JSON_BODY_BYTES) -> dict:
         length = int(self.headers.get("Content-Length", 0))
@@ -1873,7 +1911,7 @@ class _ChuliQi(BaseHTTPRequestHandler):
                 "lifecycle": ["memory", "experience", "learning candidates", "self-healing recovery"],
             })
             return
-        self._write_json({"ok": False, "error": "not_found"}, 404)
+        self._reject_json({"ok": False, "error": "not_found"}, 404)
 
     def do_POST(self):
         path = urlparse(self.path).path
@@ -2203,7 +2241,7 @@ class _ChuliQi(BaseHTTPRequestHandler):
                 self._write_json({"ok": False, "error": str(e)}, 500)
             return
         if path not in {"/chat", "/api/v1/gateway/internal/inbound"}:
-            self._write_json({"ok": False, "error": "not_found"}, 404); return
+            self._reject_json({"ok": False, "error": "not_found"}, 404); return
         try:
             data = self._read_json_body()
             xiaoxi = data.get("xiaoxi", "") or data.get("text", "") or data.get("message", "")
@@ -2296,9 +2334,9 @@ class _ChuliQi(BaseHTTPRequestHandler):
         try:
             length = int(self.headers.get("Content-Length", 0))
             if length < 0:
-                self._write_json({"cuowu": "invalid_content_length"}, 400); return
+                self._reject_json({"cuowu": "invalid_content_length"}, 400); return
             if length > MAX_VOICE_BODY_BYTES:
-                self._write_json({"cuowu": f"voice_too_large:{length}>{MAX_VOICE_BODY_BYTES}"}, 413); return
+                self._reject_json({"cuowu": f"voice_too_large:{length}>{MAX_VOICE_BODY_BYTES}"}, 413); return
             audio_bytes = self.rfile.read(length)
             content_type = self.headers.get("Content-Type", "")
             yonghu_ming = self.headers.get("X-Tiangong-User", "")

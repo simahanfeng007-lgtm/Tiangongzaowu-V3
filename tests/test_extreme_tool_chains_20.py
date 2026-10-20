@@ -113,7 +113,12 @@ class ExtremeToolChains20(unittest.TestCase):
     def test_t01_short_chain_empty_args_grant_verify_and_execute(self):
         issued = self.authority.issue(self._payload(1), now_ms=self.now_ms + 10)
         capability = _load(CAPABILITY_SOURCE, "extreme_capability_t01")
-        with mock.patch.dict(os.environ, {"TIANGONG_OMNI_BODY_STATE_ROOT": str(self.workspace / "state-t01")}, clear=True):
+        # Match this consumer's clock to the explicit signing time; source
+        # preparation still runs fully and the real verifier keeps its 60s TTL.
+        with (
+            mock.patch.dict(os.environ, {"TIANGONG_OMNI_BODY_STATE_ROOT": str(self.workspace / "state-t01")}, clear=True),
+            mock.patch.object(capability, "time", SimpleNamespace(time_ns=lambda: (self.now_ms + 10) * 1_000_000)),
+        ):
             verified = capability.verify_capability_grant(
                 issued["grant"], action="system.health", target="", args={},
                 workspace=str(self.workspace), runtime_meta=issued["runtime"],
@@ -253,9 +258,12 @@ class ExtremeToolChains20(unittest.TestCase):
         issued = self.authority.issue(self._payload(16), now_ms=self.now_ms + 160)
         capability = _load(CAPABILITY_SOURCE, "extreme_capability_t16")
         state_root = self.workspace / "state-t16"
-        with mock.patch.dict(os.environ, {"TIANGONG_OMNI_BODY_STATE_ROOT": str(state_root)}, clear=True):
+        with (
+            mock.patch.dict(os.environ, {"TIANGONG_OMNI_BODY_STATE_ROOT": str(state_root)}, clear=True),
+            mock.patch.object(capability, "time", SimpleNamespace(time_ns=lambda: (self.now_ms + 160) * 1_000_000)),
+        ):
             capability.verify_capability_grant(issued["grant"], action="system.health", target="", args={}, workspace=str(self.workspace), runtime_meta=issued["runtime"])
-            with self.assertRaises(Exception):
+            with self.assertRaisesRegex(capability.CapabilityGrantError, "^capability nonce replay is forbidden$"):
                 capability.verify_capability_grant(issued["grant"], action="system.health", target="", args={}, workspace=str(self.workspace), runtime_meta=issued["runtime"])
 
     def test_t17_lost_response_retry_returns_same_grant(self):
@@ -330,6 +338,59 @@ class ExtremeToolChains20(unittest.TestCase):
         self.assertEqual(sign_execution.call_count, 1)
         self.assertEqual(sign_capability.call_count, 1)
         self.assertEqual(record_evaluation.call_count, 1)
+
+
+    def test_t22_signed_consumer_time_boundaries_preserve_ttl_and_nonce(self):
+        capability = _load(CAPABILITY_SOURCE, "extreme_capability_t22")
+        boundaries = (
+            ("not_before_ms", -1, True),
+            ("expires_at_ms", 1, True),
+            ("not_before_ms", 0, False),
+            ("expires_at_ms", 0, False),
+        )
+        for index, (field, delta_ms, rejected) in enumerate(boundaries):
+            with self.subTest(field=field, delta_ms=delta_ms):
+                # 22000..22003 are disjoint from t19's 1900..2049,
+                # t20's 3000..3031, and t21's repeated call 21.
+                signed_at_ms = self.now_ms + 2_200 + index
+                issued = self.authority.issue(self._payload(22_000 + index), now_ms=signed_at_ms)
+                grant = issued["grant"]
+                payload = grant["payload"]
+                self.assertEqual(payload["issued_at_ms"], signed_at_ms)
+                self.assertEqual(payload["not_before_ms"], signed_at_ms)
+                self.assertEqual(payload["expires_at_ms"] - payload["issued_at_ms"], 60_000)
+                self.assertEqual(payload["gateway_epoch"], 71)
+                verify_at_ms = payload[field] + delta_ms
+                signing_key = next(
+                    key for key in issued["runtime"]["trust_bundle"]["keys"]
+                    if key["kid"] == grant["header"]["kid"]
+                )
+                # Neither rejection nor acceptance can be a signing-key expiry.
+                self.assertLessEqual(signing_key["not_before_ms"], verify_at_ms)
+                self.assertLess(verify_at_ms, signing_key["not_after_ms"])
+                state_root = self.workspace / "state-t22" / str(index)
+                nonce_root = state_root / "capability_nonces"
+                with mock.patch.dict(os.environ, {"TIANGONG_OMNI_BODY_STATE_ROOT": str(state_root)}, clear=True):
+                    if rejected:
+                        with (
+                            mock.patch.object(capability, "time", SimpleNamespace(time_ns=lambda value=verify_at_ms: value * 1_000_000)),
+                            self.assertRaisesRegex(capability.CapabilityGrantError, "^capability grant time or authority is invalid$"),
+                        ):
+                            capability.verify_capability_grant(
+                                grant, action="system.health", target="", args={},
+                                workspace=str(self.workspace), runtime_meta=issued["runtime"],
+                            )
+                        self.assertEqual(list(nonce_root.glob("*.json")), [])
+                        # The same original signed grant must remain consumable
+                        # after rejection; no remint, resign or nonce reset.
+                        verify_at_ms = payload["not_before_ms"]
+                    with mock.patch.object(capability, "time", SimpleNamespace(time_ns=lambda value=verify_at_ms: value * 1_000_000)):
+                        verified = capability.verify_capability_grant(
+                            grant, action="system.health", target="", args={},
+                            workspace=str(self.workspace), runtime_meta=issued["runtime"],
+                        )
+                    self.assertEqual(verified["grant_sha256"], canonical_sha256(grant))
+                    self.assertEqual(len(list(nonce_root.glob("*.json"))), 1)
 
 
 if __name__ == "__main__":

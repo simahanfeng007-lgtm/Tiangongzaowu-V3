@@ -253,6 +253,25 @@ def test_model_http_failure_after_tool_does_not_replay_effect_or_approve(monkeyp
     assert judge_calls == []
 
 
+def test_context_assembly_failure_after_tool_is_not_execution_budget_exhaustion(monkeypatch, tmp_path):
+    from test_adversarial_completion import run_orchestrator
+    from v3 import zongdiaodu as scheduler
+    from v3.context_compactor import ContextAssemblyError
+
+    def overflow(_payload):
+        raise ContextAssemblyError("current_context_exceeds_endpoint_input_budget")
+
+    monkeypatch.setattr(scheduler, "_simple_chain_history_payload_text", overflow)
+    reply, snapshots, judge_calls, _, _, _ = run_orchestrator(
+        monkeypatch, tmp_path, [], tool_result={"ok": True, "result": {"actions": {}}}
+    )
+    assert "上下文装配失败" in reply and "任务尚未完成" in reply
+    assert "预算上限" not in reply and "回复「继续」" not in reply
+    assert snapshots[-1]["model_failure"]["exception_type"] == "ContextAssemblyError"
+    assert snapshots[-1]["status"] == "force_stopped"
+    assert judge_calls == []
+
+
 def test_initial_model_exception_is_reported_as_failure_not_stuck_loop(monkeypatch, tmp_path):
     from test_adversarial_completion import run_orchestrator
 
