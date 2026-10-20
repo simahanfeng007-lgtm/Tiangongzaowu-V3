@@ -254,7 +254,7 @@ class OmniBodyPythonInterpreterTests(unittest.TestCase):
                 with self.assertRaisesRegex(helpers["OmniBodyError"], "unsupported installed runtime layout"):
                     helpers["_resolve_python_interpreter"]()
 
-    def test_legacy_app_layout_keeps_bundled_interpreter_behavior(self) -> None:
+    def test_legacy_windows_app_layout_keeps_bundled_interpreter_behavior(self) -> None:
         helpers = _load_interpreter_helpers()
         with tempfile.TemporaryDirectory(prefix="tiangong-python-legacy-") as temporary:
             app = Path(temporary) / "app"
@@ -264,20 +264,22 @@ class OmniBodyPythonInterpreterTests(unittest.TestCase):
                 item.parent.mkdir(parents=True)
                 item.write_bytes(b"legacy fixture")
             for controlled in (False, True):
-                with self.subTest(controlled=controlled), mock.patch.object(sys, "frozen", True, create=True), \
+                with self.subTest(controlled=controlled), mock.patch.object(sys, "platform", "win32"), \
+                        mock.patch.object(sys, "frozen", True, create=True), \
                         mock.patch.object(sys, "executable", str(backend)), \
                         mock.patch.dict(os.environ, {"TIANGONG_PYTHON_EXECUTABLE": ""}), \
                         mock.patch.object(shutil, "which", return_value=None):
                     self.assertEqual(Path(helpers["_resolve_python_interpreter"](controlled=controlled)), bundled.resolve())
 
-    def test_source_interpreter_and_caller_override_remain_available(self) -> None:
+    def test_windows_source_interpreter_and_caller_override_remain_available(self) -> None:
         helpers = _load_interpreter_helpers()
         with tempfile.TemporaryDirectory(prefix="tiangong-python-source-") as temporary:
             source = Path(temporary) / "python.exe"
             configured = Path(temporary) / "python3.exe"
             for item in (source, configured):
                 item.write_bytes(b"source fixture")
-            with mock.patch.object(sys, "frozen", False, create=True), \
+            with mock.patch.object(sys, "platform", "win32"), \
+                    mock.patch.object(sys, "frozen", False, create=True), \
                     mock.patch.object(sys, "executable", str(source)), \
                     mock.patch.dict(os.environ, {"TIANGONG_PYTHON_EXECUTABLE": str(configured)}), \
                     mock.patch.object(shutil, "which", return_value=None):
