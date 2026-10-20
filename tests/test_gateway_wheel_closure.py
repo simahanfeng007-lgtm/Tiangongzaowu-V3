@@ -72,7 +72,8 @@ class GatewayWheelClosureTests(unittest.TestCase):
         # metadata/discovery rules. No package manager, dependency resolution,
         # repository build directory, or product process is involved.
         with tempfile.TemporaryDirectory(prefix="tiangong-wheel-closure-") as temporary:
-            root = Path(temporary)
+            # Match the canonical import origin even when Windows TEMP is an 8.3 alias.
+            root = Path(temporary).resolve()
             project = root / "project"
             project.mkdir()
             shutil.copyfile(ROOT / "pyproject.toml", project / "pyproject.toml")
