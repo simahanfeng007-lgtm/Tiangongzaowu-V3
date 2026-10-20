@@ -9,7 +9,8 @@ const require = createRequire(import.meta.url);
 const { configureBundledNativeTools } = require("../app/lib/bundled-native-tools.js");
 
 function fixture(t) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "tiangong-native-tools-"));
+  // Windows TEMP may use an 8.3 alias; use the same canonical parent as the cleanup guard.
+  const root = fs.mkdtempSync(path.join(fs.realpathSync.native(os.tmpdir()), "tiangong-native-tools-"));
   t.after(() => {
     assert.equal(path.dirname(root), fs.realpathSync.native(os.tmpdir()));
     fs.rmSync(root, { recursive: true, force: true });

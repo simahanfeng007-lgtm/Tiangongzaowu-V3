@@ -9,7 +9,8 @@ const require = createRequire(import.meta.url);
 const { configureIsolatedInstallation } = require("../app/lib/isolated-installation.js");
 
 function fixture(t, { isPackaged = true } = {}) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "tiangong-isolated-profile-"));
+  // Windows TEMP may use an 8.3 alias; use the same canonical parent as the cleanup guard.
+  const root = fs.mkdtempSync(path.join(fs.realpathSync.native(os.tmpdir()), "tiangong-isolated-profile-"));
   const appData = path.join(root, "host-appdata");
   const calls = [];
   const paths = { appData };
