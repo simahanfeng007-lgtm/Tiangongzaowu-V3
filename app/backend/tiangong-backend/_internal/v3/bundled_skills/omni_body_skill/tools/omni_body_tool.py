@@ -20,6 +20,7 @@ from __future__ import annotations
 import base64
 from contextlib import contextmanager
 import csv
+import difflib
 import hashlib
 import html as html_lib
 import json
@@ -293,6 +294,15 @@ DICTIONARY = load_dictionary()
 ACTIONS = DICTIONARY.action_metadata()
 APP_REGISTRY = DICTIONARY.applications
 APP_ACTIONS = {name: row for name, row in ACTIONS.items() if row.get("app_id")}
+
+
+def _unknown_action_message(action: str) -> str:
+    # A wrong action name must teach the correct one instead of dead-ending
+    # the caller; models routinely synthesise plausible namespaces such as
+    # "desktop.file.write" when the registry only advertises prefixed names.
+    close = difflib.get_close_matches(str(action), list(ACTIONS), n=3, cutoff=0.6)
+    hint = ("; closest known actions: " + ", ".join(close)) if close else ""
+    return f"Unknown action: {action}{hint}"
 
 
 def _load_learning_runtime() -> tuple[Any | None, Any | None, str]:
@@ -633,6 +643,40 @@ def _resolve_python_interpreter(*, controlled: bool = False) -> str:
     it as a Python interpreter starts a second backend process and can steal the
     live port, so it must never be accepted merely because it exists.
     """
+    executable = Path(sys.executable).expanduser().absolute()
+    if (sys.platform == "win32" and getattr(sys, "frozen", False) is True
+            and executable.name.casefold() in {"tiangong-total-gateway.exe", "tiangong-total-gateway"}):
+        # The installed single-process gateway has no app/ ancestor. Derive
+        # its interpreter only from its own resources tree, including for the
+        # signed Python profile that deliberately ignores caller overrides.
+        resources = executable.parent.parent
+        if executable.parent.name.casefold() != "total-gateway" or resources.name.casefold() != "resources":
+            raise OmniBodyError("The frozen gateway has an unsupported installed runtime layout.")
+        python_root = resources / "python"
+        bundled = python_root / "python.exe"
+        try:
+            files = [python_root / name for name in (
+                "python.exe", "python3.dll", "python312.dll", "python312.zip",
+                "python312._pth", "runtime-manifest.json",
+            )]
+            directories = [resources, executable.parent, python_root, python_root / "Lib",
+                           python_root / "Lib" / "site-packages"]
+            if (not executable.is_file() or not all(item.is_file() for item in files)
+                    or not all(item.is_dir() for item in directories)):
+                raise ValueError("bundled runtime files are missing")
+            for item in [executable, *files, *directories]:
+                # A Windows 8.3 alias resolves to different text without redirecting
+                # the file. Inspect every ancestor rather than comparing spellings.
+                if any(_is_link_or_reparse(part) for part in (item, *item.parents)):
+                    raise ValueError("bundled runtime contains a link or redirected ancestor")
+            if not _is_python_interpreter(bundled):
+                raise ValueError("bundled Python launcher is unavailable")
+            return str(bundled.resolve(strict=True))
+        except (OSError, RuntimeError, ValueError) as exc:
+            # A broken installed runtime must never silently borrow a host
+            # interpreter or accept TIANGONG_PYTHON_EXECUTABLE from the shell.
+            raise OmniBodyError("No trusted bundled Python interpreter is available for the frozen gateway.") from exc
+
     candidates: List[Path] = []
     configured = str(os.environ.get("TIANGONG_PYTHON_EXECUTABLE") or "").strip()
     if configured and not controlled:
@@ -644,7 +688,6 @@ def _resolve_python_interpreter(*, controlled: bool = False) -> str:
     if sys.platform.startswith("linux"):
         candidates.append(Path("/usr/bin/python3"))
 
-    executable = Path(sys.executable)
     candidates.append(executable)
 
     # Packaged layout: app/backend/tiangong-backend/tiangong-backend.exe and
@@ -734,7 +777,11 @@ class BodyRuntime:
                 directory.mkdir(parents=True, exist_ok=True)
             except Exception as exc:
                 self._state_init_warnings.append({"state": name, "path": str(directory), "error": f"{type(exc).__name__}: {exc}"})
-        self.ffmpeg = self.config.ffmpeg_path or shutil.which("ffmpeg")
+        bundled_ffmpeg = str(os.environ.get("TIANGONG_BUNDLED_FFMPEG_EXECUTABLE") or "").strip()
+        self.ffmpeg = self.config.ffmpeg_path or (
+            bundled_ffmpeg if bundled_ffmpeg and Path(bundled_ffmpeg).is_absolute()
+            and Path(bundled_ffmpeg).is_file() else None
+        ) or shutil.which("ffmpeg")
         if not self.ffmpeg:
             try:
                 import imageio_ffmpeg  # type: ignore
@@ -765,7 +812,12 @@ class BodyRuntime:
     def run(self, action: str, target: Optional[str] = None, args: Optional[Dict[str, Any]] = None, **kwargs: Any) -> Dict[str, Any]:
         readiness = DICTIONARY.readiness(str(action), runtime=self)
         if not readiness["ready"]:
-            return {"success": False, "ok": False, "action": action, "error_type": "DictionaryCapabilityUnavailable", "readiness": readiness}
+            # An unregistered name must teach the registered one instead of
+            # dead-ending the caller with a bare "not_in_dictionary" reason.
+            hint = _unknown_action_message(str(action)) if action not in ACTIONS else ""
+            return {"success": False, "ok": False, "action": action,
+                    "error_type": "DictionaryCapabilityUnavailable", "error": hint or None,
+                    "readiness": readiness}
         payload = dict(args or {})
         payload.update(kwargs)
         validation = validate_tool_request(
@@ -850,7 +902,7 @@ class BodyRuntime:
         op_id = str(_op_id or self._new_op_id(action))
         try:
             if action not in ACTIONS:
-                raise OmniBodyError(f"Unknown action: {action}")
+                raise OmniBodyError(_unknown_action_message(action))
             meta = ACTIONS[action]
             if meta.get("status", "active") != "active":
                 return self._adapter_or_blocked(action, target, args, reason="action lifecycle: " + str(meta["status"]))
@@ -1542,7 +1594,11 @@ class BodyRuntime:
             },
             "app_action_count": len(APP_ACTIONS),
             "base_action_count": len(ACTIONS) - len(APP_ACTIONS),
-            "detail_hint": "Use system.action_schema for one action, system.app_registry for app details, or include_actions=true only when the full registry is explicitly required.",
+            # Always-available core actions carry plain names (file.write,
+            # directory.* …). Listing them here stops callers from inferring
+            # app-style namespaces (e.g. "desktop.file.write") for basics.
+            "base_actions": sorted(name for name in ACTIONS if name not in APP_ACTIONS),
+            "detail_hint": "base_actions are always-available core actions with plain names (file.write, directory.*, …); actions here are app/adapter extensions with <app>.<object>.<verb> names. Use system.action_schema for one action, system.app_registry for app details, or include_actions=true only when the full registry is explicitly required.",
         }
 
     def _action_life_activity_query(
@@ -1609,7 +1665,7 @@ class BodyRuntime:
             raise OmniBodyError("system.action_schema requires target or args.action")
         meta = ACTIONS.get(name)
         if meta is None:
-            raise OmniBodyError(f"Unknown action: {name}")
+            raise OmniBodyError(_unknown_action_message(name))
         capability = self.capability_manifest.capabilities.get(name)
         readiness = DICTIONARY.readiness(name, runtime=self)
         profile_id = DICTIONARY.tools[name]["budget"]["profile"]

@@ -15,6 +15,8 @@ const { SecureUpdater } = require("./secure-updater");
 const { preflightVrcAvatarSource } = require("./vrc-import");
 const { createCandidateGrantIssuer, installAvatarAssetProtocol, registerAvatarAssetScheme, chooseAvatarImportFile, commitCandidate, deleteModelFile } = require("./avatar-asset-host.cjs");
 const { createAvatarStorageHost } = require("./avatar-storage-host.cjs");
+const { configureIsolatedInstallation } = require("./lib/isolated-installation");
+const { configureBundledNativeTools } = require("./lib/bundled-native-tools");
 
 // HOTFIX-20260728: VRM 等打包资产在 webSecurity+sandbox 下无法经 file:// fetch
 // 读取，且 preload 不在桌宠 iframe 内运行（IPC 桥拿不到）。特权自定义协议
@@ -93,6 +95,15 @@ function configureSourceIsolation() {
 }
 
 const SOURCE_ISOLATION = configureSourceIsolation();
+const ISOLATED_INSTALLATION = configureIsolatedInstallation({
+  app,
+  metadata: require("./package.json"),
+});
+configureBundledNativeTools({
+  isPackaged: app.isPackaged,
+  isolatedInstallation: Boolean(ISOLATED_INSTALLATION),
+  resourcesPath: process.resourcesPath,
+});
 
 // Separate source checkouts may intentionally share a profile and therefore
 // the 7184 epoch file.  The checkout identity must come from the actual app
@@ -273,7 +284,7 @@ const PRIMARY_FRONTEND_FILE = path.join(app.getAppPath(), FRONTEND_DIR_NAME, "in
 const PRELOAD_FILE = path.join(app.getAppPath(), "preload.js");
 const APP_ID = SOURCE_MODE
   ? "com.tiangong.v3.qiyuan.source"
-  : "com.tiangong.v3.qiyuan";
+  : (ISOLATED_INSTALLATION ? "com.tiangong.v3.qiyuan.isolated" : "com.tiangong.v3.qiyuan");
 const APP_ICON_FILE = path.join(app.getAppPath(), "assets", "tiangong-logo.ico");
 const WINDOW_THEMES = {
   ink_teal: {
@@ -1081,7 +1092,13 @@ function applyWorkspacePreference() {
     && configured
     && sameWindowsPath(configured, SOURCE_ISOLATION.workspaceRoot)
   );
-  if (sourceBootstrap && persisted) {
+  const isolatedBootstrap = (
+    typeof ISOLATED_INSTALLATION !== "undefined"
+    && ISOLATED_INSTALLATION
+    && configured
+    && sameWindowsPath(configured, ISOLATED_INSTALLATION.workspaceRoot)
+  );
+  if ((sourceBootstrap || isolatedBootstrap) && persisted) {
     process.env.TIANGONG_DESKTOP_WORKSPACE_ROOT = persisted;
     process.env.TIANGONG_WORKSPACE_ROOT = persisted;
     process.env.TIANGONG_FORCE_WORKSPACE_ROOT = persisted;
@@ -2458,7 +2475,7 @@ async function startLifeService() {
 function stopLifeServiceSync(reason = "app-exit", options = {}) {
   const pids = new Set();
   if (lifeProcess?.pid && !lifeProcess.killed) pids.add(lifeProcess.pid);
-  if (options.includeListeners || reason === "app-exit" || reason === "window-all-closed" || reason === "before-quit") {
+  if (!ISOLATED_INSTALLATION && (options.includeListeners || reason === "app-exit" || reason === "window-all-closed" || reason === "before-quit")) {
     for (const pid of lifeServiceListenerPids()) {
       if (processImageName(pid).toLowerCase().includes("tiangong-life-service")) pids.add(pid);
     }
@@ -2647,7 +2664,7 @@ async function startCommunicationService() {
 function stopCommunicationServiceSync(reason = "app-exit", options = {}) {
   const pids = new Set();
   if (communicationProcess?.pid && !communicationProcess.killed) pids.add(communicationProcess.pid);
-  if (options.includeListeners || reason === "app-exit" || reason === "window-all-closed" || reason === "before-quit") {
+  if (!ISOLATED_INSTALLATION && (options.includeListeners || reason === "app-exit" || reason === "window-all-closed" || reason === "before-quit")) {
     for (const pid of communicationListenerPids()) {
       if (processImageName(pid).toLowerCase().includes("tiangong-communication-service")) pids.add(pid);
     }
@@ -2959,6 +2976,25 @@ async function createPreUpdateSoulBackup() {
 
 function getSecureUpdater() {
   if (secureUpdater) return secureUpdater;
+  if (ISOLATED_INSTALLATION) {
+    const status = () => ({
+      ok: true,
+      enabled: false,
+      phase: "独立版使用安装包更新",
+      state: "DISABLED",
+      currentVersion: app.getVersion(),
+      error: "独立环境版本请使用新的独立版安装包更新。",
+    });
+    secureUpdater = Object.freeze({
+      status,
+      check: async () => status(),
+      download: async () => status(),
+      apply: async () => { throw new Error("isolated_installation_manual_update_required"); },
+      recordError: () => status(),
+      markHealthy: () => false,
+    });
+    return secureUpdater;
+  }
   secureUpdater = new SecureUpdater({
     app,
     userData: app.getPath("userData"),
@@ -3399,6 +3435,8 @@ function totalGatewayEnvironment(entry) {
   // 用户缓存与本机 Chrome/Edge（"浏览器控不了"修复的一部分）。
   const packagedBrowsersRoot = [
     process.env.TIANGONG_PLAYWRIGHT_BROWSERS_PATH,
+    path.join(process.resourcesPath, "python", "ms-playwright"),
+    path.join(app.getAppPath(), "runtime", "python312", "ms-playwright"),
     path.join(app.getAppPath(), "runtime", "ms-playwright"),
   ].filter(Boolean).find((candidate) => isDirectory(candidate));
   const env = { ...process.env };
@@ -3551,7 +3589,7 @@ async function totalGatewayServiceReadyCheck() {
 
 async function startTotalGateway() {
   if (totalGatewayStarting) {
-    return SOURCE_MODE
+    return SOURCE_MODE || ISOLATED_INSTALLATION
       ? (totalGatewayProcess ? waitForTotalGateway(totalGatewayProcess) : false)
       : waitForTotalGateway();
   }
@@ -3562,14 +3600,16 @@ async function startTotalGateway() {
     // asynchronously (fire-and-forget) so the netstat/tasklist scans no longer
     // block startup; the helper functions verify process image ownership and
     // never terminate an unrelated listener.
-    Promise.all([
-      stopBackendGatewayAsync("embedded-cutover", { expectedDir: backendDir(), includeReplaceableListeners: true }),
-      stopLifeServiceAsync("embedded-cutover", { includeListeners: true }),
-      stopCommunicationServiceAsync("embedded-cutover", { includeListeners: true }),
-    ]).catch((error) => {
-      writeDesktopDiagnostic("embedded-cutover-sweep-failed", error?.message || error);
-    });
-    if (SOURCE_MODE) {
+    if (!ISOLATED_INSTALLATION) {
+      Promise.all([
+        stopBackendGatewayAsync("embedded-cutover", { expectedDir: backendDir(), includeReplaceableListeners: true }),
+        stopLifeServiceAsync("embedded-cutover", { includeListeners: true }),
+        stopCommunicationServiceAsync("embedded-cutover", { includeListeners: true }),
+      ]).catch((error) => {
+        writeDesktopDiagnostic("embedded-cutover-sweep-failed", error?.message || error);
+      });
+    }
+    if (SOURCE_MODE || ISOLATED_INSTALLATION) {
       const child = totalGatewayProcess;
       if (child && child.exitCode == null && child.signalCode == null) {
         return waitForTotalGateway(child);
@@ -3827,7 +3867,7 @@ function stopBackendGatewaySync(reason = "app-exit", options = {}) {
   if (backendProcess && backendProcess.pid && !backendProcess.killed) {
     pids.add(backendProcess.pid);
   }
-  for (const pid of backendListenerPids()) {
+  for (const pid of ISOLATED_INSTALLATION ? [] : backendListenerPids()) {
     const imageName = processImageName(pid).toLowerCase();
     if (
       imageName.includes("tiangong-backend") ||
@@ -3966,7 +4006,7 @@ async function stopBackendGatewayAsync(reason = "app-exit", options = {}) {
   if (backendProcess && backendProcess.pid && !backendProcess.killed) {
     pids.add(backendProcess.pid);
   }
-  for (const pid of await backendListenerPidsAsync()) {
+  for (const pid of ISOLATED_INSTALLATION ? [] : await backendListenerPidsAsync()) {
     const imageName = (await processImageNameAsync(pid)).toLowerCase();
     if (
       imageName.includes("tiangong-backend") ||
@@ -3987,7 +4027,7 @@ async function stopBackendGatewayAsync(reason = "app-exit", options = {}) {
 async function stopLifeServiceAsync(reason = "app-exit", options = {}) {
   const pids = new Set();
   if (lifeProcess?.pid && !lifeProcess.killed) pids.add(lifeProcess.pid);
-  if (options.includeListeners || reason === "app-exit" || reason === "window-all-closed" || reason === "before-quit") {
+  if (!ISOLATED_INSTALLATION && (options.includeListeners || reason === "app-exit" || reason === "window-all-closed" || reason === "before-quit")) {
     for (const pid of await serviceListenerPidsAsync(LIFE_URL, DEFAULT_LIFE_PORT)) {
       if ((await processImageNameAsync(pid)).toLowerCase().includes("tiangong-life-service")) pids.add(pid);
     }
@@ -4002,7 +4042,7 @@ async function stopLifeServiceAsync(reason = "app-exit", options = {}) {
 async function stopCommunicationServiceAsync(reason = "app-exit", options = {}) {
   const pids = new Set();
   if (communicationProcess?.pid && !communicationProcess.killed) pids.add(communicationProcess.pid);
-  if (options.includeListeners || reason === "app-exit" || reason === "window-all-closed" || reason === "before-quit") {
+  if (!ISOLATED_INSTALLATION && (options.includeListeners || reason === "app-exit" || reason === "window-all-closed" || reason === "before-quit")) {
     for (const pid of await serviceListenerPidsAsync(COMMUNICATION_URL, DEFAULT_COMMUNICATION_PORT)) {
       if ((await processImageNameAsync(pid)).toLowerCase().includes("tiangong-communication-service")) pids.add(pid);
     }

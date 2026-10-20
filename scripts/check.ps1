@@ -68,8 +68,45 @@ if ($forbidden) {
   throw "Forbidden backup or patch artifacts were found:$([Environment]::NewLine)$paths"
 }
 
+function Test-GitCompiledTerminfo {
+  param([string]$Path, [string]$TerminfoRoot)
+
+  $Prefix = [IO.Path]::GetFullPath($TerminfoRoot).TrimEnd("\", "/") + [IO.Path]::DirectorySeparatorChar
+  if (-not [IO.Path]::GetFullPath($Path).StartsWith($Prefix, [StringComparison]::OrdinalIgnoreCase)) {
+    return $false
+  }
+  # xterm.js names a terminal type. Its compiled ncurses data is not JS.
+  # Only valid binary headers inside Git's terminfo directory qualify.
+  $Stream = [IO.File]::OpenRead($Path)
+  try {
+    $Header = New-Object byte[] 12
+    if ($Stream.Read($Header, 0, 12) -ne 12) { return $false }
+    $Magic = [BitConverter]::ToUInt16($Header, 0)
+    if ($Magic -notin @(0x011a, 0x021e)) { return $false }
+    $NameBytes = [BitConverter]::ToUInt16($Header, 2)
+    $BooleanBytes = [BitConverter]::ToUInt16($Header, 4)
+    $NumberCount = [BitConverter]::ToUInt16($Header, 6)
+    $StringCount = [BitConverter]::ToUInt16($Header, 8)
+    $TableBytes = [BitConverter]::ToUInt16($Header, 10)
+    $NumberBytes = if ($Magic -eq 0x021e) { 4 } else { 2 }
+    $PrefixBytes = 12 + $NameBytes + $BooleanBytes
+    $MinimumBytes = $PrefixBytes + ($PrefixBytes % 2) + $NumberCount * $NumberBytes + $StringCount * 2 + $TableBytes
+    if ($NameBytes -lt 1 -or $Stream.Length -lt $MinimumBytes) { return $false }
+    [void]$Stream.Seek(12 + $NameBytes - 1, [IO.SeekOrigin]::Begin)
+    return $Stream.ReadByte() -eq 0
+  } finally {
+    $Stream.Dispose()
+  }
+}
+
+$GitTerminfoRoot = Join-Path $AppRoot "runtime\python312\git\usr\lib\terminfo"
+$GitSharedTerminfoRoot = Join-Path $AppRoot "runtime\python312\git\usr\share\terminfo"
 $javascript = Get-ChildItem -LiteralPath $AppRoot -Recurse -File |
-  Where-Object { $_.Extension -in ".js", ".mjs" -and $_.FullName -notlike "*\node_modules\*" }
+  Where-Object {
+    $_.Extension -in ".js", ".mjs" -and $_.FullName -notlike "*\node_modules\*" -and
+    -not (Test-GitCompiledTerminfo -Path $_.FullName -TerminfoRoot $GitTerminfoRoot) -and
+    -not (Test-GitCompiledTerminfo -Path $_.FullName -TerminfoRoot $GitSharedTerminfoRoot)
+  }
 foreach ($file in $javascript) {
   & node --check $file.FullName
   if ($LASTEXITCODE -ne 0) { throw "JavaScript syntax check failed: $($file.FullName)" }
@@ -94,7 +131,37 @@ $BundledSkillTests = Join-Path $BackendRoot "v3\bundled_skills\omni_body_skill\t
 if (Test-Path -LiteralPath $BundledSkillTests -PathType Container) {
   $PythonTestRoots += $BundledSkillTests
 }
-& $Python -m pytest -q --maxfail=1 @PythonTestRoots
+function Get-ReleasePytestPathArguments {
+  param([string]$RequestedBase)
+  if ([string]::IsNullOrWhiteSpace($RequestedBase)) { return }
+  if ($RequestedBase -notmatch '^[A-Za-z]:[\\/]') {
+    throw "Pytest base directory must be an absolute local-drive path"
+  }
+  $TestBase = [IO.Path]::GetFullPath($RequestedBase).TrimEnd('\', '/')
+  if ($TestBase -ieq [IO.Path]::GetPathRoot($TestBase).TrimEnd('\', '/') -or (Test-Path -LiteralPath $TestBase)) {
+    throw "Pytest base directory must be new and cannot be a volume root"
+  }
+  $Ancestor = [IO.Directory]::GetParent($TestBase)
+  while ($null -ne $Ancestor) {
+    if (Test-Path -LiteralPath $Ancestor.FullName) {
+      $Item = Get-Item -LiteralPath $Ancestor.FullName -Force
+      if (($Item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+        throw "Pytest base directory ancestors cannot be redirected"
+      }
+    }
+    $Ancestor = $Ancestor.Parent
+  }
+  return @('--basetemp', $TestBase)
+}
+# CLI arguments apply only to this pytest process. PYTEST_ADDOPTS would also
+# reach nested pytest subprocesses, which must never reset the parent's base.
+$PythonTestPathArguments = @(Get-ReleasePytestPathArguments $env:TIANGONG_RELEASE_PYTEST_BASETEMP)
+if ($env:TIANGONG_RELEASE_COLLECT_ALL_FAILURES -eq "1") {
+  # Diagnose the same complete suite in one run; any failure still blocks release.
+  & $Python -m pytest -q --maxfail=0 @PythonTestRoots @PythonTestPathArguments
+} else {
+  & $Python -m pytest -q --maxfail=1 @PythonTestRoots @PythonTestPathArguments
+}
 if ($LASTEXITCODE -ne 0) { throw "Python regression suite failed" }
 
 $NodeTests = @(Get-ChildItem -LiteralPath $TestsRoot -Filter "*.test.mjs" -File |

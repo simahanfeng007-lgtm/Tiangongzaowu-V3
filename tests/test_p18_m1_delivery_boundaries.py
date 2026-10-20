@@ -33,16 +33,18 @@ class P18M1DeliveryBoundaryTests(unittest.TestCase):
     def test_single_tool_real_budget_bridge_rolls_epoch_instead_of_force_stop(self) -> None:
         from v3.runtime_turn_orchestration import TurnLoopState
         from v3.zongdiaodu import (
+            _SIMPLE_CHAIN_MAX_TOOL_ROUNDS,
             _simple_chain_new_run_state,
             _simple_chain_prepare_tool_budget,
             set_simple_chain_continuity_checkpoint_provider,
         )
 
+        limit = _SIMPLE_CHAIN_MAX_TOOL_ROUNDS
         state = TurnLoopState(
-            action_rounds=75,
-            iteration_count=80,
-            epoch_action_rounds=75,
-            epoch_iteration_count=80,
+            action_rounds=limit,
+            iteration_count=limit + 5,
+            epoch_action_rounds=limit,
+            epoch_iteration_count=limit + 5,
         )
         with tempfile.TemporaryDirectory() as temporary:
             with mock.patch.dict(
@@ -61,7 +63,7 @@ class P18M1DeliveryBoundaryTests(unittest.TestCase):
                 )
         self.assertTrue(ready, reasons)
         self.assertEqual(reasons, ())
-        self.assertEqual(state.action_rounds, 75)
+        self.assertEqual(state.action_rounds, limit)
         self.assertEqual(state.epoch_index, 1)
         self.assertEqual(state.epoch_action_rounds, 0)
         self.assertEqual(run_state["continuation"]["status"], "continued")
@@ -70,19 +72,21 @@ class P18M1DeliveryBoundaryTests(unittest.TestCase):
     def test_parallel_batch_real_budget_bridge_rolls_before_batch(self) -> None:
         from v3.runtime_turn_orchestration import TurnLoopState
         from v3.zongdiaodu import (
+            _SIMPLE_CHAIN_MAX_TOOL_ROUNDS,
             _simple_chain_new_run_state,
             _simple_chain_prepare_tool_budget,
             set_simple_chain_continuity_checkpoint_provider,
         )
 
-        # A two-tool parallel batch cannot fit at epoch step 74, but it fits in
+        # A two-tool parallel batch cannot fit with one epoch step left, but it fits in
         # the next epoch. The bridge must checkpoint/roll over rather than
         # reporting a terminal budget failure.
+        limit = _SIMPLE_CHAIN_MAX_TOOL_ROUNDS
         state = TurnLoopState(
-            action_rounds=74,
-            iteration_count=90,
-            epoch_action_rounds=74,
-            epoch_iteration_count=90,
+            action_rounds=limit - 1,
+            iteration_count=limit + 15,
+            epoch_action_rounds=limit - 1,
+            epoch_iteration_count=limit + 15,
         )
         with tempfile.TemporaryDirectory() as temporary:
             with mock.patch.dict(
@@ -101,7 +105,7 @@ class P18M1DeliveryBoundaryTests(unittest.TestCase):
                 )
         self.assertTrue(ready, reasons)
         self.assertEqual(reasons, ())
-        self.assertEqual(state.action_rounds, 74)
+        self.assertEqual(state.action_rounds, limit - 1)
         self.assertEqual(state.epoch_index, 1)
         self.assertEqual(state.epoch_action_rounds, 0)
         self.assertEqual(run_state["continuation"]["requested_tool_rounds"], 2)
@@ -128,6 +132,7 @@ class P18M1DeliveryBoundaryTests(unittest.TestCase):
         from v3.run_context import RunContext, bind_run_context
         from v3.runtime_turn_orchestration import TurnLoopState
         from v3.zongdiaodu import (
+            _SIMPLE_CHAIN_MAX_TOOL_ROUNDS,
             _simple_chain_new_run_state,
             _simple_chain_prepare_tool_budget,
             set_simple_chain_continuity_checkpoint_provider,
@@ -140,7 +145,10 @@ class P18M1DeliveryBoundaryTests(unittest.TestCase):
             life_id="life-p18",
             outer_execution_ticket_id="ticket-p18",
         )
-        state = TurnLoopState(action_rounds=75, epoch_action_rounds=75)
+        state = TurnLoopState(
+            action_rounds=_SIMPLE_CHAIN_MAX_TOOL_ROUNDS,
+            epoch_action_rounds=_SIMPLE_CHAIN_MAX_TOOL_ROUNDS,
+        )
         with tempfile.TemporaryDirectory() as temporary:
             with mock.patch.dict(
                 os.environ,

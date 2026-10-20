@@ -60,6 +60,9 @@ def composition_prompt(release, *, include_catalog: bool = True) -> str:
         "不覆盖未采样时段或音轨，模型不支持相应模态时必须补观察，不能用元数据替代。"
         "browser.chrome.goto 是静态抓取；真实渲染使用 browser.playwright.*，"
         "browser.chrome.click 在独立页面点击一次并观察，不能假定跨调用保留浏览器会话。\n"
+        "路径授权：用户消息中点名的位置（桌面、文档、下载，或字面绝对路径）已由宿主按用户原文授权，"
+        "文件类动作的 target 可直接使用该位置的绝对路径（如 Windows 桌面 C:\\Users\\<用户名>\\Desktop\\文件名）；"
+        "用户未点名的位置仍使用工作区相对路径。被拒绝的路径不要绕道 shell/python 改写。\n"
         + (
             "可组合的已实现原子能力（依赖与权限在执行时检查）：" + ", ".join(available)
             if include_catalog else

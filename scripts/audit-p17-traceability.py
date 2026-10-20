@@ -186,7 +186,7 @@ def main() -> int:
               f"{result['summary']['needs_review']} needs_review")
         return 0
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(rendered, encoding="utf-8")
+    args.output.write_text(rendered, encoding="utf-8", newline="\n")
     print(f"obligation scan written: {args.output} "
           f"({result['summary']['total_hits']} hits)")
     return 0

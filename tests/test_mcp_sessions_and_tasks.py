@@ -232,9 +232,12 @@ def test_all_requirements_remain_discoverable_without_fabricated_backends(servic
 def test_process_exit_then_resume_queries_the_original_remote_job(service, tmp_path):
     receipt = tmp_path / "task-receipt.json"
     root = Path(__file__).resolve().parents[1]
+    import_roots = [str(root), str(root / "src"), str(root / "app/backend/tiangong-backend")]
     env = dict(os.environ, PYTHONPATH=os.pathsep.join(
         str(root / path) for path in ("src", "app/backend/tiangong-backend")))
-    setup = "from pathlib import Path; import json,os; from omni_body_skill.tools import mcp_client as m; m.CONFIG_PATH=Path(" + repr(str(service[1])) + "); "
+    # Embedded Python ignores PYTHONPATH; bind both children to this checkout.
+    bootstrap = "import sys; sys.path[:0] = " + repr(import_roots) + "; "
+    setup = bootstrap + "from pathlib import Path; import json,os; from omni_body_skill.tools import mcp_client as m; m.CONFIG_PATH=Path(" + repr(str(service[1])) + "); "
     creation = "r=m.call_tool('actual','work',{},task={'ttl':60000},scope='original'); Path(" + repr(str(receipt)) + ").write_text(json.dumps(r)); os._exit(0)"
     subprocess.run([sys.executable, "-c", setup + creation], check=True, timeout=15, env=env, cwd=tmp_path)
     job = json.loads(receipt.read_text())

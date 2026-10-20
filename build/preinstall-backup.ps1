@@ -2,7 +2,8 @@
 param(
     [string]$BackupRoot = "",
     [string]$CandidateManifestPath = "",
-    [string]$InstallDirectory = ""
+    [string]$InstallDirectory = "",
+    [switch]$IsolatedInstallation
 )
 
 $ErrorActionPreference = "Stop"
@@ -96,6 +97,20 @@ function Get-DefaultCandidates {
 }
 
 function Read-Candidates {
+    if ($IsolatedInstallation) {
+        if ($CandidateManifestPath) {
+            throw "candidate manifests cannot override isolated installation sources"
+        }
+        if (-not $env:APPDATA) {
+            throw "APPDATA is unavailable"
+        }
+        return @(
+            [pscustomobject]@{
+                id = "isolated-profile"
+                path = Join-Path $env:APPDATA "tiangong-v3-isolated"
+            }
+        )
+    }
     if (-not $CandidateManifestPath) {
         return @(Get-DefaultCandidates)
     }
@@ -108,6 +123,27 @@ function Read-Candidates {
         $parsed = @($parsed)
     }
     return @($parsed)
+}
+
+function Assert-UnlinkedIsolatedTree {
+    param([Parameter(Mandatory = $true)][string]$Source)
+    # A profile junction or nested link could point at the normal installation.
+    # Reject it before enumeration, SQLite checkpointing, or copying.
+    $pending = [System.Collections.Generic.Stack[string]]::new()
+    $pending.Push($Source)
+    while ($pending.Count -gt 0) {
+        $current = $pending.Pop()
+        $directory = Get-Item -LiteralPath $current -Force
+        if ($directory.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+            throw "isolated backup source contains a reparse point: $current"
+        }
+        foreach ($item in @(Get-ChildItem -LiteralPath $current -Force)) {
+            if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+                throw "isolated backup source contains a reparse point: $($item.FullName)"
+            }
+            if ($item.PSIsContainer) { $pending.Push($item.FullName) }
+        }
+    }
 }
 
 function Copy-VerifiedTree {
@@ -167,7 +203,12 @@ if (-not $BackupRoot) {
     if (-not $env:LOCALAPPDATA) {
         throw "LOCALAPPDATA is unavailable"
     }
-    $BackupRoot = Join-Path $env:LOCALAPPDATA "TiangongV3Recovery\InstallerBackups"
+    $recoveryDirectory = if ($IsolatedInstallation) {
+        "TiangongV3IsolatedRecovery\InstallerBackups"
+    } else {
+        "TiangongV3Recovery\InstallerBackups"
+    }
+    $BackupRoot = Join-Path $env:LOCALAPPDATA $recoveryDirectory
 }
 $BackupRoot = Resolve-SafeAbsolutePath -PathValue $BackupRoot -Label "backup root"
 if ([IO.Path]::GetPathRoot($BackupRoot).TrimEnd("\") -eq $BackupRoot) {
@@ -183,6 +224,7 @@ foreach ($candidate in @(Read-Candidates)) {
     }
     $source = Resolve-SafeAbsolutePath -PathValue $rawPath -Label "candidate source"
     if (Test-Path -LiteralPath $source -PathType Container) {
+        if ($IsolatedInstallation) { Assert-UnlinkedIsolatedTree -Source $source }
         $candidateRows += [pscustomobject]@{ id = $id; path = $source }
     }
 }

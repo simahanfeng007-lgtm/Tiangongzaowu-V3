@@ -638,7 +638,27 @@ def _qc_video(runtime: Any, target: str | None, args: Dict[str, Any]) -> Dict[st
 def _ffprobe(runtime: Any, path: Path) -> Dict[str, Any]:
     ffprobe = getattr(runtime, "ffprobe", None) or shutil.which("ffprobe")
     if not ffprobe:
-        return {}
+        # The self-contained runtime ships imageio-ffmpeg. Reuse the same
+        # metadata adapter as video.info instead of requiring a host ffprobe.
+        try:
+            import math
+            import imageio_ffmpeg
+
+            frames = imageio_ffmpeg.read_frames(str(path))
+            try:
+                metadata = next(frames)
+            finally:
+                frames.close()
+            width, height = metadata["size"]
+            duration = float(metadata["duration"])
+            if (isinstance(width, bool) or isinstance(height, bool)
+                    or not isinstance(width, int) or not isinstance(height, int)
+                    or width <= 0 or height <= 0
+                    or not math.isfinite(duration) or duration < 0):
+                return {}
+            return {"duration": duration, "width": width, "height": height}
+        except Exception:
+            return {}
     try:
         cmd = [ffprobe, "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height:format=duration", "-of", "json", str(path)]
         out = subprocess.run(cmd, capture_output=True, text=True, timeout=20)

@@ -195,7 +195,11 @@ def test_p7b2_explicitly_advances_store_and_p19_compatibility() -> None:
     # State-bound replay, memory corrections and completion-gate simplification
     # advance the frozen plane to 1.35.
     # Registered shorthand admission and bounded protocol repair advance to 1.73.
-    assert VERIFICATION_PLANE_VERSION == "1.73"
+    # Isolated desktop native tool PATH excludes inherited host tools in 1.75.
+    # Rejected uploads drain one bounded window before close in 1.76.
+    # Capability surface self-describes and evidence keeps raise sites in 1.77.
+    # Short-name aliases retain the installed runtime's no-redirection boundary.
+    assert VERIFICATION_PLANE_VERSION == "1.79"
 
 
 def test_v29_store_migrates_additively_through_v30_to_current() -> None:

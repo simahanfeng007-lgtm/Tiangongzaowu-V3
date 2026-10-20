@@ -226,7 +226,7 @@ class EffectiveModelCapability:
 
 
 _MODEL_PATTERNS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("deepseek_v4", ("deepseek-v4*", "deepseek-reasoner*", "deepseek-chat*")),
+    ("deepseek_v4", ("deepseek-v4*", "deepseek-v4.1*", "deepseek-flash*", "deepseek-reasoner*", "deepseek-chat*")),
     ("glm_5_2", ("glm-5.2*", "glm-5*")),
     ("minimax_m3", ("minimax-m3*", "minimax-m2*")),
     ("mimo", ("mimo-v2.5*", "mimo-v2*")),

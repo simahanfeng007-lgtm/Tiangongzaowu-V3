@@ -109,6 +109,8 @@ class ContextTransaction:
             # Wire encoding and a full World snapshot can exceed the earlier
             # runtime estimate. Remove only whole old call/result groups. The
             # newest pair, current instructions and World remain indivisible.
+            # A reset drops the previous messages, including the delta base.
+            # Rebuild a complete view; never emit a delta against absent bytes.
             full_tail, world = encode_world_view(tail)
             retained = list(groups)
             suffix = list(full_tail)
@@ -121,7 +123,15 @@ class ContextTransaction:
                 if estimate_tokens(json.dumps({**payload, field: messages}, ensure_ascii=False)) <= budget:
                     break
                 if len(retained) <= 1:
-                    raise ContextAssemblyError("current_context_exceeds_endpoint_input_budget")
+                    def _msg_sizes(items):
+                        return sorted((len(str(m.get("content") or "")) for m in items), reverse=True)[:8]
+                    raise ContextAssemblyError(
+                        "current_context_exceeds_endpoint_input_budget:"
+                        f" budget={budget} reason={reason}"
+                        f" prefix_msgs={len(prefix)} prefix_top={_msg_sizes(prefix)}"
+                        f" suffix_msgs={len(suffix)} suffix_top={_msg_sizes(suffix)}"
+                        f" tail_msgs={len(tail)} tail_top={_msg_sizes(tail)}"
+                        f" payload_keys={sorted(payload)[:12]}")
                 retained.pop(0)
         observations = (set(old["observations"]) if compatible else set())
         observations.update(stable_hash(m) for m in tail if m.get("role") == "assistant")

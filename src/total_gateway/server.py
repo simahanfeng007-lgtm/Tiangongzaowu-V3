@@ -12,6 +12,7 @@ import re
 import signal
 import socket
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Mapping
@@ -240,6 +241,36 @@ class GatewayRequestHandler(BaseHTTPRequestHandler):
                 "reason_code": error.reason_code,
             },
         )
+        self._finish_rejected_connection()
+
+    def _finish_rejected_connection(self) -> None:
+        # Preserve the error response when a rejected upload is still arriving.
+        # Closing with unread TCP bytes can replace the response with a reset on
+        # Windows. Half-close the response first, then discard (never dispatch)
+        # at most 64 KiB within one 250 ms deadline, including slow trickles.
+        self.wfile.flush()
+        previous_timeout = self.connection.gettimeout()
+        deadline = time.monotonic() + 0.25
+        remaining = 64 * 1024
+        try:
+            self.connection.shutdown(socket.SHUT_WR)
+            while remaining:
+                budget = deadline - time.monotonic()
+                if budget <= 0:
+                    break
+                self.connection.settimeout(budget)
+                chunk = self.rfile.read1(min(remaining, 8192))
+                if not chunk:
+                    break
+                remaining -= len(chunk)
+        except OSError:
+            # The peer may have left, or the bounded drain may have timed out.
+            pass
+        finally:
+            try:
+                self.connection.settimeout(previous_timeout)
+            except OSError:
+                pass
 
     def _read_desktop_body(self) -> bytes:
         if self.headers.get("Transfer-Encoding"):

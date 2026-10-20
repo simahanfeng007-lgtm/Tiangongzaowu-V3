@@ -186,3 +186,18 @@ def test_wire_budget_rejects_oversized_fixed_context_and_never_splits_latest_pai
     assert estimate_tokens(json.dumps(payload, ensure_ascii=False)) <= 2500
     with pytest.raises(ContextAssemblyError, match='current_context_exceeds'):
         session.begin().render(endpoint, {}, 'messages', [{'role':'system','content':'x'*20000}], groups, [])
+
+
+def test_oversized_world_is_not_truncated_or_committed_and_diagnostics_exclude_content(endpoint):
+    from v3.context_compactor import ContextAssemblyError
+
+    session = AppendOnlyContext(token_budget=100000)
+    tx, _ = build(endpoint, session, [], 0)
+    commit(tx)
+    previous = deepcopy(session.committed)
+    session.token_budget = 2000
+    with pytest.raises(ContextAssemblyError) as caught:
+        build(endpoint, session, [], 1, __runtime_context="PRIVATE_WORLD_SECRET " * 8000)
+    assert "budget=2000" in str(caught.value)
+    assert "PRIVATE_WORLD_SECRET" not in str(caught.value)
+    assert session.committed == previous

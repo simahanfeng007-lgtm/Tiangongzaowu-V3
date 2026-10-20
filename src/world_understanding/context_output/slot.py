@@ -19,7 +19,7 @@ def conservative_token_estimate(text: str) -> int:
     return max(1, (len(text.encode("utf-8")) + 2) // 3)
 
 
-def _item_line(item: WorldContextItem) -> str:
+def _item_line(item: WorldContextItem, *, max_summary_chars: int = 0) -> str:
     labels: list[str] = []
     if item.truth_state == "CONFLICTED":
         labels.append("CONFLICTED")
@@ -28,10 +28,20 @@ def _item_line(item: WorldContextItem) -> str:
     if item.item_kind.startswith("uncertainty"):
         labels.append("UNCERTAINTY")
     prefix = "" if not labels else "[" + "][".join(labels) + "] "
-    return f"- {prefix}{item.summary}"
+    summary = item.summary
+    if max_summary_chars and len(summary) > max_summary_chars:
+        summary = summary[:max_summary_chars] + f"…[summary truncated {len(item.summary) - max_summary_chars} chars]"
+    return f"- {prefix}{summary}"
 
 
 def render_world_context_packet(packet: WorldContextPacket) -> str:
+    # MANDATORY_OVERFLOW 保持全部必选项（契约：溢出不删项），但显示层把每项
+    # summary 按预算均摊截短，不再把整份世界状态倾倒进模型上下文。
+    overflow_cap = 0
+    if packet.overflow_state == "MANDATORY_OVERFLOW" and packet.mandatory_items:
+        # 预算按保守 2.5 chars/token 折算字符，均摊到每项，单项至少 200 字符。
+        total_chars = max(500, int(packet.token_budget) * 2)
+        overflow_cap = max(200, total_chars // len(packet.mandatory_items))
     sections: list[str] = [
         "[WORLD_CONTEXT]",
         "source_kind=WORLD_UNDERSTANDING",
@@ -45,7 +55,7 @@ def render_world_context_packet(packet: WorldContextPacket) -> str:
         "",
         "Mandatory / Current World State:",
     ]
-    sections.extend(_item_line(item) for item in packet.mandatory_items)
+    sections.extend(_item_line(item, max_summary_chars=overflow_cap) for item in packet.mandatory_items)
     if packet.ranked_items:
         sections.extend(["", "Relevant World Context:"])
         sections.extend(_item_line(item) for item in packet.ranked_items)

@@ -135,6 +135,13 @@ class OmniGatewayGrantIntegrationTests(unittest.TestCase):
                 authority.issue(adversarial, now_ms=now_ms + 5)
 
             verifier = _load_capability_module()
+            # The producer already uses an explicit fixture clock. Source-tree
+            # verification can exceed its 60 s grant TTL, so align only these
+            # two module clocks; never patch the shared stdlib time module.
+            from total_gateway import omni_grant_authority as grant_module
+            fixed_clock = SimpleNamespace(time_ns=lambda: (now_ms + 10) * 1_000_000)
+            resources.enter_context(mock.patch.object(verifier, "time", fixed_clock))
+            resources.enter_context(mock.patch.object(grant_module, "time", fixed_clock))
             with mock.patch.dict(
                 os.environ,
                 {"TIANGONG_OMNI_BODY_STATE_ROOT": str(state_root / "omni-state")},
@@ -163,6 +170,14 @@ class OmniGatewayGrantIntegrationTests(unittest.TestCase):
                 with self.assertRaisesRegex(verifier.CapabilityGrantError, "argument binding"):
                     verifier.verify_capability_grant(video_grant["grant"], action=video["action"], target=video["target"],
                         args=dict(video["args"], times=[0, 0.6]), workspace=str(state_root), runtime_meta=video_grant["runtime"])
+                payload = video_grant["grant"]["payload"]
+                self.assertLessEqual(payload["expires_at_ms"] - payload["issued_at_ms"], 60_000)
+                expired_clock = SimpleNamespace(time_ns=lambda: (payload["expires_at_ms"] + 1) * 1_000_000)
+                with mock.patch.object(verifier, "time", expired_clock):
+                    with self.assertRaisesRegex(verifier.CapabilityGrantError, "time or authority"):
+                        verifier.verify_capability_grant(video_grant["grant"], action=video["action"], target=video["target"],
+                            args=video["args"], workspace=str(state_root), runtime_meta=video_grant["runtime"])
+                # The rejected expired attempt must not consume the real nonce.
                 verifier.verify_capability_grant(video_grant["grant"], action=video["action"], target=video["target"],
                     args=video["args"], workspace=str(state_root), runtime_meta=video_grant["runtime"])
             overflow = json.dumps(dict(video, call_id="toolcall_" + "5" * 64)).replace("0.5", "1e999")

@@ -278,6 +278,10 @@ def test_real_process_exit_at_two_store_boundaries_is_fail_closed(tmp_path,bound
     code=r'''
 import json,os,sys
 from pathlib import Path
+# Embedded Python's _pth ignores PYTHONPATH. These test-only paths come from
+# the parent test's own checkout, never from the repository being inspected.
+checkout=Path(sys.argv[3]).resolve()
+sys.path[:0]=[str(checkout),str(checkout/'src'),str(checkout/'app/backend/tiangong-backend')]
 import pytest
 from tests.test_method_run_retention_p9 import unregistered_bound
 from tests.test_composition_executable_plan_p7c0 import _persist_executable
@@ -310,8 +314,8 @@ if stage=='after_commit':g._connection=AfterCommit()
 _persist_executable(g,m)
 raise AssertionError('crash boundary was not crossed')
 '''
-    root=Path(__file__).parents[1]
-    result=subprocess.run([sys.executable,'-c',code,str(work),boundary],cwd=root,
+    root=Path(__file__).resolve().parents[1]
+    result=subprocess.run([sys.executable,'-c',code,str(work),boundary,str(root)],cwd=root,
         env={**os.environ,'PYTHONPATH':os.pathsep.join([str(root),str(root/'src'),str(root/'app/backend/tiangong-backend')])},
         text=True,capture_output=True,timeout=40)
     assert result.returncode=={'before_pin':71,'after_pin_before_commit':72,'after_commit':73}[boundary],result.stderr

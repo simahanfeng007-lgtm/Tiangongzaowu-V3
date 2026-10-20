@@ -243,6 +243,7 @@ import os
 import re
 import time
 import threading
+import traceback
 import uuid
 import zipfile
 from datetime import datetime
@@ -920,7 +921,25 @@ def _omni_body_skill_prompt(user_message: str = "", max_chars: int = 5200) -> st
     from capability_dictionary import load_dictionary
     release = load_dictionary()
     from capability_dictionary.composition import composition_prompt
-    return composition_prompt(release, include_catalog=False)
+    base = composition_prompt(release, include_catalog=False)
+    # 模型进程的 HOME 可能被沙箱重定向；「桌面/文档/下载」必须给出宿主真实
+    # 绝对路径，否则模型会拼出沙箱内的假桌面并被路径守卫正确拒绝。
+    real_roots = {}
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                            r"Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders") as key:
+            for name, value in (("桌面", "Desktop"), ("文档", "Personal"), ("下载", "{374DE290-123F-4565-9164-39C4925E467B}")):
+                try:
+                    real_roots[name] = str(winreg.QueryValueEx(key, value)[0])
+                except OSError:
+                    continue
+    except Exception:
+        pass
+    if real_roots:
+        base += "\n用户真实目录（写入这些位置时 target 使用下列绝对路径；不要使用 HOME 推导路径，HOME 可能是沙箱目录）：" \
+                + "；".join(f"{name}={path}" for name, path in real_roots.items()) + "。\n"
+    return base
 
 
 def _minimax_m3_context_packing_enabled() -> bool:
@@ -2664,10 +2683,10 @@ class Zongdiaodu:
                 fallback = _simple_chain_completion_fallback_reply(
                     xiaoxi, quality_history, generated_attachments, gongju_cishu
                 )
+            elif status == "force_stopped" and run_state.get("model_failure"):
+                fallback = _simple_chain_incomplete_reply(clean_reasons, gongju_cishu, status="failed")
             elif status == "force_stopped" and "budget" in reason_text:
                 fallback = _simple_chain_budget_close_reply(clean_reasons, gongju_cishu, status=status)
-            elif status == "force_stopped" and isinstance(run_state.get("model_failure"), dict):
-                fallback = _simple_chain_incomplete_reply(clean_reasons, gongju_cishu, status="failed")
             elif status == "force_stopped":
                 fallback = _simple_chain_force_stopped_reply(clean_reasons, gongju_cishu, status=status)
             else:
@@ -4627,11 +4646,29 @@ class Zongdiaodu:
             except Exception as exc:
                 final_guard_exhausted = True
                 final_chain_status = "force_stopped"
+                # Keep the real exception and raise site; "check your model
+                # connection" hid internal assembly errors behind a network
+                # diagnosis that the HTTP layer disproves.
+                try:
+                    _hist_sizes = sorted(
+                        (len(_simple_chain_history_payload_text(item))
+                         for item in quality_history if isinstance(item, dict)),
+                        reverse=True)[:6]
+                except Exception:
+                    _hist_sizes = []
                 run_state["model_failure"] = {
                     "error_code": "model_continuation_exception",
                     "exception_type": type(exc).__name__,
+                    "message": str(exc)[:500],
+                    "traceback_tail": traceback.format_exc().strip().splitlines()[-6:],
+                    "context_metrics": {
+                        "quality_history_items": len(quality_history),
+                        "history_text_sizes_top": _hist_sizes,
+                        "native_history_groups": len(native_history),
+                        "system_tishi_chars": len(system_tishi or ""),
+                    },
                 }
-                reasons = ["模型续答失败，已有工具回执已保留；本轮任务尚未完成。请检查模型连接或配置。"]
+                reasons = [f"模型续答装配失败（{type(exc).__name__}: {str(exc)[:200]}）；已有工具回执已保留；本轮任务尚未完成。"]
                 shenti, huifu = _natural_closeout("force_stopped", reasons)
                 if run_control:
                     run_control.step(

@@ -212,14 +212,14 @@ class SimpleChainLoopBudgetTests(unittest.TestCase):
             _SIMPLE_CHAIN_MAX_WALL_CLOCK_SECONDS,
         )
 
-        self.assertEqual(_SIMPLE_CHAIN_MAX_TOOL_ROUNDS, 75)
-        self.assertEqual(_SIMPLE_CHAIN_MAX_GLOBAL_TOOL_ROUNDS, 1000)
-        self.assertEqual(_SIMPLE_CHAIN_MAX_LOOP_TURNS, 180)
-        self.assertEqual(_SIMPLE_CHAIN_MAX_WALL_CLOCK_SECONDS, 5400)
+        self.assertEqual(_SIMPLE_CHAIN_MAX_TOOL_ROUNDS, 300)
+        self.assertEqual(_SIMPLE_CHAIN_MAX_GLOBAL_TOOL_ROUNDS, 4000)
+        self.assertEqual(_SIMPLE_CHAIN_MAX_LOOP_TURNS, 720)
+        self.assertEqual(_SIMPLE_CHAIN_MAX_WALL_CLOCK_SECONDS, 21600)
         self.assertEqual(_SIMPLE_CHAIN_MAX_REPEAT_OBSERVATIONS, 90)
         self.assertEqual(_SIMPLE_CHAIN_MAX_READONLY_REPEAT_OBSERVATIONS, 90)
         self.assertEqual(_SIMPLE_CHAIN_MAX_COMPLETION_CORRECTIONS, 1)
-        self.assertEqual(_SIMPLE_CHAIN_MAX_TOOL_EXECUTION_SECONDS, 540)
+        self.assertEqual(_SIMPLE_CHAIN_MAX_TOOL_EXECUTION_SECONDS, 2160)
 
 
     def test_no_observation_query_reply_passes_gate(self) -> None:

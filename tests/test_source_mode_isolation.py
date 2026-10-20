@@ -174,6 +174,7 @@ const checkout = 'a'.repeat(64), owner = 'b'.repeat(64);
 let listenerPids = [48184], occupied = true, killed = [], stopped = [];
 const ctx = {
   SOURCE_MODE: true,
+  ISOLATED_INSTALLATION: false,
   SOURCE_CHECKOUT_ID: checkout,
   SOURCE_GATEWAY_OWNER_ID: owner,
   SERVICE_START_ATTEMPTS: 1,

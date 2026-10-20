@@ -11,6 +11,7 @@ import threading
 import unittest
 from pathlib import Path
 
+from life_service.identity_migration import _io_path
 from life_service.cutover import (
     LifeCutoverAuthority,
     LifeCutoverError,
@@ -30,7 +31,7 @@ from life_service.cutover import (
     verify_handoff_permit,
     write_handoff_artifacts,
 )
-from life_service.legacy_adapter import LegacySnapshotReader, snapshot_tree_sha256
+from life_service.legacy_adapter import LegacySnapshotError, LegacySnapshotReader, snapshot_tree_sha256
 from life_service.production_api import (
     ProductionLifeApi,
     build_cutover_read_only_fallback_server,
@@ -64,6 +65,9 @@ class LifeCutoverP11Tests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
+        # The product still receives ordinary paths; fixture cleanup must also
+        # work when verified snapshot descendants exceed MAX_PATH on Windows.
+        self.temporary.name = str(_io_path(self.root))
         self.snapshot, self.expected = create_snapshot(self.root / "legacy")
         self.stage = self.root / "stage"
 
@@ -577,6 +581,27 @@ class LifeCutoverP11Tests(unittest.TestCase):
         )
         self.assertEqual(rolled_back["release_id"], previous)
         verify_cutover_state_bundle(install)
+
+    @unittest.skipUnless(os.name == "nt", "Windows extended paths only")
+    def test_installed_base_verifies_deep_unicode_context_and_detects_tamper(self) -> None:
+        _, final, _, _, _ = self.prepare_final_handoff()
+        context_relative = Path("lives") / LIFE_ID / "context" / "envelopes" / ("a" * 64 + ".meta.json")
+        minimum_length = len(str(self.root / "中文备份-" / "base" / ("0" * 64) / context_relative))
+        install = self.root / ("中文备份-" + "x" * max(25, 270 - minimum_length))
+        before = snapshot_tree_sha256(self.snapshot)
+        install_cutover_state_bundle(self.stage, install, release_id="p11-long", mode="fresh")
+        base = install / "base" / final.source_tree_sha256
+        payload = base / context_relative
+        self.assertGreater(len(str(payload)), 260)
+        self.assertTrue(_io_path(payload).is_file())
+        self.assertEqual(snapshot_tree_sha256(base), before)
+        self.assertEqual(snapshot_tree_sha256(self.snapshot), before)
+        self.assertEqual(LegacySnapshotReader(base).anchor().life_id, LIFE_ID)
+        verify_cutover_state_bundle(install)
+        _io_path(payload).write_bytes(b"{}")
+        with self.assertRaises(LegacySnapshotError) as error:
+            LegacySnapshotReader(base)
+        self.assertEqual(error.exception.code, "snapshot.tree_mismatch")
 
     def test_bootstrap_and_desktop_only_activate_a_complete_artifact_set(self) -> None:
         root = Path(__file__).resolve().parents[1]

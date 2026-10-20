@@ -25,6 +25,9 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 
+from .identity_migration import _io_path
+
+
 LEGACY_API_CONTRACT = "tiangong.life.api.v2"
 SNAPSHOT_MANIFEST_SCHEMA = "tiangong.life.legacy-snapshot.v1"
 CONTEXT_STORE_SCHEMA = "tiangong.life.context-store.v1"
@@ -149,7 +152,7 @@ def _redact_memory_value(value: Any, depth: int = 0) -> Any:
 def snapshot_tree_sha256(root: Path) -> str:
     """Hash all regular snapshot files except the self-referential manifest."""
 
-    root = root.resolve(strict=True)
+    root = _io_path(root).resolve(strict=True)
     records: list[dict[str, Any]] = []
     for path in sorted(root.rglob("*"), key=lambda item: item.as_posix()):
         if path.is_symlink():
@@ -294,7 +297,7 @@ class LegacySnapshotReader:
             raise LegacySnapshotError("snapshot.captured_at_invalid", "captured_at must be UTC")
         sidecars = [
             path
-            for path in root.rglob("*")
+            for path in _io_path(root).rglob("*")
             if path.is_file() and path.name.endswith((".sqlite3-wal", ".sqlite3-shm"))
         ]
         if sidecars:
@@ -326,8 +329,11 @@ class LegacySnapshotReader:
         return path
 
     def _read_bytes(self, path: Path, *, max_bytes: int) -> bytes:
+        # Keep public snapshot paths unchanged; use the extended namespace only
+        # for file IO and compare canonical paths in that same namespace.
+        path = _io_path(path)
         resolved = path.resolve(strict=True)
-        if not resolved.is_relative_to(self.root) or path.is_symlink() or not path.is_file():
+        if not resolved.is_relative_to(_io_path(self.root)) or path.is_symlink() or not path.is_file():
             raise LegacySnapshotError("snapshot.file_invalid", f"snapshot file is invalid: {path.name}")
         before = path.stat()
         if before.st_size > max_bytes:
